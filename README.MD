@@ -270,10 +270,6 @@ cp opencode.json.example opencode.json
   "compat": {
     "wide_input_strict_output": true
   },
-  "toolcall": {
-    "mode": "feature_match",
-    "early_emit_confidence": "high"
-  },
   "responses": {
     "store_ttl_seconds": 900
   },
@@ -304,7 +300,7 @@ cp opencode.json.example opencode.json
 - `token`：配置文件中即使填写也会在加载时被清空（不会从 `config.json` 读取 token）；实际 token 仅在运行时内存中维护并自动刷新
 - `model_aliases`：常见模型名（如 GPT/Codex/Claude）到 DeepSeek 模型的映射
 - `compat.wide_input_strict_output`：建议保持 `true`（当前实现默认宽进严出）
-- `toolcall`：固定采用特征匹配 + 高置信早发策略
+- `toolcall`：策略已固定为特征匹配 + 高置信早发，不再作为可配置项
 - `responses.store_ttl_seconds`：`/v1/responses/{id}` 的内存缓存 TTL
 - `embeddings.provider`：embedding 提供方（当前内置 `deterministic/mock/builtin`）
 - `claude_mapping`：字典中 `fast`/`slow` 后缀映射到对应 DeepSeek 模型（兼容读取 `claude_model_mapping`）

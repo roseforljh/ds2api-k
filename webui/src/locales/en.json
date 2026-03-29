@@ -228,8 +228,6 @@
         "globalMaxInflight": "Global max inflight",
         "tokenRefreshIntervalHours": "Managed token refresh interval (hours)",
         "behaviorTitle": "Behavior",
-        "toolcallMode": "Toolcall mode",
-        "earlyEmitConfidence": "Early emit confidence",
         "responsesTTL": "Responses store TTL (seconds)",
         "embeddingsProvider": "Embeddings provider",
         "modelTitle": "Model mapping",

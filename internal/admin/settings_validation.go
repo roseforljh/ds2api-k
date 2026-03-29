@@ -12,8 +12,6 @@ func normalizeSettingsConfig(c *config.Config) {
 		return
 	}
 	c.Admin.PasswordHash = strings.TrimSpace(c.Admin.PasswordHash)
-	c.Toolcall.Mode = strings.ToLower(strings.TrimSpace(c.Toolcall.Mode))
-	c.Toolcall.EarlyEmitConfidence = strings.ToLower(strings.TrimSpace(c.Toolcall.EarlyEmitConfidence))
 	c.Embeddings.Provider = strings.TrimSpace(c.Embeddings.Provider)
 }
 
@@ -26,20 +24,6 @@ func validateSettingsConfig(c config.Config) error {
 	}
 	if c.Responses.StoreTTLSeconds != 0 && (c.Responses.StoreTTLSeconds < 30 || c.Responses.StoreTTLSeconds > 86400) {
 		return fmt.Errorf("responses.store_ttl_seconds must be between 30 and 86400")
-	}
-	if mode := strings.TrimSpace(c.Toolcall.Mode); mode != "" {
-		switch mode {
-		case "feature_match", "off":
-		default:
-			return fmt.Errorf("toolcall.mode must be feature_match or off")
-		}
-	}
-	if level := strings.TrimSpace(c.Toolcall.EarlyEmitConfidence); level != "" {
-		switch level {
-		case "high", "low", "off":
-		default:
-			return fmt.Errorf("toolcall.early_emit_confidence must be high, low or off")
-		}
 	}
 	if c.Embeddings.Provider != "" && strings.TrimSpace(c.Embeddings.Provider) == "" {
 		return fmt.Errorf("embeddings.provider cannot be empty")

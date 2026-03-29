@@ -270,10 +270,6 @@ cp opencode.json.example opencode.json
   "compat": {
     "wide_input_strict_output": true
   },
-  "toolcall": {
-    "mode": "feature_match",
-    "early_emit_confidence": "high"
-  },
   "responses": {
     "store_ttl_seconds": 900
   },
@@ -304,7 +300,7 @@ cp opencode.json.example opencode.json
 - `token`: Even if set in `config.json`, it is cleared during load (DS2API does not read persisted tokens from config); runtime tokens are maintained/refreshed in memory only
 - `model_aliases`: Map common model names (GPT/Codex/Claude) to DeepSeek models
 - `compat.wide_input_strict_output`: Keep `true` (current default policy)
-- `toolcall`: Fixed to feature matching + high-confidence early emit
+- `toolcall`: Fixed to feature matching + high-confidence early emit, no longer configurable
 - `responses.store_ttl_seconds`: In-memory TTL for `/v1/responses/{id}`
 - `embeddings.provider`: Embeddings provider (`deterministic/mock/builtin` built-in)
 - `claude_mapping`: Maps `fast`/`slow` suffixes to corresponding DeepSeek models (still compatible with `claude_model_mapping`)

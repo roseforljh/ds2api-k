@@ -24,7 +24,7 @@ This guide covers all deployment methods for the current Go-based codebase.
 
 | Dependency | Minimum Version | Notes |
 | --- | --- | --- |
-| Go | 1.24+ | Build backend |
+| Go | 1.26+ | Build backend |
 | Node.js | 20+ | Only needed to build WebUI locally |
 | npm | Bundled with Node.js | Install WebUI dependencies |
 
@@ -401,7 +401,7 @@ cp config.example.json config.json
 docker pull ghcr.io/cjackhwang/ds2api:latest
 
 # specific version (example)
-docker pull ghcr.io/cjackhwang/ds2api:v2.1.2
+docker pull ghcr.io/cjackhwang/ds2api:v3.0.0
 ```
 
 ---

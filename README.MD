@@ -28,42 +28,57 @@
 
 ```mermaid
 flowchart LR
-    Client["🖥️ 客户端\n(OpenAI / Claude / Gemini 兼容)"]
+    Client["🖥️ 客户端 / SDK\n(OpenAI / Claude / Gemini)"]
 
-    subgraph DS2API["DS2API 服务"]
-        direction TB
-        CORS["CORS 中间件"]
-        Auth["🔐 鉴权中间件"]
+    subgraph DS2API["DS2API 3.0（统一 Go 路由内核）"]
+        Router["chi Router + 中间件\n(RequestID / Recoverer / CORS / Timeout)"]
 
-        subgraph Adapters["适配器层"]
-            OA["OpenAI 适配器\n/v1/*"]
-            CA["Claude 适配器\n/anthropic/*"]
-            GA["Gemini 适配器\n/v1beta/models/*"]
+        subgraph Adapters["协议适配层"]
+            OA["OpenAI\n/v1/*"]
+            CA["Claude\n/anthropic/* + /v1/messages"]
+            GA["Gemini\n/v1beta/models/* + /v1/models/*"]
         end
 
-        subgraph Support["支撑模块"]
-            Pool["📦 账号池 / 并发队列"]
-            PoW["⚙️ PoW WASM\n(wazero)"]
+        subgraph Runtime["运行时与核心能力"]
+            Auth["Auth Resolver\n(API key / bearer / x-goog-api-key)"]
+            Pool["Account Pool + Queue\n(并发与轮询)"]
+            DS["DeepSeek Client\n(Session / Auth / HTTP)"]
+            Pow["PoW WASM (wazero)"]
+            Tool["Tool Sieve\n(Go/Node 语义对齐)"]
+            Format["Response Render\n(OpenAI/Claude/Gemini)"]
         end
 
-        Admin["🛠️ Admin API\n/admin/*"]
-        WebUI["🌐 WebUI\n(/admin)"]
+        Admin["Admin API\n/admin/*"]
+        WebUI["WebUI Static\n/admin"]
     end
 
-    DS["☁️ DeepSeek API"]
+    Upstream["☁️ DeepSeek Upstream"]
 
-    Client -- "请求" --> CORS --> Auth
-    Auth --> OA & CA & GA
-    OA & CA & GA -- "调用" --> DS
-    Auth --> Admin
-    OA & CA & GA -. "轮询选账号" .-> Pool
-    OA & CA & GA -. "计算 PoW" .-> PoW
-    DS -- "响应" --> Client
+    Client --> Router
+    Router --> OA & CA & GA
+    Router --> Admin
+    Router --> WebUI
+    OA --> Auth --> Pool --> DS
+    CA --> Auth
+    GA --> Auth
+    DS --> Pow
+    DS --> Tool --> Format
+    DS --> Upstream
+    Upstream --> DS
 ```
 
 - **后端**：Go（`cmd/ds2api/`、`api/`、`internal/`），不依赖 Python 运行时
 - **前端**：React 管理台（`webui/`），运行时托管静态构建产物
 - **部署**：本地运行、Docker、Vercel Serverless、Linux systemd
+
+### 3.0 底层架构调整（相较旧版本）
+
+- **统一路由内核**：所有协议入口统一汇聚到 `internal/server/router.go`，并在同一路由树中注册 OpenAI / Claude / Gemini / Admin / WebUI 路由，避免多入口行为漂移。
+- **适配器分层更清晰**：`internal/adapter/{openai,claude,gemini}` 只负责协议形态、错误格式和流式事件语义，DeepSeek 侧调用统一收敛到共享调用层。
+- **Tool Calling 双运行时对齐**：Go 侧（`internal/util`）与 Vercel Node 侧（`internal/js/helpers/stream-tool-sieve`）保持一致的解析/防泄漏语义，覆盖 JSON / XML / invoke / text-kv 多风格输入。
+- **配置与运行时设置解耦**：静态配置（`config`）与运行时策略（`settings`）通过 Admin API 分离管理，支持热更新和密码轮换失效旧 JWT。
+- **流式能力升级**：`/v1/responses` 与 `/v1/chat/completions` 共享更一致的工具调用增量输出策略，降低不同 SDK 下的行为差异。
+- **可观测与可运维增强**：`/healthz`、`/readyz`、`/admin/version`、`/admin/dev/captures` 形成排障闭环，便于发布后验证。
 
 ## 核心能力
 
@@ -144,7 +159,7 @@ cp config.example.json config.json
 
 ### 方式一：本地运行
 
-**前置要求**：Go 1.24+，Node.js 20+（仅在需要构建 WebUI 时）
+**前置要求**：Go 1.26+，Node.js 20+（仅在需要构建 WebUI 时）
 
 ```bash
 # 1. 克隆仓库
@@ -412,6 +427,7 @@ go run ./cmd/ds2api
 
 ```text
 ds2api/
+├── app/                    # 统一 Handler 入口（供 Vercel / 本地共用）
 ├── cmd/
 │   ├── ds2api/              # 本地 / 容器启动入口
 │   └── ds2api-tests/        # 端到端测试集入口

@@ -8,7 +8,7 @@ Thanks for your interest in contributing to DS2API!
 
 ### Prerequisites
 
-- Go 1.24+
+- Go 1.26+
 - Node.js 20+ (for WebUI development)
 - npm (bundled with Node.js)
 
@@ -94,6 +94,7 @@ Manually build WebUI to `static/admin/`:
 
 ```text
 ds2api/
+├── app/                    # Unified handler entry (shared by Vercel/local)
 ├── cmd/
 │   ├── ds2api/              # Local/container entrypoint
 │   └── ds2api-tests/        # End-to-end testsuite entrypoint

@@ -31,6 +31,13 @@
 | 健康检查 | `GET /healthz`、`GET /readyz` |
 | CORS | 已启用（`Access-Control-Allow-Origin: *`，允许 `Content-Type`, `Authorization`, `X-API-Key`, `X-Ds2-Target-Account`, `X-Vercel-Protection-Bypass`） |
 
+### 3.0 接口适配层说明
+
+- OpenAI / Claude / Gemini 三套协议已统一挂在同一 `chi` 路由树上，由 `internal/server/router.go` 负责装配。
+- 适配器层职责收敛为：**请求归一化 → DeepSeek 调用 → 协议形态渲染**，减少历史版本中“同能力多处实现”的分叉。
+- Tool Calling 的解析策略在 Go 与 Node Runtime 间保持一致：优先结构化解析（JSON/XML/invoke/markup），并在流式场景执行防泄漏筛分。
+- `Admin API` 将配置与运行时策略分开：`/admin/config*` 管静态配置，`/admin/settings*` 管运行时行为。
+
 ---
 
 ## 配置最佳实践
@@ -91,7 +98,9 @@ Gemini 兼容客户端还可以使用 `x-goog-api-key`、`?key=` 或 `?api_key=`
 | 方法 | 路径 | 鉴权 | 说明 |
 | --- | --- | --- | --- |
 | GET | `/healthz` | 无 | 存活探针 |
+| HEAD | `/healthz` | 无 | 存活探针（无响应体） |
 | GET | `/readyz` | 无 | 就绪探针 |
+| HEAD | `/readyz` | 无 | 就绪探针（无响应体） |
 | GET | `/v1/models` | 无 | OpenAI 模型列表 |
 | GET | `/v1/models/{id}` | 无 | OpenAI 单模型查询（支持 alias 入参） |
 | POST | `/v1/chat/completions` | 业务 | OpenAI 对话补全 |
@@ -937,15 +946,15 @@ data: {"type":"message_stop"}
 ```json
 {
   "success": true,
-  "current_version": "2.3.5",
-  "current_tag": "v2.3.5",
+  "current_version": "3.0.0",
+  "current_tag": "v3.0.0",
   "source": "file:VERSION",
   "checked_at": "2026-03-29T00:00:00Z",
-  "latest_tag": "v2.3.6",
-  "latest_version": "2.3.6",
-  "release_url": "https://github.com/CJackHwang/ds2api/releases/tag/v2.3.6",
+  "latest_tag": "v3.0.0",
+  "latest_version": "3.0.0",
+  "release_url": "https://github.com/CJackHwang/ds2api/releases/tag/v3.0.0",
   "published_at": "2026-03-28T12:00:00Z",
-  "has_update": true
+  "has_update": false
 }
 ```
 

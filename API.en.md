@@ -31,6 +31,13 @@ This document describes the actual behavior of the current Go codebase.
 | Health probes | `GET /healthz`, `GET /readyz` |
 | CORS | Enabled (`Access-Control-Allow-Origin: *`, allows `Content-Type`, `Authorization`, `X-API-Key`, `X-Ds2-Target-Account`, `X-Vercel-Protection-Bypass`) |
 
+### 3.0 Adapter-Layer Notes
+
+- OpenAI / Claude / Gemini protocols are now mounted on one shared `chi` router tree assembled in `internal/server/router.go`.
+- Adapter responsibilities are streamlined to: **request normalization → DeepSeek invocation → protocol-shaped rendering**, reducing legacy split-logic paths.
+- Tool-calling semantics are aligned between Go and Node runtime: structured parsing first (JSON/XML/invoke/markup), plus stream-time anti-leak filtering.
+- `Admin API` separates static config from runtime policy: `/admin/config*` for configuration state, `/admin/settings*` for runtime behavior.
+
 ---
 
 ## Configuration Best Practice
@@ -91,7 +98,9 @@ Gemini-compatible clients can also send `x-goog-api-key`, `?key=`, or `?api_key=
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
 | GET | `/healthz` | None | Liveness probe |
+| HEAD | `/healthz` | None | Liveness probe (no body) |
 | GET | `/readyz` | None | Readiness probe |
+| HEAD | `/readyz` | None | Readiness probe (no body) |
 | GET | `/v1/models` | None | OpenAI model list |
 | GET | `/v1/models/{id}` | None | OpenAI single-model query (alias accepted) |
 | POST | `/v1/chat/completions` | Business | OpenAI chat completions |
@@ -931,15 +940,15 @@ Checks the current build version and the latest GitHub Release:
 ```json
 {
   "success": true,
-  "current_version": "2.3.5",
-  "current_tag": "v2.3.5",
+  "current_version": "3.0.0",
+  "current_tag": "v3.0.0",
   "source": "file:VERSION",
   "checked_at": "2026-03-29T00:00:00Z",
-  "latest_tag": "v2.3.6",
-  "latest_version": "2.3.6",
-  "release_url": "https://github.com/CJackHwang/ds2api/releases/tag/v2.3.6",
+  "latest_tag": "v3.0.0",
+  "latest_version": "3.0.0",
+  "release_url": "https://github.com/CJackHwang/ds2api/releases/tag/v3.0.0",
   "published_at": "2026-03-28T12:00:00Z",
-  "has_update": true
+  "has_update": false
 }
 ```
 

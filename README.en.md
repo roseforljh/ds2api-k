@@ -28,42 +28,57 @@ DS2API converts DeepSeek Web chat capability into OpenAI-compatible, Claude-comp
 
 ```mermaid
 flowchart LR
-    Client["🖥️ Clients\n(OpenAI / Claude / Gemini compat)"]
+    Client["🖥️ Clients / SDKs\n(OpenAI / Claude / Gemini)"]
 
-    subgraph DS2API["DS2API Service"]
-        direction TB
-        CORS["CORS Middleware"]
-        Auth["🔐 Auth Middleware"]
+    subgraph DS2API["DS2API 3.0 (Unified Go Routing Core)"]
+        Router["chi Router + Middleware\n(RequestID / Recoverer / CORS / Timeout)"]
 
-        subgraph Adapters["Adapter Layer"]
-            OA["OpenAI Adapter\n/v1/*"]
-            CA["Claude Adapter\n/anthropic/*"]
-            GA["Gemini Adapter\n/v1beta/models/*"]
+        subgraph Adapters["Protocol Adapters"]
+            OA["OpenAI\n/v1/*"]
+            CA["Claude\n/anthropic/* + /v1/messages"]
+            GA["Gemini\n/v1beta/models/* + /v1/models/*"]
         end
 
-        subgraph Support["Support Modules"]
-            Pool["📦 Account Pool / Queue"]
-            PoW["⚙️ PoW WASM\n(wazero)"]
+        subgraph Runtime["Runtime + Core Capabilities"]
+            Auth["Auth Resolver\n(API key / bearer / x-goog-api-key)"]
+            Pool["Account Pool + Queue\n(concurrency and rotation)"]
+            DS["DeepSeek Client\n(session / auth / HTTP)"]
+            Pow["PoW WASM (wazero)"]
+            Tool["Tool Sieve\n(Go/Node semantic parity)"]
+            Format["Response Render\n(OpenAI/Claude/Gemini)"]
         end
 
-        Admin["🛠️ Admin API\n/admin/*"]
-        WebUI["🌐 WebUI\n(/admin)"]
+        Admin["Admin API\n/admin/*"]
+        WebUI["WebUI Static\n/admin"]
     end
 
-    DS["☁️ DeepSeek API"]
+    Upstream["☁️ DeepSeek Upstream"]
 
-    Client -- "Request" --> CORS --> Auth
-    Auth --> OA & CA & GA
-    OA & CA & GA -- "Call" --> DS
-    Auth --> Admin
-    OA & CA & GA -. "Rotate accounts" .-> Pool
-    OA & CA & GA -. "Compute PoW" .-> PoW
-    DS -- "Response" --> Client
+    Client --> Router
+    Router --> OA & CA & GA
+    Router --> Admin
+    Router --> WebUI
+    OA --> Auth --> Pool --> DS
+    CA --> Auth
+    GA --> Auth
+    DS --> Pow
+    DS --> Tool --> Format
+    DS --> Upstream
+    Upstream --> DS
 ```
 
 - **Backend**: Go (`cmd/ds2api/`, `api/`, `internal/`), no Python runtime
 - **Frontend**: React admin panel (`webui/`), served as static build at runtime
 - **Deployment**: local run, Docker, Vercel serverless, Linux systemd
+
+### 3.0 Architecture Changes (vs older releases)
+
+- **Unified routing core**: all protocol entries are now centralized through `internal/server/router.go`, with OpenAI / Claude / Gemini / Admin / WebUI routes registered in one tree to avoid multi-entry drift.
+- **Cleaner adapter boundaries**: `internal/adapter/{openai,claude,gemini}` focuses on protocol shapes, error contracts, and streaming semantics, while upstream DeepSeek invocation stays shared.
+- **Tool-calling parity across runtimes**: Go (`internal/util`) and Vercel Node (`internal/js/helpers/stream-tool-sieve`) follow aligned parsing/anti-leak semantics across JSON / XML / invoke / text-kv inputs.
+- **Config/runtime separation**: static config (`config`) and runtime policy (`settings`) are managed independently via Admin APIs, enabling hot updates and password rotation with JWT invalidation.
+- **Streaming behavior upgrade**: `/v1/responses` and `/v1/chat/completions` now share a more consistent incremental tool-call emission strategy across SDK ecosystems.
+- **Improved operability**: `/healthz`, `/readyz`, `/admin/version`, and `/admin/dev/captures` form a tighter post-deploy diagnostics loop.
 
 ## Key Capabilities
 
@@ -144,7 +159,7 @@ Recommended per deployment mode:
 
 ### Option 1: Local Run
 
-**Prerequisites**: Go 1.24+, Node.js 20+ (only if building WebUI locally)
+**Prerequisites**: Go 1.26+, Node.js 20+ (only if building WebUI locally)
 
 ```bash
 # 1. Clone
@@ -406,6 +421,7 @@ Response fields include:
 
 ```text
 ds2api/
+├── app/                    # Unified handler entry (shared by Vercel/local)
 ├── cmd/
 │   ├── ds2api/              # Local / container entrypoint
 │   └── ds2api-tests/        # End-to-end testsuite entrypoint

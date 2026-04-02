@@ -24,7 +24,7 @@
 
 | 依赖 | 最低版本 | 说明 |
 | --- | --- | --- |
-| Go | 1.24+ | 编译后端 |
+| Go | 1.26+ | 编译后端 |
 | Node.js | 20+ | 仅在需要本地构建 WebUI 时 |
 | npm | 随 Node.js 提供 | 安装 WebUI 依赖 |
 
@@ -401,7 +401,7 @@ cp config.example.json config.json
 docker pull ghcr.io/cjackhwang/ds2api:latest
 
 # 指定版本（示例）
-docker pull ghcr.io/cjackhwang/ds2api:v2.1.2
+docker pull ghcr.io/cjackhwang/ds2api:v3.0.0
 ```
 
 ---

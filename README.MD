@@ -163,7 +163,7 @@ cp config.example.json config.json
 
 ### 方式一：本地运行
 
-**前置要求**：Go 1.26+，Node.js 20+（仅在需要构建 WebUI 时）
+**前置要求**：Go 1.26+，Node.js `20.19+` 或 `22.12+`（仅在需要构建 WebUI 时）
 
 ```bash
 # 1. 克隆仓库

@@ -163,7 +163,7 @@ Recommended per deployment mode:
 
 ### Option 1: Local Run
 
-**Prerequisites**: Go 1.26+, Node.js 20+ (only if building WebUI locally)
+**Prerequisites**: Go 1.26+, Node.js `20.19+` or `22.12+` (only if building WebUI locally)
 
 ```bash
 # 1. Clone

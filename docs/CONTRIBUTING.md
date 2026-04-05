@@ -9,7 +9,7 @@
 ### 前置要求
 
 - Go 1.26+
-- Node.js 20+（WebUI 开发时）
+- Node.js `20.19+` 或 `22.12+`（WebUI 开发时）
 - npm（随 Node.js 提供）
 
 ### 后端开发

@@ -25,7 +25,7 @@ This guide covers all deployment methods for the current Go-based codebase.
 | Dependency | Minimum Version | Notes |
 | --- | --- | --- |
 | Go | 1.26+ | Build backend |
-| Node.js | 20+ | Only needed to build WebUI locally |
+| Node.js | `20.19+` or `22.12+` | Only needed to build WebUI locally |
 | npm | Bundled with Node.js | Install WebUI dependencies |
 
 Config source (choose one):

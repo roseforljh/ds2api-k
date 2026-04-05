@@ -230,3 +230,127 @@ func TestCombineCaptureBodiesPreservesOrderAndSeparators(t *testing.T) {
 		t.Fatalf("unexpected combined body: %q", string(got))
 	}
 }
+
+func TestQueryRawSampleCapturesGroupsBySessionAndMatchesQuestion(t *testing.T) {
+	devcapture.Global().Clear()
+	defer devcapture.Global().Clear()
+
+	recordCapturedResponse(
+		"deepseek_completion",
+		"https://chat.deepseek.com/api/v0/chat/completion",
+		http.StatusOK,
+		map[string]any{
+			"chat_session_id": "session-query-1",
+			"prompt":          "用户问题：广州天气怎么样？",
+		},
+		"data: {\"v\":\"先看天气\"}\n\n",
+	)
+	recordCapturedResponse(
+		"deepseek_continue",
+		"https://chat.deepseek.com/api/v0/chat/continue",
+		http.StatusOK,
+		map[string]any{
+			"chat_session_id": "session-query-1",
+			"message_id":      2,
+		},
+		"data: {\"v\":\"再补充一点\"}\n\n",
+	)
+
+	h := &Handler{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/dev/raw-samples/query?q=广州天气", nil)
+	h.queryRawSampleCaptures(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	items, _ := out["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d body=%s", len(items), rec.Body.String())
+	}
+	item, _ := items[0].(map[string]any)
+	if item["chain_key"] != "session:session-query-1" {
+		t.Fatalf("unexpected chain key: %#v", item["chain_key"])
+	}
+	if int(item["round_count"].(float64)) != 2 {
+		t.Fatalf("expected 2 rounds, got %#v", item["round_count"])
+	}
+	reqPreview, _ := item["request_preview"].(string)
+	if !strings.Contains(reqPreview, "广州天气") {
+		t.Fatalf("expected request preview to contain query, got %q", reqPreview)
+	}
+}
+
+func TestSaveRawSampleFromCapturesPersistsSelectedChain(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("DS2API_RAW_STREAM_SAMPLE_ROOT", root)
+	devcapture.Global().Clear()
+	defer devcapture.Global().Clear()
+
+	recordCapturedResponse(
+		"deepseek_completion",
+		"https://chat.deepseek.com/api/v0/chat/completion",
+		http.StatusOK,
+		map[string]any{
+			"chat_session_id": "session-save-1",
+			"prompt":          "请回答深圳天气",
+		},
+		"data: {\"v\":\"第一段\"}\n\n",
+	)
+	recordCapturedResponse(
+		"deepseek_continue",
+		"https://chat.deepseek.com/api/v0/chat/continue",
+		http.StatusOK,
+		map[string]any{
+			"chat_session_id": "session-save-1",
+			"message_id":      2,
+		},
+		"data: {\"v\":\"第二段\"}\n\n",
+	)
+
+	h := &Handler{}
+	rec := httptest.NewRecorder()
+	reqBody := `{"query":"深圳天气","sample_id":"saved-from-memory"}`
+	req := httptest.NewRequest(http.MethodPost, "/admin/dev/raw-samples/save", strings.NewReader(reqBody))
+	h.saveRawSampleFromCaptures(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if out["sample_id"] != "saved-from-memory" {
+		t.Fatalf("unexpected sample id: %#v", out["sample_id"])
+	}
+	if int(out["round_count"].(float64)) != 2 {
+		t.Fatalf("expected round_count=2, got %#v", out["round_count"])
+	}
+
+	sampleDir := filepath.Join(root, "saved-from-memory")
+	upstreamBytes, err := os.ReadFile(filepath.Join(sampleDir, "upstream.stream.sse"))
+	if err != nil {
+		t.Fatalf("read upstream: %v", err)
+	}
+	upstream := string(upstreamBytes)
+	if !strings.Contains(upstream, "第一段") || !strings.Contains(upstream, "第二段") {
+		t.Fatalf("expected combined upstream, got %q", upstream)
+	}
+	metaBytes, err := os.ReadFile(filepath.Join(sampleDir, "meta.json"))
+	if err != nil {
+		t.Fatalf("read meta: %v", err)
+	}
+	var meta map[string]any
+	if err := json.Unmarshal(metaBytes, &meta); err != nil {
+		t.Fatalf("decode meta: %v", err)
+	}
+	reqMeta, _ := meta["request"].(map[string]any)
+	if fieldString(reqMeta, "chat_session_id") != "session-save-1" {
+		t.Fatalf("expected request to come from selected chain, got %#v", meta["request"])
+	}
+}

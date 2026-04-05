@@ -36,6 +36,8 @@ func RegisterRoutes(r chi.Router, h *Handler) {
 		pr.Post("/import", h.batchImport)
 		pr.Post("/test", h.testAPI)
 		pr.Post("/dev/raw-samples/capture", h.captureRawSample)
+		pr.Get("/dev/raw-samples/query", h.queryRawSampleCaptures)
+		pr.Post("/dev/raw-samples/save", h.saveRawSampleFromCaptures)
 		pr.Post("/vercel/sync", h.syncVercel)
 		pr.Get("/vercel/status", h.vercelStatus)
 		pr.Post("/vercel/status", h.vercelStatus)

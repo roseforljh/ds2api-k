@@ -115,7 +115,7 @@
         "addAccount": "Add account",
         "testingAllAccounts": "Refreshing tokens for all accounts...",
         "sessionActive": "Session active",
-        "reauthRequired": "Re-auth required",
+        "reauthRequired": "Retest status required",
         "runtimeStatusUnknown": "Will be determined after sync",
         "testStatusFailed": "Last test failed",
         "noAccounts": "No accounts found.",

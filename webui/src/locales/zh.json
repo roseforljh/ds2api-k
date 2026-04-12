@@ -215,6 +215,7 @@
         "testSuccess": "{account}: Token 刷新成功 ({time}ms)",
         "config": "配置",
         "modelLabel": "模型",
+        "modelPickerHint": "使用下拉列表选择模型，长列表会自动滚动。",
         "streamMode": "流式模式",
         "accountSelector": "选择账号",
         "autoRandom": "🤖 自动 / 随机",

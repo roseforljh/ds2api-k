@@ -215,6 +215,7 @@
         "testSuccess": "{account}: Token refresh successful ({time}ms)",
         "config": "Configuration",
         "modelLabel": "Model",
+        "modelPickerHint": "Use the dropdown to pick a model. The list scrolls automatically.",
         "streamMode": "Streaming",
         "accountSelector": "Account",
         "autoRandom": "🤖 Auto / Random",

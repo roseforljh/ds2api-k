@@ -82,7 +82,7 @@ export default function ApiTesterContainer({ config, onMessage, authFetch }) {
     })
 
     return (
-        <div className={clsx('flex flex-col lg:grid lg:grid-cols-12 gap-6 h-[calc(100vh-140px)]')}>
+        <div className={clsx('flex flex-col lg:grid lg:grid-cols-12 gap-6 h-[calc(100vh-140px)] min-h-0')}>
             <ConfigPanel
                 t={t}
                 configExpanded={configExpanded}

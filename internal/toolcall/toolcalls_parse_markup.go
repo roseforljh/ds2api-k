@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"html"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -12,6 +13,20 @@ var xmlAttrPattern = regexp.MustCompile(`(?is)\b([a-z0-9_:-]+)\s*=\s*("([^"]*)"|
 var xmlToolCallsClosePattern = regexp.MustCompile(`(?is)</tool_calls>`)
 var xmlInvokeStartPattern = regexp.MustCompile(`(?is)<invoke\b[^>]*\bname\s*=\s*("([^"]*)"|'([^']*)')`)
 var cdataBRSeparatorPattern = regexp.MustCompile(`(?i)<br\s*/?>`)
+var unicodeEscapePattern = regexp.MustCompile(`\\u([0-9a-fA-F]{4})`)
+
+func unescapeUnicode(s string) string {
+	if !strings.Contains(s, `\u`) {
+		return s
+	}
+	return unicodeEscapePattern.ReplaceAllStringFunc(s, func(match string) string {
+		r, err := strconv.ParseInt(match[2:], 16, 32)
+		if err != nil {
+			return match
+		}
+		return string(rune(r))
+	})
+}
 
 func parseXMLToolCalls(text string) []ParsedToolCall {
 	wrappers := findXMLElementBlocks(text, "tool_calls")
@@ -303,9 +318,9 @@ func parseInvokeParameterValue(paramName, raw string) any {
 		if parsed, ok := parseStructuredCDATAParameterValue(paramName, value); ok {
 			return parsed
 		}
-		return value
+		return unescapeUnicode(value)
 	}
-	decoded := html.UnescapeString(extractRawTagValue(trimmed))
+	decoded := unescapeUnicode(html.UnescapeString(extractRawTagValue(trimmed)))
 	if strings.Contains(decoded, "<") && strings.Contains(decoded, ">") {
 		if parsedValue, ok := parseXMLFragmentValue(decoded); ok {
 			switch v := parsedValue.(type) {

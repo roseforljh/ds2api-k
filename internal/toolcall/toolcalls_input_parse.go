@@ -12,7 +12,7 @@ func parseToolCallInput(v any) map[string]any {
 	case nil:
 		return map[string]any{}
 	case map[string]any:
-		return x
+		return unescapeUnicodeInMap(x)
 	case string:
 		raw := strings.TrimSpace(html.UnescapeString(x))
 		if raw == "" {
@@ -21,14 +21,14 @@ func parseToolCallInput(v any) map[string]any {
 		var parsed map[string]any
 		if err := json.Unmarshal([]byte(raw), &parsed); err == nil && parsed != nil {
 			repairPathLikeControlChars(parsed)
-			return parsed
+			return unescapeUnicodeInMap(parsed)
 		}
 		// Try to repair invalid backslashes (common in Windows paths output by models)
 		repaired := repairInvalidJSONBackslashes(raw)
 		if repaired != raw {
 			if err := json.Unmarshal([]byte(repaired), &parsed); err == nil && parsed != nil {
 				repairPathLikeControlChars(parsed)
-				return parsed
+				return unescapeUnicodeInMap(parsed)
 			}
 		}
 		// Try to repair loose JSON in string argument as well
@@ -36,10 +36,10 @@ func parseToolCallInput(v any) map[string]any {
 		if repairedLoose != raw {
 			if err := json.Unmarshal([]byte(repairedLoose), &parsed); err == nil && parsed != nil {
 				repairPathLikeControlChars(parsed)
-				return parsed
+				return unescapeUnicodeInMap(parsed)
 			}
 		}
-		return map[string]any{"_raw": raw}
+		return map[string]any{"_raw": unescapeUnicode(raw)}
 	default:
 		b, err := json.Marshal(x)
 		if err != nil {
@@ -47,10 +47,30 @@ func parseToolCallInput(v any) map[string]any {
 		}
 		var parsed map[string]any
 		if err := json.Unmarshal(b, &parsed); err == nil && parsed != nil {
-			return parsed
+			return unescapeUnicodeInMap(parsed)
 		}
 		return map[string]any{}
 	}
+}
+
+func unescapeUnicodeInMap(m map[string]any) map[string]any {
+	for k, v := range m {
+		switch vv := v.(type) {
+		case string:
+			m[k] = unescapeUnicode(vv)
+		case map[string]any:
+			m[k] = unescapeUnicodeInMap(vv)
+		case []any:
+			for i, item := range vv {
+				if strItem, ok := item.(string); ok {
+					vv[i] = unescapeUnicode(strItem)
+				} else if mapItem, ok := item.(map[string]any); ok {
+					vv[i] = unescapeUnicodeInMap(mapItem)
+				}
+			}
+		}
+	}
+	return m
 }
 
 func repairPathLikeControlChars(m map[string]any) {

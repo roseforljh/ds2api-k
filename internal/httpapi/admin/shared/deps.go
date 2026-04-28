@@ -37,6 +37,7 @@ type ConfigStore interface {
 	HistorySplitTriggerAfterTurns() int
 	CurrentInputFileEnabled() bool
 	CurrentInputFileMinChars() int
+	CurrentInputToolPromptFileEnabled() bool
 	ThinkingInjectionEnabled() bool
 	ThinkingInjectionPrompt() string
 	CompatStripReferenceMarkers() bool

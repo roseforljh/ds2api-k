@@ -6,13 +6,39 @@ import (
 )
 
 func TestFormatOpenAIToolCalls(t *testing.T) {
-	formatted := FormatOpenAIToolCalls([]ParsedToolCall{{Name: "search", Input: map[string]any{"q": "x"}}})
+	formatted := FormatOpenAIToolCalls([]ParsedToolCall{{Name: "search", Input: map[string]any{"q": "x"}}}, nil)
 	if len(formatted) != 1 {
 		t.Fatalf("expected 1, got %d", len(formatted))
 	}
 	fn, _ := formatted[0]["function"].(map[string]any)
 	if fn["name"] != "search" {
 		t.Fatalf("unexpected function name: %#v", fn)
+	}
+}
+
+func TestFormatOpenAIToolCallsParsesObjectSchemaStringArguments(t *testing.T) {
+	tools := []any{
+		map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name": "submit_work",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"files": map[string]any{"type": "object"},
+					},
+				},
+			},
+		},
+	}
+	formatted := FormatOpenAIToolCalls([]ParsedToolCall{{
+		Name:  "submit_work",
+		Input: map[string]any{"files": `{"hello.txt": "world"}`},
+	}}, tools)
+	fn, _ := formatted[0]["function"].(map[string]any)
+	args := fn["arguments"].(string)
+	if args != `{"files":{"hello.txt":"world"}}` {
+		t.Fatalf("expected object-valued string argument to be parsed, got %s", args)
 	}
 }
 

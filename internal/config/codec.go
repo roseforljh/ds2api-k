@@ -48,7 +48,7 @@ func (c Config) MarshalJSON() ([]byte, error) {
 	if c.HistorySplit.Enabled != nil || c.HistorySplit.TriggerAfterTurns != nil {
 		m["history_split"] = c.HistorySplit
 	}
-	if c.CurrentInputFile.Enabled != nil || c.CurrentInputFile.MinChars != 0 {
+	if c.CurrentInputFile.Enabled != nil || c.CurrentInputFile.MinChars != 0 || c.CurrentInputFile.ToolPromptFile != nil {
 		m["current_input_file"] = c.CurrentInputFile
 	}
 	if c.ThinkingInjection.Enabled != nil || strings.TrimSpace(c.ThinkingInjection.Prompt) != "" {
@@ -172,8 +172,9 @@ func (c Config) Clone() Config {
 			TriggerAfterTurns: cloneIntPtr(c.HistorySplit.TriggerAfterTurns),
 		},
 		CurrentInputFile: CurrentInputFileConfig{
-			Enabled:  cloneBoolPtr(c.CurrentInputFile.Enabled),
-			MinChars: c.CurrentInputFile.MinChars,
+			Enabled:        cloneBoolPtr(c.CurrentInputFile.Enabled),
+			MinChars:       c.CurrentInputFile.MinChars,
+			ToolPromptFile: cloneBoolPtr(c.CurrentInputFile.ToolPromptFile),
 		},
 		ThinkingInjection: ThinkingInjectionConfig{
 			Enabled: cloneBoolPtr(c.ThinkingInjection.Enabled),

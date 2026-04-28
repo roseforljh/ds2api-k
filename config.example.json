@@ -52,7 +52,8 @@
   },
   "current_input_file": {
     "enabled": true,
-    "min_chars": 0
+    "min_chars": 0,
+    "tool_prompt_file": true
   },
   "thinking_injection": {
     "enabled": true,

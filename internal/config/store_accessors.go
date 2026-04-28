@@ -186,6 +186,15 @@ func (s *Store) CurrentInputFileMinChars() int {
 	return s.cfg.CurrentInputFile.MinChars
 }
 
+func (s *Store) CurrentInputToolPromptFileEnabled() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.cfg.CurrentInputFile.ToolPromptFile == nil {
+		return true
+	}
+	return *s.cfg.CurrentInputFile.ToolPromptFile
+}
+
 func (s *Store) ThinkingInjectionEnabled() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

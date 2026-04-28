@@ -13,6 +13,7 @@ func TestBuildResponseObjectKeepsFencedToolPayloadAsText(t *testing.T) {
 		"",
 		"```json\n{\"tool_calls\":[{\"name\":\"search\",\"input\":{\"q\":\"golang\"}}]}\n```",
 		[]string{"search"},
+		nil,
 	)
 
 	outputText, _ := obj["output_text"].(string)
@@ -41,6 +42,7 @@ func TestBuildResponseObjectReasoningOnlyFallsBackToOutputText(t *testing.T) {
 		"prompt",
 		"internal thinking content",
 		"",
+		nil,
 		nil,
 	)
 
@@ -75,6 +77,7 @@ func TestBuildResponseObjectPromotesToolCallFromThinkingWhenTextEmpty(t *testing
 		`<tool_calls><invoke name="search"><parameter name="q">from-thinking</parameter></invoke></tool_calls>`,
 		"",
 		[]string{"search"},
+		nil,
 	)
 
 	output, _ := obj["output"].([]any)

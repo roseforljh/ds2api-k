@@ -64,6 +64,9 @@ func TestGetSettingsIncludesCurrentInputFileDefaults(t *testing.T) {
 	if got := intFrom(currentInputFile["min_chars"]); got != 0 {
 		t.Fatalf("expected current_input_file.min_chars=0, got %d body=%v", got, body)
 	}
+	if got := boolFrom(currentInputFile["tool_prompt_file"]); !got {
+		t.Fatalf("expected current_input_file.tool_prompt_file=true, body=%v", body)
+	}
 	thinkingInjection, _ := body["thinking_injection"].(map[string]any)
 	if got := boolFrom(thinkingInjection["enabled"]); !got {
 		t.Fatalf("expected thinking_injection.enabled=true, body=%v", body)
@@ -187,8 +190,9 @@ func TestUpdateSettingsCurrentInputFile(t *testing.T) {
 	h := newAdminTestHandler(t, `{"keys":["k1"],"history_split":{"enabled":true,"trigger_after_turns":2}}`)
 	payload := map[string]any{
 		"current_input_file": map[string]any{
-			"enabled":   true,
-			"min_chars": 12345,
+			"enabled":          true,
+			"min_chars":        12345,
+			"tool_prompt_file": true,
 		},
 	}
 	b, _ := json.Marshal(payload)
@@ -204,6 +208,9 @@ func TestUpdateSettingsCurrentInputFile(t *testing.T) {
 	}
 	if snap.CurrentInputFile.MinChars != 12345 {
 		t.Fatalf("expected current_input_file.min_chars=12345, got %#v", snap.CurrentInputFile)
+	}
+	if snap.CurrentInputFile.ToolPromptFile == nil || !*snap.CurrentInputFile.ToolPromptFile {
+		t.Fatalf("expected current_input_file.tool_prompt_file=true, got %#v", snap.CurrentInputFile)
 	}
 	if !h.Store.CurrentInputFileEnabled() {
 		t.Fatal("expected current input file accessor to stay enabled")
@@ -237,7 +244,7 @@ func TestUpdateSettingsCurrentInputFilePartialUpdatePreservesEnabled(t *testing.
 }
 
 func TestUpdateSettingsCurrentInputFilePartialUpdatePreservesMinChars(t *testing.T) {
-	h := newAdminTestHandler(t, `{"keys":["k1"],"current_input_file":{"enabled":false,"min_chars":777}}`)
+	h := newAdminTestHandler(t, `{"keys":["k1"],"current_input_file":{"enabled":false,"min_chars":777,"tool_prompt_file":true}}`)
 	payload := map[string]any{
 		"current_input_file": map[string]any{
 			"enabled": true,
@@ -256,6 +263,9 @@ func TestUpdateSettingsCurrentInputFilePartialUpdatePreservesMinChars(t *testing
 	}
 	if snap.CurrentInputFile.MinChars != 777 {
 		t.Fatalf("expected current_input_file.min_chars to remain 777, got %#v", snap.CurrentInputFile)
+	}
+	if snap.CurrentInputFile.ToolPromptFile == nil || !*snap.CurrentInputFile.ToolPromptFile {
+		t.Fatalf("expected current_input_file.tool_prompt_file to remain true, got %#v", snap.CurrentInputFile)
 	}
 }
 

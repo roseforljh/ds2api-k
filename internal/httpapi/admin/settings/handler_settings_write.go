@@ -30,6 +30,7 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	currentInputEnabledSet := hasNestedSettingsKey(req, "current_input_file", "enabled")
 	currentInputMinCharsSet := hasNestedSettingsKey(req, "current_input_file", "min_chars")
+	currentInputToolPromptFileSet := hasNestedSettingsKey(req, "current_input_file", "tool_prompt_file")
 	thinkingInjectionEnabledSet := hasNestedSettingsKey(req, "thinking_injection", "enabled")
 	thinkingInjectionPromptSet := hasNestedSettingsKey(req, "thinking_injection", "prompt")
 
@@ -77,6 +78,9 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 			}
 			if currentInputMinCharsSet {
 				c.CurrentInputFile.MinChars = currentInputCfg.MinChars
+			}
+			if currentInputToolPromptFileSet {
+				c.CurrentInputFile.ToolPromptFile = currentInputCfg.ToolPromptFile
 			}
 		}
 		if thinkingInjCfg != nil {

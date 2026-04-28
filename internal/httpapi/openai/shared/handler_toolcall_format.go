@@ -70,10 +70,11 @@ func FilterIncrementalToolCallDeltasByAllowed(deltas []toolstream.ToolCallDelta,
 	return out
 }
 
-func FormatFinalStreamToolCallsWithStableIDs(calls []toolcall.ParsedToolCall, ids map[int]string) []map[string]any {
+func FormatFinalStreamToolCallsWithStableIDs(calls []toolcall.ParsedToolCall, ids map[int]string, toolsRaw any) []map[string]any {
 	if len(calls) == 0 {
 		return nil
 	}
+	calls = toolcall.NormalizeParsedToolCallsForSchemas(calls, toolsRaw)
 	out := make([]map[string]any, 0, len(calls))
 	for i, c := range calls {
 		callID := ""

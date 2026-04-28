@@ -164,6 +164,10 @@ func parseSettingsUpdateRequest(req map[string]any) (*config.AdminConfig, *confi
 			}
 			cfg.MinChars = n
 		}
+		if v, exists := raw["tool_prompt_file"]; exists {
+			b := boolFrom(v)
+			cfg.ToolPromptFile = &b
+		}
 		if err := config.ValidateCurrentInputFileConfig(*cfg); err != nil {
 			return nil, nil, nil, nil, nil, nil, nil, nil, nil, err
 		}

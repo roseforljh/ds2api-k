@@ -73,6 +73,40 @@ func SplitOpenAIHistoryMessages(messages []any, triggerAfterTurns int) ([]any, [
 }
 
 func prependUniqueRefFileID(existing []string, fileID string) []string {
+	return prependUniqueRefFileIDs(existing, fileID)
+}
+
+func prependUniqueRefFileIDs(existing []string, fileIDs ...string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(existing)+len(fileIDs))
+	for _, id := range fileIDs {
+		trimmed := strings.TrimSpace(id)
+		if trimmed == "" {
+			continue
+		}
+		key := strings.ToLower(trimmed)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, trimmed)
+	}
+	for _, id := range existing {
+		trimmed := strings.TrimSpace(id)
+		if trimmed == "" {
+			continue
+		}
+		key := strings.ToLower(trimmed)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, trimmed)
+	}
+	return out
+}
+
+func legacyPrependUniqueRefFileID(existing []string, fileID string) []string {
 	fileID = strings.TrimSpace(fileID)
 	if fileID == "" {
 		return existing

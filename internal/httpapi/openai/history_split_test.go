@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -60,12 +61,12 @@ func (streamStatusManagedAuthStub) DetermineCaller(_ *http.Request) (*auth.Reque
 
 func (streamStatusManagedAuthStub) Release(_ *auth.RequestAuth) {}
 
-func TestBuildOpenAICurrentInputContextTranscriptUsesInjectedFileWrapper(t *testing.T) {
+func TestBuildOpenAICurrentInputContextTranscriptUsesNormalFileContent(t *testing.T) {
 	_, historyMessages := splitOpenAIHistoryMessages(historySplitTestMessages(), 1)
 	transcript := buildOpenAICurrentInputContextTranscript(historyMessages)
 
-	if !strings.HasPrefix(transcript, "[file content end]\n\n") {
-		t.Fatalf("expected injected file wrapper prefix, got %q", transcript)
+	if strings.Contains(transcript, "[file content end]") || strings.Contains(transcript, "[file content begin]") || strings.Contains(transcript, "[file name]:") {
+		t.Fatalf("expected normal file content without DeepSeek file-boundary tags, got %q", transcript)
 	}
 	if !strings.Contains(transcript, "<｜begin▁of▁sentence｜>") {
 		t.Fatalf("expected serialized conversation markers, got %q", transcript)
@@ -79,8 +80,21 @@ func TestBuildOpenAICurrentInputContextTranscriptUsesInjectedFileWrapper(t *test
 	if !strings.Contains(transcript, "<|DSML|tool_calls>") {
 		t.Fatalf("expected tool calls preserved, got %q", transcript)
 	}
-	if !strings.HasSuffix(transcript, "\n[file name]: IGNORE\n[file content begin]\n") {
-		t.Fatalf("expected injected file wrapper suffix, got %q", transcript)
+}
+
+func TestBuildOpenAIToolPromptFileTranscriptUsesNormalSystemContent(t *testing.T) {
+	transcript := promptcompat.BuildOpenAIToolPromptFileTranscript("You have access to these tools:\n\nTool: search")
+	for _, want := range []string{
+		"<｜begin▁of▁sentence｜><｜System｜>",
+		"You have access to these tools:",
+		"<｜end▁of▁instructions｜>",
+	} {
+		if !strings.Contains(transcript, want) {
+			t.Fatalf("expected tool prompt transcript to contain %q, got %q", want, transcript)
+		}
+	}
+	if strings.Contains(transcript, "[file content end]") || strings.Contains(transcript, "[file content begin]") || strings.Contains(transcript, "[file name]:") || strings.Contains(transcript, "00_AGENT_TOOLS") || strings.Contains(transcript, "TOOL_PROMPT") {
+		t.Fatalf("expected normal tool prompt file content without file-boundary tags or upload names, got %q", transcript)
 	}
 }
 
@@ -274,12 +288,15 @@ func TestApplyCurrentInputFileUploadsFirstTurnWithInjectedWrapper(t *testing.T) 
 		t.Fatalf("expected 1 current input upload, got %d", len(ds.uploadCalls))
 	}
 	upload := ds.uploadCalls[0]
-	if upload.Filename != "IGNORE.txt" {
+	if upload.Filename != "HISTORY.txt" {
 		t.Fatalf("unexpected upload filename: %q", upload.Filename)
 	}
 	uploadedText := string(upload.Data)
-	if !strings.HasPrefix(uploadedText, "[file content end]\n\n") {
-		t.Fatalf("expected injected file wrapper prefix, got %q", uploadedText)
+	if !bytes.HasPrefix(upload.Data, []byte{0xEF, 0xBB, 0xBF}) {
+		t.Fatalf("expected UTF-8 BOM prefix on generated context upload, got % x", upload.Data[:min(3, len(upload.Data))])
+	}
+	if strings.Contains(uploadedText, "[file content end]") || strings.Contains(uploadedText, "[file content begin]") || strings.Contains(uploadedText, "[file name]:") {
+		t.Fatalf("expected normal current input file content without file-boundary tags, got %q", uploadedText)
 	}
 	if !strings.Contains(uploadedText, "<｜begin▁of▁sentence｜><｜User｜>first turn content that is long enough") {
 		t.Fatalf("expected serialized current user turn markers, got %q", uploadedText)
@@ -287,13 +304,10 @@ func TestApplyCurrentInputFileUploadsFirstTurnWithInjectedWrapper(t *testing.T) 
 	if !strings.Contains(uploadedText, promptcompat.ThinkingInjectionMarker) {
 		t.Fatalf("expected thinking injection in current input file, got %q", uploadedText)
 	}
-	if !strings.HasSuffix(uploadedText, "\n[file name]: IGNORE\n[file content begin]\n") {
-		t.Fatalf("expected injected file wrapper suffix, got %q", uploadedText)
-	}
 	if strings.Contains(out.FinalPrompt, "first turn content that is long enough") {
 		t.Fatalf("expected current input text to be replaced in live prompt, got %s", out.FinalPrompt)
 	}
-	if strings.Contains(out.FinalPrompt, "CURRENT_USER_INPUT.txt") || strings.Contains(out.FinalPrompt, "IGNORE.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
+	if strings.Contains(out.FinalPrompt, "CURRENT_USER_INPUT.txt") || strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
 		t.Fatalf("expected live prompt not to instruct file reads, got %s", out.FinalPrompt)
 	}
 	if !strings.Contains(out.FinalPrompt, "Answer the latest user request directly.") {
@@ -335,8 +349,8 @@ func TestApplyCurrentInputFileUploadsFullContextFile(t *testing.T) {
 		t.Fatalf("expected one current input upload, got %d", len(ds.uploadCalls))
 	}
 	upload := ds.uploadCalls[0]
-	if upload.Filename != "IGNORE.txt" {
-		t.Fatalf("expected IGNORE.txt upload, got %q", upload.Filename)
+	if upload.Filename != "HISTORY.txt" {
+		t.Fatalf("expected HISTORY.txt upload, got %q", upload.Filename)
 	}
 	uploadedText := string(upload.Data)
 	for _, want := range []string{"system instructions", "first user turn", "hidden reasoning", "tool result", "latest user turn", promptcompat.ThinkingInjectionMarker} {
@@ -344,11 +358,83 @@ func TestApplyCurrentInputFileUploadsFullContextFile(t *testing.T) {
 			t.Fatalf("expected full context file to contain %q, got %q", want, uploadedText)
 		}
 	}
-	if strings.Contains(out.FinalPrompt, "first user turn") || strings.Contains(out.FinalPrompt, "latest user turn") || strings.Contains(out.FinalPrompt, "CURRENT_USER_INPUT.txt") || strings.Contains(out.FinalPrompt, "IGNORE.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
+	if strings.Contains(out.FinalPrompt, "first user turn") || strings.Contains(out.FinalPrompt, "latest user turn") || strings.Contains(out.FinalPrompt, "CURRENT_USER_INPUT.txt") || strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
 		t.Fatalf("expected live prompt to use only a neutral continuation instruction, got %s", out.FinalPrompt)
 	}
 	if !strings.Contains(out.FinalPrompt, "Answer the latest user request directly.") {
 		t.Fatalf("expected neutral continuation instruction in live prompt, got %s", out.FinalPrompt)
+	}
+}
+
+func TestApplyCurrentInputFileUploadsToolPromptFileWhenEnabled(t *testing.T) {
+	ds := &inlineUploadDSStub{}
+	h := &openAITestSurface{
+		Store: mockOpenAIConfig{
+			wideInput:           true,
+			currentInputEnabled: true,
+			currentInputMin:     0,
+			toolPromptFile:      true,
+		},
+		DS: ds,
+	}
+	req := map[string]any{
+		"model":    "deepseek-v4-flash",
+		"messages": historySplitTestMessages(),
+		"tools": []any{
+			map[string]any{
+				"type": "function",
+				"function": map[string]any{
+					"name":        "search",
+					"description": "Search docs",
+					"parameters": map[string]any{
+						"type": "object",
+					},
+				},
+			},
+		},
+	}
+	stdReq, err := promptcompat.NormalizeOpenAIChatRequest(h.Store, req, "")
+	if err != nil {
+		t.Fatalf("normalize failed: %v", err)
+	}
+
+	out, err := h.applyCurrentInputFile(context.Background(), &auth.RequestAuth{DeepSeekToken: "token"}, stdReq)
+	if err != nil {
+		t.Fatalf("apply current input file failed: %v", err)
+	}
+	if len(ds.uploadCalls) != 2 {
+		t.Fatalf("expected context and tool prompt uploads, got %d", len(ds.uploadCalls))
+	}
+	if ds.uploadCalls[0].Filename != "HISTORY.txt" {
+		t.Fatalf("expected first upload to stay HISTORY.txt, got %q", ds.uploadCalls[0].Filename)
+	}
+	if ds.uploadCalls[1].Filename != "TOOL_PROMPT.txt" {
+		t.Fatalf("expected second upload to use non-context .txt tool filename, got %q", ds.uploadCalls[1].Filename)
+	}
+	toolText := string(ds.uploadCalls[1].Data)
+	if !bytes.HasPrefix(ds.uploadCalls[1].Data, []byte{0xEF, 0xBB, 0xBF}) {
+		t.Fatalf("expected UTF-8 BOM prefix on generated tool prompt upload, got % x", ds.uploadCalls[1].Data[:min(3, len(ds.uploadCalls[1].Data))])
+	}
+	if !strings.Contains(toolText, "You have access to these tools:") || !strings.Contains(toolText, "Tool: search") {
+		t.Fatalf("expected tool prompt upload to contain tool instructions, got %q", toolText)
+	}
+	if strings.Contains(toolText, "[file content end]") || strings.Contains(toolText, "[file content begin]") || strings.Contains(toolText, "[file name]:") || strings.Contains(toolText, "00_AGENT_TOOLS") || strings.Contains(toolText, "TOOL_PROMPT") {
+		t.Fatalf("expected normal tool prompt upload without file-boundary tags or upload names, got %q", toolText)
+	}
+	if strings.Contains(out.FinalPrompt, "You have access to these tools:") {
+		t.Fatalf("expected final prompt not to inline tool prompt, got %s", out.FinalPrompt)
+	}
+	if strings.Contains(out.FinalPrompt, "00_AGENT_TOOLS") || strings.Contains(out.FinalPrompt, "TOOL_PROMPT") || strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
+		t.Fatalf("expected final prompt not to reference concrete tool/context files, got %s", out.FinalPrompt)
+	}
+	if !strings.Contains(out.FinalPrompt, "tool instructions have already been provided") {
+		t.Fatalf("expected final prompt to activate attached tool instructions, got %s", out.FinalPrompt)
+	}
+	if len(out.RefFileIDs) < 2 || out.RefFileIDs[0] != "file-inline-2" || out.RefFileIDs[1] != "file-inline-1" {
+		t.Fatalf("expected tool file before history file in ref ids, got %#v", out.RefFileIDs)
+	}
+	if len(out.ToolNames) != 1 || out.ToolNames[0] != "search" {
+		t.Fatalf("expected tool names to be preserved, got %#v", out.ToolNames)
 	}
 }
 
@@ -411,15 +497,15 @@ func TestChatCompletionsCurrentInputFileUploadsContextAndKeepsNeutralPrompt(t *t
 		t.Fatalf("expected 1 upload call, got %d", len(ds.uploadCalls))
 	}
 	upload := ds.uploadCalls[0]
-	if upload.Filename != "IGNORE.txt" {
+	if upload.Filename != "HISTORY.txt" {
 		t.Fatalf("unexpected upload filename: %q", upload.Filename)
 	}
 	if upload.Purpose != "assistants" {
 		t.Fatalf("unexpected purpose: %q", upload.Purpose)
 	}
 	historyText := string(upload.Data)
-	if !strings.Contains(historyText, "[file content end]") || !strings.Contains(historyText, "[file name]: IGNORE") {
-		t.Fatalf("expected injected IGNORE wrapper, got %s", historyText)
+	if strings.Contains(historyText, "[file content end]") || strings.Contains(historyText, "[file content begin]") || strings.Contains(historyText, "[file name]:") {
+		t.Fatalf("expected normal current input file content without file-boundary tags, got %s", historyText)
 	}
 	if !strings.Contains(historyText, "latest user turn") {
 		t.Fatalf("expected full context to include latest turn, got %s", historyText)

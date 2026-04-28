@@ -17,7 +17,7 @@ const DEFAULT_FORM = {
     responses: { store_ttl_seconds: 900 },
     embeddings: { provider: '' },
     auto_delete: { mode: 'none' },
-    current_input_file: { enabled: true, min_chars: 0 },
+    current_input_file: { enabled: true, min_chars: 0, tool_prompt_file: true },
     thinking_injection: { enabled: true, prompt: '', default_prompt: '' },
     model_aliases_text: '{}',
 }
@@ -75,6 +75,7 @@ function fromServerForm(data) {
         current_input_file: {
             enabled: currentInputFileEnabled,
             min_chars: Number(data.current_input_file?.min_chars ?? 0),
+            tool_prompt_file: Boolean(data.current_input_file?.tool_prompt_file ?? true),
         },
         thinking_injection: {
             enabled: data.thinking_injection?.enabled ?? true,
@@ -104,6 +105,7 @@ function toServerPayload(form) {
         current_input_file: {
             enabled: currentInputFileEnabled,
             min_chars: Number(form.current_input_file?.min_chars ?? 0),
+            tool_prompt_file: Boolean(form.current_input_file?.tool_prompt_file ?? false),
         },
         thinking_injection: {
             enabled: Boolean(form.thinking_injection?.enabled ?? true),

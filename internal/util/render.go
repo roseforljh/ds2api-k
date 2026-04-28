@@ -20,7 +20,7 @@ func BuildOpenAIChatCompletion(completionID, model, finalPrompt, finalThinking, 
 	}
 	if len(detected) > 0 {
 		finishReason = "tool_calls"
-		messageObj["tool_calls"] = toolcall.FormatOpenAIToolCalls(detected)
+		messageObj["tool_calls"] = toolcall.FormatOpenAIToolCalls(detected, nil)
 		messageObj["content"] = nil
 	}
 	promptTokens := EstimateTokens(finalPrompt)

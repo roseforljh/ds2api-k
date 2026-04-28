@@ -42,6 +42,24 @@ export default function CurrentInputFileSection({ t, form, setForm }) {
                     />
                     <p className="text-xs text-muted-foreground">{t('settings.currentInputFileHelp')}</p>
                 </label>
+                <label className="flex items-start gap-3 rounded-lg border border-border bg-background/60 p-4 md:col-span-2">
+                    <input
+                        type="checkbox"
+                        checked={Boolean(form.current_input_file?.tool_prompt_file)}
+                        onChange={(e) => setForm((prev) => ({
+                            ...prev,
+                            current_input_file: {
+                                ...prev.current_input_file,
+                                tool_prompt_file: e.target.checked,
+                            },
+                        }))}
+                        className="mt-1 h-4 w-4 rounded border-border"
+                    />
+                    <div className="space-y-1">
+                        <span className="text-sm font-medium block">{t('settings.currentInputToolPromptFile')}</span>
+                        <span className="text-xs text-muted-foreground block">{t('settings.currentInputToolPromptFileDesc')}</span>
+                    </div>
+                </label>
             </div>
         </div>
     )

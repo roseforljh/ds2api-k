@@ -22,6 +22,7 @@ type responsesStreamRuntime struct {
 	model       string
 	finalPrompt string
 	toolNames   []string
+	toolsRaw    any
 	traceID     string
 	toolChoice  promptcompat.ToolChoicePolicy
 
@@ -72,6 +73,7 @@ func newResponsesStreamRuntime(
 	searchEnabled bool,
 	stripReferenceMarkers bool,
 	toolNames []string,
+	toolsRaw any,
 	bufferToolContent bool,
 	emitEarlyToolDeltas bool,
 	toolChoice promptcompat.ToolChoicePolicy,
@@ -89,6 +91,7 @@ func newResponsesStreamRuntime(
 		searchEnabled:         searchEnabled,
 		stripReferenceMarkers: stripReferenceMarkers,
 		toolNames:             toolNames,
+		toolsRaw:              toolsRaw,
 		bufferToolContent:     bufferToolContent,
 		emitEarlyToolDeltas:   emitEarlyToolDeltas,
 		streamToolCallIDs:     map[int]string{},
@@ -148,6 +151,7 @@ func (s *responsesStreamRuntime) finalize(finishReason string, deferEmptyOutput 
 
 	textParsed := detectAssistantToolCalls(finalText, finalThinking, finalToolDetectionThinking, s.toolNames)
 	detected := textParsed.Calls
+	detected = toolcall.NormalizeParsedToolCallsForSchemas(detected, s.toolsRaw)
 	s.logToolPolicyRejections(textParsed)
 
 	if len(detected) > 0 {

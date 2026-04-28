@@ -25,11 +25,18 @@ func TestStoreCurrentInputFileAccessors(t *testing.T) {
 	if got := store.CurrentInputFileMinChars(); got != 0 {
 		t.Fatalf("default current input file min_chars=%d want=0", got)
 	}
+	if !store.CurrentInputToolPromptFileEnabled() {
+		t.Fatal("expected current input tool prompt file enabled by default")
+	}
 
 	enabled := false
-	store.cfg.CurrentInputFile = CurrentInputFileConfig{Enabled: &enabled, MinChars: 12345}
+	toolPromptFile := false
+	store.cfg.CurrentInputFile = CurrentInputFileConfig{Enabled: &enabled, MinChars: 12345, ToolPromptFile: &toolPromptFile}
 	if store.CurrentInputFileEnabled() {
 		t.Fatal("expected current input file disabled")
+	}
+	if store.CurrentInputToolPromptFileEnabled() {
+		t.Fatal("expected current input tool prompt file disabled")
 	}
 
 	enabled = true

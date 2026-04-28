@@ -53,6 +53,7 @@ func (m mockOpenAIConfig) CurrentInputFileEnabled() bool { return m.currentInput
 func (m mockOpenAIConfig) CurrentInputFileMinChars() int {
 	return m.currentInputMin
 }
+func (m mockOpenAIConfig) CurrentInputToolPromptFileEnabled() bool { return false }
 func (m mockOpenAIConfig) ThinkingInjectionEnabled() bool {
 	if m.thinkingInjection == nil {
 		return false

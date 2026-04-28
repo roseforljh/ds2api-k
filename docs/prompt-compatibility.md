@@ -242,7 +242,7 @@ OpenAI 文件相关实现：
 
 兼容层现在只保留 `current_input_file` 这一种拆分方式；旧的 `history_split` 已废弃，只保留为兼容旧配置的字段，不再参与请求处理。
 
-- `current_input_file` 默认开启；它用于把“完整上下文”合并进隐藏上下文文件。当最新 user turn 的纯文本长度达到 `current_input_file.min_chars`（默认 `0`）时，兼容层会上传一个文件名为 `IGNORE.txt` 的上下文文件，并在 live prompt 中只保留一个中性的 user 消息要求模型直接回答最新请求，不再暴露文件名或要求模型读取本地文件。
+- `current_input_file` 默认开启；它用于把“完整上下文”合并进隐藏上下文文件。当最新 user turn 的纯文本长度达到 `current_input_file.min_chars`（默认 `0`）时，兼容层会上传一个文件名为 `HISTORY.txt` 的上下文文件，并在 live prompt 中只保留一个中性的 user 消息要求模型直接回答最新请求，不再暴露文件名或要求模型读取本地文件。
 - 如果 `current_input_file.enabled=false`，请求会直接透传，不上传任何拆分上下文文件。
 - 旧的 `history_split.enabled` / `history_split.trigger_after_turns` 会被读取进配置对象以保持兼容，但不会触发拆分上传，也不会影响 `current_input_file` 的默认开启。
 
@@ -255,16 +255,11 @@ OpenAI 文件相关实现：
 - 旧历史拆分兼容壳：
   [internal/httpapi/openai/history/history_split.go](../internal/httpapi/openai/history/history_split.go)
 
-当前输入转文件启用并触发时，上传文件的真实文件名是 `IGNORE.txt`，文件内容是完整 `messages` 上下文；它仍会先用 OpenAI 消息标准化和 DeepSeek 角色标记序列化，再包进 `IGNORE` 文件边界里：
+当前输入转文件启用并触发时，上传文件的真实文件名是 `HISTORY.txt`，文件内容是完整 `messages` 上下文；它会先用 OpenAI 消息标准化和 DeepSeek 角色标记序列化，并在文件开头写入 UTF-8 BOM，避免 DeepSeek 文件解析把中文按本地 ANSI 编码误判成乱码；但不再手动插入 `[file content end]` / `[file name]` / `[file content begin]` 这类文件边界，保持为可被网页正常解析/下载的普通文本文件：
 
 ```text
-[uploaded filename]: IGNORE.txt
-[file content end]
-
+[uploaded filename]: HISTORY.txt
 <｜begin▁of▁sentence｜><｜System｜>...<｜User｜>...<｜Assistant｜>...<｜Tool｜>...<｜User｜>...
-
-[file name]: IGNORE
-[file content begin]
 ```
 
 开启后，请求的 live prompt 不再直接内联完整上下文，而是保留一个 user role 的短提示，提示模型基于已提供上下文直接回答最新请求；上传后的 `file_id` 会进入 `ref_file_ids`。
@@ -316,9 +311,10 @@ OpenAI 文件相关实现：
 
 ```json
 {
-  "prompt": "<｜begin▁of▁sentence｜><｜System｜>原 system / developer\n\nYou have access to these tools: ...<｜end▁of▁instructions｜><｜User｜>The current request and prior conversation context have already been provided. Answer the latest user request directly.<｜Assistant｜>",
+  "prompt": "<｜begin▁of▁sentence｜><｜User｜>The current request, prior conversation context, and tool instructions have already been provided. Treat the provided tool instructions as active system-level tool instructions and answer the latest user request directly.<｜Assistant｜>",
   "ref_file_ids": [
-    "file-current-input-ignore",
+    "file-agent-tools",
+    "file-current-input-history",
     "file-systemprompt",
     "file-other-attachment"
   ],
@@ -329,7 +325,7 @@ OpenAI 文件相关实现：
 
 这正是“API 转网页对话纯文本”的核心成果：
 
-- 大部分结构化语义被压进 `prompt`
+- 大部分结构化语义被压进 `prompt`；当 `current_input_file.tool_prompt_file=true` 时，`tools` 生成的长工具说明会改走普通工具提示文件，避免在最终 `prompt` 中暴露大段工具说明
 - 文件保持文件
 - 需要时把完整上下文拆进隐藏上下文文件
 
@@ -344,7 +340,7 @@ OpenAI 文件相关实现：
 - tool result 注入方式变更
 - tool prompt 模板或 tool_choice 约束变更
 - inline 文件上传 / 文件引用收集规则变更
-- current input file 触发条件、上传格式、`IGNORE` 包装格式变更
+- current input file 触发条件、上传格式、`HISTORY` 包装格式变更
 - 旧 `history_split` 兼容逻辑的读取、忽略或退化行为变更
 - completion payload 字段语义变更
 - Claude / Gemini 对这套统一语义的复用关系变更

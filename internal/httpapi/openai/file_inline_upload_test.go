@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -42,7 +43,7 @@ func (m *inlineUploadDSStub) UploadFile(ctx context.Context, _ *auth.RequestAuth
 		return nil, m.uploadErr
 	}
 	return &dsclient.UploadFileResult{
-		ID:       "file-inline-1",
+		ID:       "file-inline-" + strconv.Itoa(len(m.uploadCalls)),
 		Filename: req.Filename,
 		Bytes:    int64(len(req.Data)),
 		Status:   "uploaded",

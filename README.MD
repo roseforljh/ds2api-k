@@ -291,7 +291,7 @@ go run ./cmd/ds2api
 - `runtime`：账号并发、队列与 token 刷新策略，可通过 Admin Settings 热更新。
 - `auto_delete.mode`：请求结束后的远端会话清理策略，支持 `none` / `single` / `all`。
 - `history_split`：旧轮次拆分字段，已废弃并忽略，仅保留兼容旧配置。
-- `current_input_file`：唯一生效的独立拆分策略；默认开启且阈值为 `0`，触发时将完整上下文合并上传为隐藏上下文文件。
+- `current_input_file`：唯一生效的独立拆分策略；默认开启且阈值为 `0`，触发时将完整上下文合并上传为隐藏上下文文件；`tool_prompt_file` 默认开启，会把由 `tools` 生成的大段工具说明额外上传为隐藏工具提示文件，减少最终 `prompt` 暴露的 Claude Code / Agent 工具说明。
 - 如果关闭 `current_input_file`，请求会直接透传，不上传拆分上下文文件。
 - `thinking_injection`：默认开启；在最新 user 消息末尾追加思考增强提示词，提高高强度推理与工具调用前的思考稳定性；`prompt` 留空时使用内置默认提示词。
 

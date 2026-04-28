@@ -7,22 +7,27 @@ import (
 	"strings"
 )
 
-var citationMarkerPattern = regexp.MustCompile(`(?i)\[citation:\s*(\d+)\]`)
+var citationMarkerPattern = regexp.MustCompile(`(?i)\[(citation|reference):\s*(\d+)\]`)
 
 func ReplaceCitationMarkersWithLinks(text string, links map[int]string) string {
 	if strings.TrimSpace(text) == "" || len(links) == 0 {
 		return text
 	}
+	zeroBased := strings.Contains(strings.ToLower(text), "[reference:0]")
 	return citationMarkerPattern.ReplaceAllStringFunc(text, func(match string) string {
 		sub := citationMarkerPattern.FindStringSubmatch(match)
-		if len(sub) < 2 {
+		if len(sub) < 3 {
 			return match
 		}
-		idx, err := strconv.Atoi(strings.TrimSpace(sub[1]))
-		if err != nil || idx <= 0 {
+		idx, err := strconv.Atoi(strings.TrimSpace(sub[2]))
+		if err != nil || idx < 0 {
 			return match
 		}
-		url := strings.TrimSpace(links[idx])
+		lookupIdx := idx
+		if zeroBased {
+			lookupIdx = idx + 1
+		}
+		url := strings.TrimSpace(links[lookupIdx])
 		if url == "" {
 			return match
 		}

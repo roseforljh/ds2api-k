@@ -47,6 +47,7 @@ type ConfigReader interface {
 	HistorySplitTriggerAfterTurns() int
 	CurrentInputFileEnabled() bool
 	CurrentInputFileMinChars() int
+	CurrentInputToolPromptFileEnabled() bool
 	ThinkingInjectionEnabled() bool
 	ThinkingInjectionPrompt() string
 }

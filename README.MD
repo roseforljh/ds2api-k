@@ -214,15 +214,15 @@ cp config.example.json config.json
 #    DS2API_ADMIN_KEY=请替换为强密码
 
 # 3. 启动
-docker-compose up -d
+docker compose up -d --build
 
 # 4. 查看日志
-docker-compose logs -f
+docker compose logs -f
 ```
 
 默认 `docker-compose.yml` 会把宿主机 `6011` 映射到容器内的 `5001`。如果你希望直接对外暴露 `5001`，请设置 `DS2API_HOST_PORT=5001`（或者手动调整 `ports` 配置）。
 
-更新镜像：`docker-compose up -d --build`
+更新镜像：`docker compose up -d --build --build`
 
 #### Zeabur 一键部署（Dockerfile）
 

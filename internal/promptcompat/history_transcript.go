@@ -2,8 +2,32 @@ package promptcompat
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
+
+const (
+	recentProgressMaxMessages  = 12
+	workingStateMaxFiles       = 20
+	latestObservationMaxRunes  = 1200
+	transcriptMessageMaxRunes  = 6000
+	transcriptFilePathMaxRunes = 260
+)
+
+var (
+	transcriptPathPattern = regexp.MustCompile(`(?i)([A-Z]:\\[^\s"'<>|]+|(?:\.{1,2}/)?(?:[\w.-]+[/\\])+[\w.-]+\.(?:go|js|jsx|ts|tsx|json|md|yml|yaml|sh|css|html|txt))`)
+	patchFileLinePattern  = regexp.MustCompile(`(?m)^\*\*\* (?:Update|Add) File:\s*(.+?)\s*$`)
+)
+
+type agentWorkingState struct {
+	ActiveGoal        string
+	Status            string
+	ReadFiles         []string
+	ChangedFiles      []string
+	LatestObservation string
+	NextAction        string
+	RecentMessages    []map[string]any
+}
 
 func BuildOpenAIHistoryTranscript(messages []any) string {
 	return buildOpenAIFileTranscript(messages)
@@ -35,18 +59,298 @@ func buildOpenAIFileTranscript(messages []any) string {
 	if len(normalized) == 0 {
 		return ""
 	}
+	state := buildAgentWorkingState(normalized)
+	return buildActiveAgentResumeTranscript(normalized, state)
+}
+
+func buildActiveAgentResumeTranscript(messages []map[string]any, state agentWorkingState) string {
 	var b strings.Builder
-	b.WriteString("Conversation context for the current request.\n")
-	b.WriteString("Read the messages below in chronological order. Treat the last [User] message as the latest user request, and use any following [Assistant] or [Tool] messages as already completed work/results.\n")
-	for i, msg := range normalized {
-		role := transcriptRoleLabel(asString(msg["role"]))
-		content := strings.TrimSpace(NormalizeOpenAIContentForPrompt(msg["content"]))
-		if content == "" {
-			continue
+	b.WriteString("Active agent session resume package.\n\n")
+	b.WriteString("Read policy:\n")
+	b.WriteString("- Read WORKING STATE first.\n")
+	b.WriteString("- Continue from RECENT PROGRESS, especially the latest Tool result.\n")
+	b.WriteString("- Use ACTIVE USER GOAL as the objective, not as a request to restart.\n")
+	b.WriteString("- Do not restate the whole task, repeat prior analysis, or re-read files listed as already read unless needed.\n")
+	b.WriteString("- Use FULL CHRONOLOGICAL CONTEXT only as reference when WORKING STATE and RECENT PROGRESS are insufficient.\n\n")
+
+	b.WriteString("=== ACTIVE USER GOAL ===\n")
+	if strings.TrimSpace(state.ActiveGoal) == "" {
+		b.WriteString("No explicit user goal found.\n\n")
+	} else {
+		b.WriteString("[User]\n")
+		b.WriteString(state.ActiveGoal)
+		b.WriteString("\n\n")
+	}
+
+	b.WriteString("=== WORKING STATE, READ FIRST ===\n")
+	fmt.Fprintf(&b, "Status:\n- %s\n\n", nonEmptyOr(state.Status, "In progress"))
+	writeStringList(&b, "Already read files:", state.ReadFiles)
+	b.WriteString("\n")
+	writeStringList(&b, "Already changed files:", state.ChangedFiles)
+	b.WriteString("\n")
+	b.WriteString("Latest observation:\n")
+	fmt.Fprintf(&b, "- %s\n\n", nonEmptyOr(state.LatestObservation, "No tool observation yet."))
+	b.WriteString("Next action:\n")
+	fmt.Fprintf(&b, "- %s\n\n", nonEmptyOr(state.NextAction, "Continue from the latest assistant/tool message."))
+
+	b.WriteString("=== RECENT PROGRESS, CONTINUE FROM HERE ===\n")
+	if len(state.RecentMessages) == 0 {
+		b.WriteString("No recent progress found.\n\n")
+	} else {
+		for _, msg := range state.RecentMessages {
+			if formatted := formatTranscriptMessage(0, msg, false); formatted != "" {
+				b.WriteString(formatted)
+				b.WriteString("\n")
+			}
 		}
-		fmt.Fprintf(&b, "\n[%d] [%s]\n%s\n", i+1, role, content)
+		b.WriteString("\n")
+	}
+
+	b.WriteString("=== FULL CHRONOLOGICAL CONTEXT, REFERENCE ONLY ===\n")
+	for i, msg := range messages {
+		if formatted := formatTranscriptMessage(i+1, msg, true); formatted != "" {
+			b.WriteString(formatted)
+		}
 	}
 	return strings.TrimSpace(b.String())
+}
+
+func buildAgentWorkingState(messages []map[string]any) agentWorkingState {
+	userIndex := lastUserMessageIndex(messages)
+	state := agentWorkingState{
+		Status:            inferWorkingStatus(messages),
+		ReadFiles:         extractFilePaths(messages),
+		ChangedFiles:      extractChangedFilePaths(messages),
+		LatestObservation: latestObservation(messages),
+		NextAction:        "Continue from the latest assistant/tool message. Do not repeat completed inspection or re-read already read files unless the latest progress requires it.",
+		RecentMessages:    recentProgressMessages(messages, userIndex),
+	}
+	if userIndex >= 0 {
+		state.ActiveGoal = transcriptMessageContent(messages[userIndex])
+	}
+	return state
+}
+
+func lastUserMessageIndex(messages []map[string]any) int {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if strings.EqualFold(strings.TrimSpace(asString(messages[i]["role"])), "user") && strings.TrimSpace(transcriptMessageContent(messages[i])) != "" {
+			return i
+		}
+	}
+	return -1
+}
+
+func recentProgressMessages(messages []map[string]any, userIndex int) []map[string]any {
+	if len(messages) == 0 {
+		return nil
+	}
+	start := 0
+	if userIndex >= 0 {
+		start = userIndex + 1
+		if start >= len(messages) {
+			start = userIndex
+		}
+	}
+	progress := messages[start:]
+	if len(progress) > recentProgressMaxMessages {
+		progress = progress[len(progress)-recentProgressMaxMessages:]
+	}
+	out := make([]map[string]any, 0, len(progress))
+	for _, msg := range progress {
+		if strings.TrimSpace(transcriptMessageContent(msg)) != "" {
+			out = append(out, msg)
+		}
+	}
+	return out
+}
+
+func inferWorkingStatus(messages []map[string]any) string {
+	if len(messages) == 0 {
+		return "In progress"
+	}
+	last := messages[len(messages)-1]
+	lastRole := strings.ToLower(strings.TrimSpace(asString(last["role"])))
+	lastContent := strings.ToLower(transcriptMessageContent(last))
+	switch {
+	case lastRole == "tool":
+		return "Reviewing latest tool result"
+	case lastRole == "assistant" && strings.Contains(lastContent, "<|dsml|tool_calls>"):
+		return "Waiting for tool result"
+	case containsAnyFold(joinRecentMessageContent(messages, recentProgressMaxMessages), []string{"go test", "npm run build", "lint", "pytest", "测试失败", "test failed", "build failed"}):
+		return "Testing"
+	case containsAnyFold(joinRecentMessageContent(messages, recentProgressMaxMessages), []string{"*** update file:", "*** add file:", "applypatch", "gofmt -w", "edited", "modified"}):
+		return "Editing"
+	default:
+		return "In progress"
+	}
+}
+
+func extractFilePaths(messages []map[string]any) []string {
+	return limitStrings(extractPathsFromText(joinAllMessageContent(messages)), workingStateMaxFiles)
+}
+
+func extractChangedFilePaths(messages []map[string]any) []string {
+	text := joinAllMessageContent(messages)
+	seen := map[string]struct{}{}
+	changed := []string{}
+	for _, match := range patchFileLinePattern.FindAllStringSubmatch(text, -1) {
+		if len(match) < 2 {
+			continue
+		}
+		addUniqueTranscriptPath(&changed, seen, match[1])
+	}
+	for _, line := range strings.Split(text, "\n") {
+		lowerLine := strings.ToLower(line)
+		if !containsAnyFold(lowerLine, []string{"gofmt -w", "applypatch", "*** update file:", "*** add file:"}) {
+			continue
+		}
+		for _, path := range extractPathsFromText(line) {
+			addUniqueTranscriptPath(&changed, seen, path)
+		}
+	}
+	return limitStrings(changed, workingStateMaxFiles)
+}
+
+func latestObservation(messages []map[string]any) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		role := strings.ToLower(strings.TrimSpace(asString(messages[i]["role"])))
+		if role != "tool" {
+			continue
+		}
+		if content := strings.TrimSpace(transcriptMessageContent(messages[i])); content != "" {
+			return truncateMiddle(content, latestObservationMaxRunes)
+		}
+	}
+	for i := len(messages) - 1; i >= 0; i-- {
+		role := strings.ToLower(strings.TrimSpace(asString(messages[i]["role"])))
+		if role != "assistant" {
+			continue
+		}
+		if content := strings.TrimSpace(transcriptMessageContent(messages[i])); content != "" {
+			return truncateMiddle(content, latestObservationMaxRunes)
+		}
+	}
+	return "No tool observation yet."
+}
+
+func formatTranscriptMessage(index int, msg map[string]any, numbered bool) string {
+	role := transcriptRoleLabel(asString(msg["role"]))
+	content := strings.TrimSpace(transcriptMessageContent(msg))
+	if content == "" {
+		return ""
+	}
+	content = truncateMiddle(content, transcriptMessageMaxRunes)
+	if numbered {
+		return fmt.Sprintf("[%d] [%s]\n%s\n", index, role, content)
+	}
+	return fmt.Sprintf("[%s]\n%s\n", role, content)
+}
+
+func transcriptMessageContent(msg map[string]any) string {
+	return strings.TrimSpace(NormalizeOpenAIContentForPrompt(msg["content"]))
+}
+
+func joinAllMessageContent(messages []map[string]any) string {
+	return joinRecentMessageContent(messages, len(messages))
+}
+
+func joinRecentMessageContent(messages []map[string]any, maxMessages int) string {
+	if maxMessages <= 0 || maxMessages > len(messages) {
+		maxMessages = len(messages)
+	}
+	start := len(messages) - maxMessages
+	parts := make([]string, 0, maxMessages)
+	for _, msg := range messages[start:] {
+		if content := transcriptMessageContent(msg); content != "" {
+			parts = append(parts, content)
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+func extractPathsFromText(text string) []string {
+	seen := map[string]struct{}{}
+	out := []string{}
+	for _, match := range transcriptPathPattern.FindAllString(text, -1) {
+		addUniqueTranscriptPath(&out, seen, match)
+	}
+	return out
+}
+
+func addUniqueTranscriptPath(out *[]string, seen map[string]struct{}, raw string) {
+	path := cleanTranscriptPath(raw)
+	if path == "" {
+		return
+	}
+	key := strings.ToLower(path)
+	if _, ok := seen[key]; ok {
+		return
+	}
+	seen[key] = struct{}{}
+	*out = append(*out, path)
+}
+
+func cleanTranscriptPath(path string) string {
+	path = strings.TrimSpace(path)
+	path = strings.Trim(path, "`\"'<>")
+	path = strings.TrimRight(path, ".,;:)]}")
+	if len([]rune(path)) > transcriptFilePathMaxRunes {
+		return ""
+	}
+	if !strings.Contains(path, ".") {
+		return ""
+	}
+	return path
+}
+
+func writeStringList(b *strings.Builder, title string, items []string) {
+	b.WriteString(title)
+	b.WriteString("\n")
+	if len(items) == 0 {
+		b.WriteString("- none\n")
+		return
+	}
+	for _, item := range items {
+		if strings.TrimSpace(item) == "" {
+			continue
+		}
+		fmt.Fprintf(b, "- %s\n", item)
+	}
+}
+
+func limitStrings(items []string, max int) []string {
+	if max <= 0 || len(items) <= max {
+		return items
+	}
+	return items[:max]
+}
+
+func truncateMiddle(text string, maxRunes int) string {
+	text = strings.TrimSpace(text)
+	runes := []rune(text)
+	if maxRunes <= 0 || len(runes) <= maxRunes {
+		return text
+	}
+	head := maxRunes / 2
+	tail := maxRunes - head
+	return string(runes[:head]) + "\n...[truncated]...\n" + string(runes[len(runes)-tail:])
+}
+
+func containsAnyFold(text string, needles []string) bool {
+	text = strings.ToLower(text)
+	for _, needle := range needles {
+		if strings.Contains(text, strings.ToLower(needle)) {
+			return true
+		}
+	}
+	return false
+}
+
+func nonEmptyOr(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }
 
 func transcriptRoleLabel(role string) string {

@@ -68,11 +68,13 @@ func TestBuildOpenAICurrentInputContextTranscriptUsesNormalFileContent(t *testin
 	if strings.Contains(transcript, "[file content end]") || strings.Contains(transcript, "[file content begin]") || strings.Contains(transcript, "[file name]:") {
 		t.Fatalf("expected normal file content without DeepSeek file-boundary tags, got %q", transcript)
 	}
-	if !strings.Contains(transcript, "Conversation context for the current request.") {
-		t.Fatalf("expected readable conversation header, got %q", transcript)
+	if !strings.Contains(transcript, "Active agent session resume package.") {
+		t.Fatalf("expected active session resume header, got %q", transcript)
 	}
-	if !strings.Contains(transcript, "[User]") || !strings.Contains(transcript, "[Tool]") {
-		t.Fatalf("expected readable role labels, got %q", transcript)
+	for _, want := range []string{"=== ACTIVE USER GOAL ===", "=== WORKING STATE, READ FIRST ===", "=== RECENT PROGRESS, CONTINUE FROM HERE ===", "=== FULL CHRONOLOGICAL CONTEXT, REFERENCE ONLY ===", "[User]", "[Tool]"} {
+		if !strings.Contains(transcript, want) {
+			t.Fatalf("expected transcript to contain %q, got %q", want, transcript)
+		}
 	}
 	if !strings.Contains(transcript, "first user turn") || !strings.Contains(transcript, "tool result") {
 		t.Fatalf("expected historical turns preserved, got %q", transcript)
@@ -82,6 +84,65 @@ func TestBuildOpenAICurrentInputContextTranscriptUsesNormalFileContent(t *testin
 	}
 	if !strings.Contains(transcript, "<|DSML|tool_calls>") {
 		t.Fatalf("expected tool calls preserved, got %q", transcript)
+	}
+}
+
+func TestBuildOpenAICurrentInputContextTranscriptBuildsActiveAgentResumePackage(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "修复 bug"},
+		map[string]any{"role": "assistant", "content": "我先读 internal/a.go"},
+		map[string]any{"role": "tool", "content": "internal/a.go 内容如下"},
+		map[string]any{"role": "assistant", "content": "我继续运行 go test ./..."},
+		map[string]any{"role": "tool", "content": "测试失败：internal/b.go:42"},
+	}
+	transcript := buildOpenAICurrentInputContextTranscript(messages)
+
+	for _, want := range []string{
+		"Active agent session resume package.",
+		"=== ACTIVE USER GOAL ===",
+		"修复 bug",
+		"=== WORKING STATE, READ FIRST ===",
+		"Already read files:",
+		"internal/a.go",
+		"Latest observation:",
+		"测试失败：internal/b.go:42",
+		"=== RECENT PROGRESS, CONTINUE FROM HERE ===",
+		"=== FULL CHRONOLOGICAL CONTEXT, REFERENCE ONLY ===",
+	} {
+		if !strings.Contains(transcript, want) {
+			t.Fatalf("expected active agent transcript to contain %q, got %q", want, transcript)
+		}
+	}
+	if strings.Contains(transcript, "latest user request") {
+		t.Fatalf("expected transcript not to anchor on latest user request, got %q", transcript)
+	}
+}
+
+func TestBuildOpenAICurrentInputContextTranscriptUsesLastUserWhenNoLaterProgress(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "旧问题"},
+		map[string]any{"role": "assistant", "content": "旧回答"},
+		map[string]any{"role": "user", "content": "新问题"},
+	}
+	transcript := buildOpenAICurrentInputContextTranscript(messages)
+
+	if !strings.Contains(transcript, "=== ACTIVE USER GOAL ===\n[User]\n新问题") {
+		t.Fatalf("expected active goal to use latest user, got %q", transcript)
+	}
+	if !strings.Contains(transcript, "=== RECENT PROGRESS, CONTINUE FROM HERE ===\n[User]\n新问题") {
+		t.Fatalf("expected recent progress to include latest user when no later progress, got %q", transcript)
+	}
+}
+
+func TestBuildOpenAICurrentInputContextTranscriptExtractsChangedFiles(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "修改上下文逻辑"},
+		map[string]any{"role": "tool", "content": "*** Begin Patch\n*** Update File: internal/promptcompat/history_transcript.go\n@@\n-old\n+new\n*** End Patch"},
+	}
+	transcript := buildOpenAICurrentInputContextTranscript(messages)
+
+	if !strings.Contains(transcript, "Already changed files:\n- internal/promptcompat/history_transcript.go") {
+		t.Fatalf("expected changed file extraction, got %q", transcript)
 	}
 }
 
@@ -314,7 +375,7 @@ func TestApplyCurrentInputFileUploadsFirstTurnWithInjectedWrapper(t *testing.T) 
 	if strings.Contains(out.FinalPrompt, "CURRENT_USER_INPUT.txt") || strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
 		t.Fatalf("expected live prompt not to instruct file reads, got %s", out.FinalPrompt)
 	}
-	if !strings.Contains(out.FinalPrompt, "treat the last user message in it as the latest request") {
+	if !strings.Contains(out.FinalPrompt, "Read WORKING STATE first") {
 		t.Fatalf("expected neutral continuation instruction in live prompt, got %s", out.FinalPrompt)
 	}
 	if len(out.RefFileIDs) != 1 || out.RefFileIDs[0] != "file-inline-1" {
@@ -365,7 +426,7 @@ func TestApplyCurrentInputFileUploadsFullContextFile(t *testing.T) {
 	if strings.Contains(out.FinalPrompt, "first user turn") || strings.Contains(out.FinalPrompt, "latest user turn") || strings.Contains(out.FinalPrompt, "CURRENT_USER_INPUT.txt") || strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
 		t.Fatalf("expected live prompt to use only a neutral continuation instruction, got %s", out.FinalPrompt)
 	}
-	if !strings.Contains(out.FinalPrompt, "treat the last user message in it as the latest request") {
+	if !strings.Contains(out.FinalPrompt, "Read WORKING STATE first") {
 		t.Fatalf("expected neutral continuation instruction in live prompt, got %s", out.FinalPrompt)
 	}
 }
@@ -431,7 +492,7 @@ func TestApplyCurrentInputFileUploadsToolPromptFileWhenEnabled(t *testing.T) {
 	if strings.Contains(out.FinalPrompt, "00_AGENT_TOOLS") || strings.Contains(out.FinalPrompt, "TOOL_PROMPT") || strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
 		t.Fatalf("expected final prompt not to reference concrete tool/context files, got %s", out.FinalPrompt)
 	}
-	if !strings.Contains(out.FinalPrompt, "tool instructions have already been provided as attached context") {
+	if !strings.Contains(out.FinalPrompt, "active agent session resume package and active tool instructions") {
 		t.Fatalf("expected final prompt to activate attached tool instructions, got %s", out.FinalPrompt)
 	}
 	if len(out.RefFileIDs) < 2 || out.RefFileIDs[0] != "file-inline-2" || out.RefFileIDs[1] != "file-inline-1" {
@@ -518,7 +579,7 @@ func TestChatCompletionsCurrentInputFileUploadsContextAndKeepsNeutralPrompt(t *t
 		t.Fatal("expected completion payload to be captured")
 	}
 	promptText, _ := ds.completionReq["prompt"].(string)
-	if !strings.Contains(promptText, "treat the last user message in it as the latest request") {
+	if !strings.Contains(promptText, "Read WORKING STATE first") {
 		t.Fatalf("expected neutral completion prompt, got %s", promptText)
 	}
 	if strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
@@ -564,7 +625,7 @@ func TestResponsesCurrentInputFileUploadsContextAndKeepsNeutralPrompt(t *testing
 		t.Fatal("expected completion payload to be captured")
 	}
 	promptText, _ := ds.completionReq["prompt"].(string)
-	if !strings.Contains(promptText, "treat the last user message in it as the latest request") {
+	if !strings.Contains(promptText, "Read WORKING STATE first") {
 		t.Fatalf("expected neutral completion prompt, got %s", promptText)
 	}
 	if strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
@@ -700,7 +761,7 @@ func TestCurrentInputFileWorksAcrossAutoDeleteModes(t *testing.T) {
 				t.Fatalf("expected completion payload for mode=%s", mode)
 			}
 			promptText, _ := ds.completionReq["prompt"].(string)
-			if !strings.Contains(promptText, "treat the last user message in it as the latest request") || strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
+			if !strings.Contains(promptText, "Read WORKING STATE first") || strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
 				t.Fatalf("unexpected prompt for mode=%s: %s", mode, promptText)
 			}
 		})

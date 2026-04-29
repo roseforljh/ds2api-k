@@ -105,20 +105,3 @@ func prependUniqueRefFileIDs(existing []string, fileIDs ...string) []string {
 	}
 	return out
 }
-
-func legacyPrependUniqueRefFileID(existing []string, fileID string) []string {
-	fileID = strings.TrimSpace(fileID)
-	if fileID == "" {
-		return existing
-	}
-	out := make([]string, 0, len(existing)+1)
-	out = append(out, fileID)
-	for _, id := range existing {
-		trimmed := strings.TrimSpace(id)
-		if trimmed == "" || strings.EqualFold(trimmed, fileID) {
-			continue
-		}
-		out = append(out, trimmed)
-	}
-	return out
-}

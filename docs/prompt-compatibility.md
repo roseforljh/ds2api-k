@@ -242,7 +242,7 @@ OpenAI 文件相关实现：
 
 兼容层现在只保留 `current_input_file` 这一种拆分方式；旧的 `history_split` 已废弃，只保留为兼容旧配置的字段，不再参与请求处理。
 
-- `current_input_file` 默认开启；它用于把“完整上下文”合并进隐藏上下文文件。当最新 user turn 的纯文本长度达到 `current_input_file.min_chars`（默认 `0`）时，兼容层会上传一个文件名为 `HISTORY.txt` 的上下文文件，并在 live prompt 中只保留一个中性的 user 消息要求模型直接回答最新请求，不再暴露文件名或要求模型读取本地文件。
+- `current_input_file` 默认开启；它用于把“完整上下文”合并进隐藏上下文文件。当最新 user turn 的纯文本长度达到 `current_input_file.min_chars`（默认 `0`）时，兼容层会上传一个文件名为 `HISTORY.txt` 的上下文文件，并在 live prompt 中只保留一个中性的 user 消息要求模型读取工作状态并从最近进展继续，不再暴露文件名或要求模型读取本地文件。
 - 如果 `current_input_file.enabled=false`，请求会直接透传，不上传任何拆分上下文文件。
 - 旧的 `history_split.enabled` / `history_split.trigger_after_turns` 会被读取进配置对象以保持兼容，但不会触发拆分上传，也不会影响 `current_input_file` 的默认开启。
 
@@ -255,27 +255,52 @@ OpenAI 文件相关实现：
 - 旧历史拆分兼容壳：
   [internal/httpapi/openai/history/history_split.go](../internal/httpapi/openai/history/history_split.go)
 
-当前输入转文件启用并触发时，上传文件的真实文件名是 `HISTORY.txt`，文件内容是完整 `messages` 上下文；它会先用 OpenAI 消息标准化，再写成普通文本角色标签转录格式，明确提示按时间顺序读取、最后一个 `[User]` 是最新请求、其后的 `[Assistant]` / `[Tool]` 是已完成工作或工具结果；文件开头会写入 UTF-8 BOM，避免 DeepSeek 文件解析把中文按本地 ANSI 编码误判成乱码；但不再手动插入 `[file content end]` / `[file name]` / `[file content begin]` 这类文件边界，保持为可被网页正常解析/下载的普通文本文件：
+当前输入转文件启用并触发时，上传文件的真实文件名是 `HISTORY.txt`，文件内容是完整 `messages` 上下文；它会先用 OpenAI 消息标准化，再写成 active agent session resume package。该包优先暴露 `WORKING STATE` 和 `RECENT PROGRESS`，让新网页会话从最新工具结果或最近 assistant/tool 进展继续；`ACTIVE USER GOAL` 只作为目标，不作为重启任务的指令；`FULL CHRONOLOGICAL CONTEXT` 保留完整时间线作为参考。文件开头会写入 UTF-8 BOM，避免 DeepSeek 文件解析把中文按本地 ANSI 编码误判成乱码；但不再手动插入 `[file content end]` / `[file name]` / `[file content begin]` 这类文件边界，保持为可被网页正常解析/下载的普通文本文件：
 
 ```text
 [uploaded filename]: HISTORY.txt
-Conversation context for the current request.
-Read the messages below in chronological order. Treat the last [User] message as the latest user request, and use any following [Assistant] or [Tool] messages as already completed work/results.
+Active agent session resume package.
 
+Read policy:
+- Read WORKING STATE first.
+- Continue from RECENT PROGRESS, especially the latest Tool result.
+- Use ACTIVE USER GOAL as the objective, not as a request to restart.
+- Do not restate the whole task, repeat prior analysis, or re-read files listed as already read unless needed.
+- Use FULL CHRONOLOGICAL CONTEXT only as reference when WORKING STATE and RECENT PROGRESS are insufficient.
+
+=== ACTIVE USER GOAL ===
+[User]
+...
+
+=== WORKING STATE, READ FIRST ===
+Status:
+- Reviewing latest tool result
+
+Already read files:
+- internal/promptcompat/history_transcript.go
+
+Already changed files:
+- none
+
+Latest observation:
+- ...
+
+Next action:
+- Continue from the latest assistant/tool message. Do not repeat completed inspection or re-read already read files unless the latest progress requires it.
+
+=== RECENT PROGRESS, CONTINUE FROM HERE ===
+[Assistant]
+...
+
+[Tool]
+...
+
+=== FULL CHRONOLOGICAL CONTEXT, REFERENCE ONLY ===
 [1] [System]
-...
-
-[2] [User]
-...
-
-[3] [Assistant]
-...
-
-[4] [Tool]
 ...
 ```
 
-开启后，请求的 live prompt 不再直接内联完整上下文，而是保留一个 user role 的短提示，明确要求模型使用已附加上下文、把上下文里的最后一个 user 消息当作最新请求并直接回答；上传后的 `file_id` 会进入 `ref_file_ids`。
+开启后，请求的 live prompt 不再直接内联完整上下文，而是保留一个 user role 的短提示，明确要求模型先读 `WORKING STATE`，再从 `RECENT PROGRESS` 继续；上传后的 `file_id` 会进入 `ref_file_ids`。这适配 agent 场景中“用户不发新消息，assistant/tool 持续推进”的多轮链路，避免每次新网页会话都从原始 user 目标重启。
 
 ## 10. 各协议入口的差异
 
@@ -324,7 +349,7 @@ Read the messages below in chronological order. Treat the last [User] message as
 
 ```json
 {
-  "prompt": "<｜begin▁of▁sentence｜><｜User｜>The current request, prior conversation context, and tool instructions have already been provided as attached context. Use that context, treat the last user message in it as the latest request, treat the provided tool instructions as active system-level tool instructions, and answer directly.<｜Assistant｜>",
+  "prompt": "<｜begin▁of▁sentence｜><｜User｜>Attached context contains an active agent session resume package and active tool instructions. Read WORKING STATE first, then continue from RECENT PROGRESS. Use the active user goal as the objective, treat the provided tool instructions as active system-level tool instructions, but do not restart from the goal. Do not repeat prior analysis or re-read files unless needed.<｜Assistant｜>",
   "ref_file_ids": [
     "file-agent-tools",
     "file-current-input-history",

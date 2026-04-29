@@ -172,7 +172,7 @@ func clonePayloadForMalformedOrEmptyRetry(payload map[string]any, parentMessageI
 
 func appendMalformedToolCallRetrySuffix(prompt string, malformedToolFeedback string) string {
 	prompt = strings.TrimRight(prompt, "\r\n\t ")
-	suffix := "Previous reply attempted a tool call, but the tool call format was invalid and was not shown to the user. You MUST carefully follow TOOL_PROMPT.txt, especially the exact tool-call XML/DSML format, then regenerate the tool call only. Required tool parameters must be non-empty. For Read, file_path must contain the absolute or relative path to read. Invalid hidden tool call:\n\n" + strings.TrimSpace(malformedToolFeedback)
+	suffix := "Previous reply attempted a tool call, but the tool call format was invalid and was not shown to the user. You MUST carefully follow the tool instructions in the current request, especially the exact tool-call XML/DSML format, then regenerate the tool call only. Required tool parameters must be non-empty. For Read, file_path must contain the absolute or relative path to read. Invalid hidden tool call:\n\n" + strings.TrimSpace(malformedToolFeedback)
 	if prompt == "" {
 		return suffix
 	}
@@ -181,7 +181,7 @@ func appendMalformedToolCallRetrySuffix(prompt string, malformedToolFeedback str
 
 func appendToolEmptyOutputRetrySuffix(prompt string) string {
 	prompt = strings.TrimRight(prompt, "\r\n\t ")
-	suffix := "Previous reply ended without natural-language content or a valid tool call. If a tool is needed, first read and follow TOOL_PROMPT.txt, then emit exactly one valid tool call using the exact tool-call XML/DSML format described there. If no tool is needed, answer the user directly. Do not return an empty response."
+	suffix := "Previous reply ended without natural-language content or a valid tool call. If a tool is needed, follow the tool instructions in the current request, then emit exactly one valid tool call using the exact tool-call XML/DSML format described there. If no tool is needed, answer the user directly. Do not return an empty response."
 	if prompt == "" {
 		return suffix
 	}

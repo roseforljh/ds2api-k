@@ -38,6 +38,7 @@ func startChatHistory(store *chathistory.Store, r *http.Request, a *auth.Request
 		return nil
 	}
 	historyMessages := chatHistoryMessages(stdReq)
+	finalPrompt := chatHistoryFinalPrompt(stdReq)
 	entry, err := store.Start(chathistory.StartParams{
 		CallerID:       strings.TrimSpace(a.CallerID),
 		AccountID:      strings.TrimSpace(a.AccountID),
@@ -47,7 +48,7 @@ func startChatHistory(store *chathistory.Store, r *http.Request, a *auth.Request
 		Messages:       extractAllMessages(historyMessages),
 		HistoryText:    stdReq.HistoryText,
 		ToolPromptText: stdReq.ToolPromptText,
-		FinalPrompt:    stdReq.FinalPrompt,
+		FinalPrompt:    finalPrompt,
 	})
 	startParams := chathistory.StartParams{
 		CallerID:       strings.TrimSpace(a.CallerID),
@@ -58,14 +59,14 @@ func startChatHistory(store *chathistory.Store, r *http.Request, a *auth.Request
 		Messages:       extractAllMessages(historyMessages),
 		HistoryText:    stdReq.HistoryText,
 		ToolPromptText: stdReq.ToolPromptText,
-		FinalPrompt:    stdReq.FinalPrompt,
+		FinalPrompt:    finalPrompt,
 	}
 	session := &chatHistorySession{
 		store:       store,
 		entryID:     entry.ID,
 		startedAt:   time.Now(),
 		lastPersist: time.Now(),
-		finalPrompt: stdReq.FinalPrompt,
+		finalPrompt: finalPrompt,
 		startParams: startParams,
 	}
 	if err != nil {
@@ -79,7 +80,17 @@ func startChatHistory(store *chathistory.Store, r *http.Request, a *auth.Request
 }
 
 func chatHistoryMessages(stdReq promptcompat.StandardRequest) []any {
+	if stdReq.CurrentInputFileApplied && len(stdReq.OriginalMessages) > 0 {
+		return stdReq.OriginalMessages
+	}
 	return stdReq.Messages
+}
+
+func chatHistoryFinalPrompt(stdReq promptcompat.StandardRequest) string {
+	if stdReq.CurrentInputFileApplied {
+		return ""
+	}
+	return stdReq.FinalPrompt
 }
 
 func shouldCaptureChatHistory(r *http.Request) bool {

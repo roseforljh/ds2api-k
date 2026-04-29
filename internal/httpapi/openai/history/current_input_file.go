@@ -13,10 +13,9 @@ import (
 )
 
 const (
-	currentInputFilename     = "HISTORY.txt"
-	currentInputToolFilename = "TOOL_PROMPT.txt"
-	currentInputContentType  = "text/plain; charset=utf-8"
-	currentInputPurpose      = "assistants"
+	currentInputFilename    = "HISTORY.txt"
+	currentInputContentType = "text/plain; charset=utf-8"
+	currentInputPurpose     = "assistants"
 )
 
 func (s Service) ApplyCurrentInputFile(ctx context.Context, a *auth.RequestAuth, stdReq promptcompat.StandardRequest) (promptcompat.StandardRequest, error) {
@@ -52,38 +51,22 @@ func (s Service) ApplyCurrentInputFile(ctx context.Context, a *auth.RequestAuth,
 		return stdReq, errors.New("upload current user input file returned empty file id")
 	}
 
-	toolFileID := ""
 	toolNames := stdReq.ToolNames
 	toolsRawForPrompt := stdReq.ToolsRaw
+	toolPromptText := ""
 	if s.Store.CurrentInputToolPromptFileEnabled() {
 		toolText, names := promptcompat.BuildOpenAIToolPrompt(stdReq.ToolsRaw, stdReq.ToolChoice)
 		if strings.TrimSpace(toolText) != "" {
-			toolTranscript := promptcompat.BuildOpenAIToolPromptFileTranscript(toolText)
-			if strings.TrimSpace(toolTranscript) == "" {
-				return stdReq, errors.New("current input tool prompt file produced empty transcript")
-			}
-			stdReq.ToolPromptText = toolTranscript
-			toolResult, err := s.DS.UploadFile(ctx, a, dsclient.UploadFileRequest{
-				Filename:    currentInputToolFilename,
-				ContentType: currentInputContentType,
-				Purpose:     currentInputPurpose,
-				Data:        withUTF8BOM(toolTranscript),
-			}, 3)
-			if err != nil {
-				return stdReq, fmt.Errorf("upload current input tool prompt file: %w", err)
-			}
-			toolFileID = strings.TrimSpace(toolResult.ID)
-			if toolFileID == "" {
-				return stdReq, errors.New("upload current input tool prompt file returned empty file id")
-			}
+			toolPromptText = strings.TrimSpace(toolText)
+			stdReq.ToolPromptText = toolPromptText
 			toolNames = names
 			toolsRawForPrompt = nil
 		}
 	}
 
 	promptText := currentInputFilePrompt()
-	if toolFileID != "" {
-		promptText = currentInputFilePromptWithTools()
+	if toolPromptText != "" {
+		promptText = currentInputFilePromptWithInlineTools(toolPromptText)
 	}
 	messages := []any{
 		map[string]any{
@@ -94,14 +77,10 @@ func (s Service) ApplyCurrentInputFile(ctx context.Context, a *auth.RequestAuth,
 
 	stdReq.Messages = messages
 	stdReq.CurrentInputFileApplied = true
-	if toolFileID != "" {
-		stdReq.RefFileIDs = prependUniqueRefFileIDs(nil, toolFileID, fileID)
-	} else {
-		stdReq.RefFileIDs = prependUniqueRefFileID(nil, fileID)
-	}
+	stdReq.RefFileIDs = prependUniqueRefFileID(nil, fileID)
 	finalPrompt, builtToolNames := promptcompat.BuildOpenAIPrompt(messages, toolsRawForPrompt, "", stdReq.ToolChoice, stdReq.Thinking)
 	stdReq.FinalPrompt = finalPrompt
-	if toolFileID != "" {
+	if toolPromptText != "" {
 		stdReq.ToolNames = toolNames
 	} else {
 		stdReq.ToolNames = builtToolNames
@@ -132,8 +111,11 @@ func currentInputFilePrompt() string {
 	return "Read HISTORY.txt WORKING STATE first. If it says no_active_working, do not repeat completed answers. Use only this request's attached context, ref_file_ids, and latest user message; no account memories, recent chats, or other sessions. Continue only if the latest user asks; otherwise answer the latest user directly."
 }
 
-func currentInputFilePromptWithTools() string {
-	return "Read HISTORY.txt WORKING STATE and TOOL_PROMPT.txt first. If WORKING STATE says no_active_working, do not repeat completed answers. Use only this request's attached context, tool instructions, ref_file_ids, and latest user message; no account memories, recent chats, or other sessions. Tool calls must use TOOL_PROMPT.txt <|DSML|tool_calls> syntax only, with no prose. Continue only if the latest user asks; otherwise answer the latest user directly."
+func currentInputFilePromptWithInlineTools(toolPrompt string) string {
+	return strings.TrimSpace("=== TOOL INSTRUCTIONS, MUST FOLLOW ===\n" +
+		strings.TrimSpace(toolPrompt) +
+		"\n=== END TOOL INSTRUCTIONS ===\n" +
+		"Read HISTORY.txt WORKING STATE. If it says no_active_working, do not repeat completed answers. Use only attached context, tool instructions, ref_file_ids, and latest user message; no account memories, recent chats, or other sessions.")
 }
 
 func withUTF8BOM(text string) []byte {

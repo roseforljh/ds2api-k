@@ -316,13 +316,21 @@ func TestChatCompletionsCurrentInputFilePersistsNeutralMessagesAndHistoryText(t 
 	if ds.uploadCalls[0].Filename != "HISTORY.txt" {
 		t.Fatalf("expected HISTORY.txt upload, got %q", ds.uploadCalls[0].Filename)
 	}
-	if len(full.Messages) != 1 {
-		t.Fatalf("expected neutral live request message to be persisted, got %#v", full.Messages)
+	if full.UserInput != "latest user turn" {
+		t.Fatalf("expected latest real user input to be persisted, got %q", full.UserInput)
 	}
-	if !strings.Contains(full.UserInput, "HISTORY.txt WORKING STATE") {
-		t.Fatalf("expected neutral current-input prompt to be persisted, got %q", full.UserInput)
+	if strings.Contains(full.UserInput, "HISTORY.txt") || strings.Contains(full.UserInput, "TOOL INSTRUCTIONS") {
+		t.Fatalf("synthetic current-input prompt leaked into user input: %q", full.UserInput)
 	}
-	if full.Messages[0].Role != "user" || !strings.Contains(full.Messages[0].Content, "HISTORY.txt WORKING STATE") {
-		t.Fatalf("expected neutral current-input message to be persisted, got %#v", full.Messages[0])
+	if len(full.Messages) != 4 {
+		t.Fatalf("expected visible original request messages to be persisted, got %#v", full.Messages)
+	}
+	for _, msg := range full.Messages {
+		if strings.Contains(msg.Content, "HISTORY.txt") || strings.Contains(msg.Content, "TOOL INSTRUCTIONS") {
+			t.Fatalf("synthetic prompt leaked into persisted messages: %#v", full.Messages)
+		}
+	}
+	if strings.Contains(full.FinalPrompt, "HISTORY.txt") || strings.Contains(full.FinalPrompt, "TOOL INSTRUCTIONS") {
+		t.Fatalf("expected synthetic final prompt to be hidden from chat history, got %q", full.FinalPrompt)
 	}
 }

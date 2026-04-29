@@ -242,7 +242,7 @@ OpenAI 文件相关实现：
 
 兼容层现在只保留 `current_input_file` 这一种拆分方式；旧的 `history_split` 已废弃，只保留为兼容旧配置的字段，不再参与请求处理。
 
-- `current_input_file` 默认开启；它用于把“完整上下文”合并进隐藏上下文文件。当最新 user turn 的纯文本长度达到 `current_input_file.min_chars`（默认 `0`）时，兼容层会上传一个文件名为 `HISTORY.txt` 的上下文文件，并在 live prompt 中只保留一个中性的 user 消息要求模型读取工作状态并从最近进展继续，不再暴露文件名或要求模型读取本地文件。
+- `current_input_file` 默认开启；它用于把“完整上下文”合并进隐藏上下文文件。当最新 user turn 的纯文本长度达到 `current_input_file.min_chars`（默认 `0`）时，兼容层会上传一个文件名为 `HISTORY.txt` 的上下文文件，并在 live prompt 中只保留一个中性的 user 消息要求模型读取 `WORKING STATE`。如果当前请求带 tools 且启用工具提示分离，工具提示会由服务端直接 inline 到这个临时 live prompt 的 `TOOL INSTRUCTIONS` 区块，不再上传单独的 `TOOL_PROMPT.txt`。
 - 如果 `current_input_file.enabled=false`，请求会直接透传，不上传任何拆分上下文文件。
 - 旧的 `history_split.enabled` / `history_split.trigger_after_turns` 会被读取进配置对象以保持兼容，但不会触发拆分上传，也不会影响 `current_input_file` 的默认开启。
 
@@ -255,26 +255,30 @@ OpenAI 文件相关实现：
 - 旧历史拆分兼容壳：
   [internal/httpapi/openai/history/history_split.go](../internal/httpapi/openai/history/history_split.go)
 
-当前输入转文件启用并触发时，上传文件的真实文件名是 `HISTORY.txt`，文件内容是完整 `messages` 上下文；它会先用 OpenAI 消息标准化，再写成 active agent session resume package。该包优先暴露 `WORKING STATE` 和 `RECENT PROGRESS`，让新网页会话从最新工具结果或最近 assistant/tool 进展继续；`ACTIVE USER GOAL` 只作为目标，不作为重启任务的指令；`FULL CHRONOLOGICAL CONTEXT` 保留完整时间线作为参考。文件开头会写入 UTF-8 BOM，避免 DeepSeek 文件解析把中文按本地 ANSI 编码误判成乱码；但不再手动插入 `[file content end]` / `[file name]` / `[file content begin]` 这类文件边界，保持为可被网页正常解析/下载的普通文本文件：
+当前输入转文件启用并触发时，上传文件的真实文件名是 `HISTORY.txt`，文件内容是完整 `messages` 上下文；它会先用 OpenAI 消息标准化，再写成 request-local context package。该包优先暴露 `WORKING STATE`，根据最后一条非空消息动态选择 `answer_latest_user`、`continue_agent_tail` 或 `no_active_working`，避免已完成 assistant 回答被再次当成待继续任务；`FULL CHRONOLOGICAL CONTEXT` 保留完整时间线作为参考。文件开头会写入 UTF-8 BOM，避免 DeepSeek 文件解析把中文按本地 ANSI 编码误判成乱码；但不再手动插入 `[file content end]` / `[file name]` / `[file content begin]` 这类文件边界，保持为可被网页正常解析/下载的普通文本文件：
 
 ```text
 [uploaded filename]: HISTORY.txt
-Active agent session resume package.
+Request-local context package.
 
 Read policy:
-- Read WORKING STATE first.
-- Continue from RECENT PROGRESS, especially the latest Tool result.
-- Use ACTIVE USER GOAL as the objective, not as a request to restart.
-- Do not restate the whole task, repeat prior analysis, or re-read files listed as already read unless needed.
-- Use FULL CHRONOLOGICAL CONTEXT only as reference when WORKING STATE and RECENT PROGRESS are insufficient.
+- This context belongs only to the current API request.
+- Use WORKING STATE as the only active driver for this request.
+- If Mode is answer_latest_user, answer the Latest user message.
+- If Mode is continue_agent_tail, continue from the Latest assistant/tool tail without restarting or repeating earlier answers.
+- If Mode is no_active_working, do not continue or repeat completed assistant output.
+- Use FULL CHRONOLOGICAL CONTEXT only as request-local reference when needed.
 
-=== ACTIVE USER GOAL ===
+=== WORKING STATE, READ FIRST ===
+Mode:
+- answer_latest_user
+
+Latest user message:
 [User]
 ...
 
-=== WORKING STATE, READ FIRST ===
 Status:
-- Reviewing latest tool result
+- In progress
 
 Already read files:
 - internal/promptcompat/history_transcript.go
@@ -286,21 +290,14 @@ Latest observation:
 - ...
 
 Next action:
-- Continue from the latest assistant/tool message. Do not repeat completed inspection or re-read already read files unless the latest progress requires it.
-
-=== RECENT PROGRESS, CONTINUE FROM HERE ===
-[Assistant]
-...
-
-[Tool]
-...
+- Answer the latest user message. Do not continue stale assistant/tool working state.
 
 === FULL CHRONOLOGICAL CONTEXT, REFERENCE ONLY ===
 [1] [System]
 ...
 ```
 
-开启后，请求的 live prompt 不再直接内联完整上下文，而是保留一个 user role 的短提示，明确要求模型先读 `WORKING STATE`，再从 `RECENT PROGRESS` 继续；上传后的 `file_id` 会进入 `ref_file_ids`。这适配 agent 场景中“用户不发新消息，assistant/tool 持续推进”的多轮链路，避免每次新网页会话都从原始 user 目标重启。
+开启后，请求的 live prompt 不再直接内联完整上下文，而是保留一个 user role 的短提示，明确要求模型先读 `HISTORY.txt WORKING STATE`；上传后的 `file_id` 会进入 `ref_file_ids`。如果当前请求有 tools，工具协议以 `TOOL INSTRUCTIONS, MUST FOLLOW` 区块 inline 在该 live prompt 顶部，确保模型在同一条上游消息中直接看到工具调用格式；该工具协议不会进入 `HISTORY.txt`，也不会作为 C 端真实用户消息持久化展示。DS2API 本地 chat history 会使用原始请求消息和最新真实用户输入，隐藏这个 synthetic live prompt。
 
 ## 10. 各协议入口的差异
 
@@ -349,12 +346,9 @@ Next action:
 
 ```json
 {
-  "prompt": "<｜begin▁of▁sentence｜><｜User｜>Attached context contains an active agent session resume package and active tool instructions. Read WORKING STATE first, then continue from RECENT PROGRESS. Use the active user goal as the objective, treat the provided tool instructions as active system-level tool instructions, but do not restart from the goal. Do not repeat prior analysis or re-read files unless needed.<｜Assistant｜>",
+  "prompt": "<｜begin▁of▁sentence｜><｜User｜>=== TOOL INSTRUCTIONS, MUST FOLLOW ===\n...tool prompt...\n=== END TOOL INSTRUCTIONS ===\nRead HISTORY.txt WORKING STATE. If it says no_active_working, do not repeat completed answers. Use only attached context, tool instructions, ref_file_ids, and latest user message; no account memories, recent chats, or other sessions.<｜Assistant｜>",
   "ref_file_ids": [
-    "file-agent-tools",
-    "file-current-input-history",
-    "file-systemprompt",
-    "file-other-attachment"
+    "file-current-input-history"
   ],
   "thinking_enabled": true,
   "search_enabled": false
@@ -363,7 +357,7 @@ Next action:
 
 这正是“API 转网页对话纯文本”的核心成果：
 
-- 大部分结构化语义被压进 `prompt`；当 `current_input_file.tool_prompt_file=true` 时，`tools` 生成的长工具说明会改走普通工具提示文件，避免在最终 `prompt` 中暴露大段工具说明
+- 大部分结构化语义被压进 `prompt`；当 `current_input_file.tool_prompt_file=true` 时，`tools` 生成的长工具说明会由服务端 inline 到 synthetic live prompt 的 `TOOL INSTRUCTIONS` 区块，不再上传 `TOOL_PROMPT.txt`
 - 文件保持文件
 - 需要时把完整上下文拆进隐藏上下文文件
 

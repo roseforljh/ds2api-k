@@ -284,8 +284,8 @@ func TestHandleNonStreamRetriesMalformedEmptyReadToolCallWithoutClientLeak(t *te
 	if !strings.Contains(retryPrompt, "file_path") || !strings.Contains(retryPrompt, malformed) {
 		t.Fatalf("expected retry prompt to include malformed tool feedback, got %q", retryPrompt)
 	}
-	if !strings.Contains(retryPrompt, "TOOL_PROMPT.txt") {
-		t.Fatalf("expected retry prompt to instruct model to review TOOL_PROMPT.txt, got %q", retryPrompt)
+	if !strings.Contains(retryPrompt, "tool instructions in the current request") {
+		t.Fatalf("expected retry prompt to reference current request tool instructions, got %q", retryPrompt)
 	}
 	if strings.Contains(rec.Body.String(), "DSML") || strings.Contains(rec.Body.String(), "file_path") {
 		t.Fatalf("malformed tool feedback leaked to client: %s", rec.Body.String())
@@ -309,7 +309,7 @@ func TestHandleNonStreamRetriesToolEmptyOutputWithToolPromptGuidance(t *testing.
 		t.Fatalf("expected one hidden retry payload, got %d", len(ds.payloads))
 	}
 	retryPrompt, _ := ds.payloads[0]["prompt"].(string)
-	for _, want := range []string{"TOOL_PROMPT.txt", "ended without natural-language content or a valid tool call", "Do not return an empty response"} {
+	for _, want := range []string{"tool instructions in the current request", "ended without natural-language content or a valid tool call", "Do not return an empty response"} {
 		if !strings.Contains(retryPrompt, want) {
 			t.Fatalf("expected retry prompt to contain %q, got %q", want, retryPrompt)
 		}
@@ -338,8 +338,8 @@ func TestHandleNonStreamRetriesUnparseableReadFilePathWithoutClientLeak(t *testi
 	if !strings.Contains(retryPrompt, "file_path") || !strings.Contains(retryPrompt, malformed) {
 		t.Fatalf("expected retry prompt to include unparseable tool feedback, got %q", retryPrompt)
 	}
-	if !strings.Contains(retryPrompt, "TOOL_PROMPT.txt") {
-		t.Fatalf("expected retry prompt to instruct model to review TOOL_PROMPT.txt, got %q", retryPrompt)
+	if !strings.Contains(retryPrompt, "tool instructions in the current request") {
+		t.Fatalf("expected retry prompt to reference current request tool instructions, got %q", retryPrompt)
 	}
 	if strings.Contains(rec.Body.String(), "DSML") || strings.Contains(rec.Body.String(), "file_path") || strings.Contains(rec.Body.String(), "README.md") {
 		t.Fatalf("unparseable tool feedback leaked to client: %s", rec.Body.String())
@@ -363,8 +363,8 @@ func TestHandleStreamRetriesUnparseableReadFilePathWithToolPromptFeedback(t *tes
 		t.Fatalf("expected one hidden stream retry payload, got %d body=%s", len(ds.payloads), rec.Body.String())
 	}
 	retryPrompt, _ := ds.payloads[0]["prompt"].(string)
-	if !strings.Contains(retryPrompt, "TOOL_PROMPT.txt") || !strings.Contains(retryPrompt, malformed) {
-		t.Fatalf("expected stream retry prompt to include TOOL_PROMPT.txt and malformed feedback, got %q", retryPrompt)
+	if !strings.Contains(retryPrompt, "tool instructions in the current request") || !strings.Contains(retryPrompt, malformed) {
+		t.Fatalf("expected stream retry prompt to include current request tool instructions and malformed feedback, got %q", retryPrompt)
 	}
 	if strings.Contains(rec.Body.String(), "DSML") || strings.Contains(rec.Body.String(), "file_path") || strings.Contains(rec.Body.String(), "README.md") {
 		t.Fatalf("unparseable stream tool feedback leaked to client: %s", rec.Body.String())
@@ -392,8 +392,8 @@ func TestHandleStreamRetriesHashDSMLReadFilePathWithToolPromptFeedback(t *testin
 		t.Fatalf("expected one hidden stream retry payload, got %d body=%s", len(ds.payloads), rec.Body.String())
 	}
 	retryPrompt, _ := ds.payloads[0]["prompt"].(string)
-	if !strings.Contains(retryPrompt, "TOOL_PROMPT.txt") || !strings.Contains(retryPrompt, malformed) {
-		t.Fatalf("expected stream retry prompt to include TOOL_PROMPT.txt and hash DSML feedback, got %q", retryPrompt)
+	if !strings.Contains(retryPrompt, "tool instructions in the current request") || !strings.Contains(retryPrompt, malformed) {
+		t.Fatalf("expected stream retry prompt to include current request tool instructions and hash DSML feedback, got %q", retryPrompt)
 	}
 	if strings.Contains(rec.Body.String(), "#DSML#") || strings.Contains(rec.Body.String(), "settings.rs") {
 		t.Fatalf("hash DSML tool feedback leaked to client: %s", rec.Body.String())
@@ -415,7 +415,7 @@ func TestHandleStreamRetriesToolEmptyOutputWithToolPromptGuidance(t *testing.T) 
 		t.Fatalf("expected one hidden stream retry payload, got %d body=%s", len(ds.payloads), rec.Body.String())
 	}
 	retryPrompt, _ := ds.payloads[0]["prompt"].(string)
-	for _, want := range []string{"TOOL_PROMPT.txt", "ended without natural-language content or a valid tool call", "Do not return an empty response"} {
+	for _, want := range []string{"tool instructions in the current request", "ended without natural-language content or a valid tool call", "Do not return an empty response"} {
 		if !strings.Contains(retryPrompt, want) {
 			t.Fatalf("expected stream retry prompt to contain %q, got %q", want, retryPrompt)
 		}

@@ -820,7 +820,7 @@ func TestApplyCurrentInputFileUsesRequestLocalPrompt(t *testing.T) {
 	}
 }
 
-func TestApplyCurrentInputFileUploadsToolPromptFileWhenEnabled(t *testing.T) {
+func TestApplyCurrentInputFileInlinesToolPromptWhenEnabled(t *testing.T) {
 	ds := &inlineUploadDSStub{}
 	h := &openAITestSurface{
 		Store: mockOpenAIConfig{
@@ -856,62 +856,52 @@ func TestApplyCurrentInputFileUploadsToolPromptFileWhenEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply current input file failed: %v", err)
 	}
-	if len(ds.uploadCalls) != 2 {
-		t.Fatalf("expected context and tool prompt uploads, got %d", len(ds.uploadCalls))
+	if len(ds.uploadCalls) != 1 {
+		t.Fatalf("expected only context upload, got %d", len(ds.uploadCalls))
 	}
 	if ds.uploadCalls[0].Filename != "HISTORY.txt" {
-		t.Fatalf("expected first upload to stay HISTORY.txt, got %q", ds.uploadCalls[0].Filename)
+		t.Fatalf("expected only upload to stay HISTORY.txt, got %q", ds.uploadCalls[0].Filename)
 	}
-	if ds.uploadCalls[1].Filename != "TOOL_PROMPT.txt" {
-		t.Fatalf("expected second upload to use non-context .txt tool filename, got %q", ds.uploadCalls[1].Filename)
+	historyText := string(ds.uploadCalls[0].Data)
+	for _, forbidden := range []string{"=== TOOL INSTRUCTIONS, MUST FOLLOW ===", "You have access to these tools:", "Tool: search"} {
+		if strings.Contains(historyText, forbidden) {
+			t.Fatalf("expected HISTORY.txt to stay free of tool prompt content %q, got %q", forbidden, historyText)
+		}
 	}
-	toolText := string(ds.uploadCalls[1].Data)
-	if !bytes.HasPrefix(ds.uploadCalls[1].Data, []byte{0xEF, 0xBB, 0xBF}) {
-		t.Fatalf("expected UTF-8 BOM prefix on generated tool prompt upload, got % x", ds.uploadCalls[1].Data[:min(3, len(ds.uploadCalls[1].Data))])
-	}
-	if !strings.Contains(toolText, "You have access to these tools:") || !strings.Contains(toolText, "Tool: search") {
-		t.Fatalf("expected tool prompt upload to contain tool instructions, got %q", toolText)
-	}
-	if strings.Contains(toolText, "[file content end]") || strings.Contains(toolText, "[file content begin]") || strings.Contains(toolText, "[file name]:") || strings.Contains(toolText, "00_AGENT_TOOLS") || strings.Contains(toolText, "TOOL_PROMPT") {
-		t.Fatalf("expected normal tool prompt upload without file-boundary tags or upload names, got %q", toolText)
-	}
-	if strings.Contains(out.FinalPrompt, "You have access to these tools:") {
-		t.Fatalf("expected final prompt not to inline tool prompt, got %s", out.FinalPrompt)
+	if !strings.Contains(out.FinalPrompt, "You have access to these tools:") || !strings.Contains(out.FinalPrompt, "Tool: search") {
+		t.Fatalf("expected final prompt to inline tool prompt, got %s", out.FinalPrompt)
 	}
 	if strings.Contains(out.FinalPrompt, "00_AGENT_TOOLS") || strings.Contains(out.FinalPrompt, "Read that file") {
 		t.Fatalf("expected final prompt not to reference concrete tool/context files, got %s", out.FinalPrompt)
 	}
 	for _, want := range []string{
-		"Read HISTORY.txt WORKING STATE and TOOL_PROMPT.txt first.",
-		"Tool calls must use TOOL_PROMPT.txt",
-		"with no prose",
+		"=== TOOL INSTRUCTIONS, MUST FOLLOW ===",
+		"=== END TOOL INSTRUCTIONS ===",
 		"<|DSML|tool_calls>",
 		"HISTORY.txt",
 		"WORKING STATE",
 		"no_active_working",
-		"Continue only if the latest user asks",
-		"otherwise answer the latest user directly",
 	} {
 		if !strings.Contains(out.FinalPrompt, want) {
 			t.Fatalf("expected final prompt to contain tool prompt anchor %q, got %s", want, out.FinalPrompt)
 		}
 	}
-	for _, old := range []string{"Do not call tools until you have applied TOOL_PROMPT.txt.", "If the latest user message is standalone"} {
+	for _, old := range []string{"TOOL_PROMPT.txt", "If the latest user message is standalone"} {
 		if strings.Contains(out.FinalPrompt, old) {
 			t.Fatalf("expected old tool prompt wording %q to be removed, got %s", old, out.FinalPrompt)
 		}
 	}
-	if strings.Contains(out.FinalPrompt, "Tool: search") {
-		t.Fatalf("expected final prompt to avoid full tool schema inlining, got %s", out.FinalPrompt)
-	}
 	if !strings.Contains(out.FinalPrompt, "latest user message") || !strings.Contains(out.FinalPrompt, "tool instructions") {
 		t.Fatalf("expected final prompt to activate attached tool instructions, got %s", out.FinalPrompt)
 	}
-	if len(out.RefFileIDs) < 2 || out.RefFileIDs[0] != "file-inline-2" || out.RefFileIDs[1] != "file-inline-1" {
-		t.Fatalf("expected tool file before history file in ref ids, got %#v", out.RefFileIDs)
+	if len(out.RefFileIDs) != 1 || out.RefFileIDs[0] != "file-inline-1" {
+		t.Fatalf("expected only history file in ref ids, got %#v", out.RefFileIDs)
 	}
 	if len(out.ToolNames) != 1 || out.ToolNames[0] != "search" {
 		t.Fatalf("expected tool names to be preserved, got %#v", out.ToolNames)
+	}
+	if !strings.Contains(out.ToolPromptText, "You have access to these tools:") || strings.Contains(out.ToolPromptText, "TOOL_PROMPT.txt") {
+		t.Fatalf("expected raw inline tool prompt text to be recorded without TOOL_PROMPT filename, got %q", out.ToolPromptText)
 	}
 }
 

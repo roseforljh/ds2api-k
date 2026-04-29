@@ -188,6 +188,37 @@ test('parseToolCalls treats single-item CDATA body as array', () => {
   assert.deepEqual(calls[0].input.todos, ['one']);
 });
 
+test('formatOpenAIStreamToolCalls normalizes inputs using schema aliases', () => {
+  const formatted = formatOpenAIStreamToolCalls([
+    { name: 'write_file', input: { content: ['a', 1] } },
+    { name: 'patch_file', input: { body: { k: 'v' } } },
+  ], new Map(), [
+    {
+      function: {
+        name: 'write_file',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            content: { type: 'string' },
+          },
+        },
+      },
+    },
+    {
+      name: 'patch_file',
+      schema: {
+        type: 'object',
+        properties: {
+          body: { type: 'string' },
+        },
+      },
+    },
+  ]);
+
+  assert.equal(formatted[0].function.arguments, '{"content":"[\\"a\\",1]"}');
+  assert.equal(formatted[1].function.arguments, '{"body":"{\\"k\\":\\"v\\"}"}');
+});
+
 test('parseToolCalls treats CDATA object fragment as object', () => {
   const fragment = '<question><![CDATA[Pick one]]></question><options><item><label><![CDATA[A]]></label></item><item><label><![CDATA[B]]></label></item></options>';
   const payload = `<tool_calls><invoke name="AskUserQuestion"><parameter name="questions"><![CDATA[${fragment}]]></parameter></invoke></tool_calls>`;

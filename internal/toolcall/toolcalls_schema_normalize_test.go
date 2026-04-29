@@ -89,6 +89,50 @@ func TestNormalizeParsedToolCallsForSchemasSupportsDirectToolSchemaShape(t *test
 	}
 }
 
+func TestNormalizeParsedToolCallsForSchemasSupportsInputSchemaAndSchemaAliases(t *testing.T) {
+	toolsRaw := []any{
+		map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "Write",
+				"description": "write content",
+				"inputSchema": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"content": map[string]any{"type": "string"},
+					},
+				},
+			},
+		},
+		map[string]any{
+			"name": "Patch",
+			"schema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"body": map[string]any{"type": "string"},
+				},
+			},
+		},
+	}
+	calls := []ParsedToolCall{
+		{Name: "Write", Input: map[string]any{"content": []any{"a", 1}}},
+		{Name: "Patch", Input: map[string]any{"body": map[string]any{"k": "v"}}},
+	}
+
+	got := NormalizeParsedToolCallsForSchemas(calls, toolsRaw)
+	if got[0].Input["content"] != `["a",1]` {
+		t.Fatalf("expected inputSchema alias to coerce content, got %#v", got[0].Input["content"])
+	}
+	if got[1].Input["body"] != `{"k":"v"}` {
+		t.Fatalf("expected schema alias to coerce body, got %#v", got[1].Input["body"])
+	}
+
+	name, desc, schema := ExtractToolMeta(toolsRaw[0].(map[string]any))
+	if name != "Write" || desc != "write content" || schema == nil {
+		t.Fatalf("unexpected extracted metadata: name=%q desc=%q schema=%#v", name, desc, schema)
+	}
+}
+
 func TestNormalizeParsedToolCallsForSchemasLeavesAmbiguousUnionUnchanged(t *testing.T) {
 	toolsRaw := []any{
 		map[string]any{

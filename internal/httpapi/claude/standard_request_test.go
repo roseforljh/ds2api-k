@@ -32,6 +32,9 @@ func TestNormalizeClaudeRequest(t *testing.T) {
 	if len(norm.Standard.ToolNames) == 0 {
 		t.Fatalf("expected tool names")
 	}
+	if len(norm.Standard.ToolsRaw.([]any)) != 1 {
+		t.Fatalf("expected raw tools preserved")
+	}
 	if norm.Standard.FinalPrompt == "" {
 		t.Fatalf("expected non-empty final prompt")
 	}

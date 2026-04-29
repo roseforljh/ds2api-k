@@ -3,6 +3,8 @@ package claude
 import (
 	"fmt"
 	"strings"
+
+	"ds2api/internal/toolcall"
 )
 
 func hasSystemMessage(messages []any) bool {
@@ -31,30 +33,9 @@ func extractClaudeToolNames(tools []any) []string {
 }
 
 func extractClaudeToolMeta(m map[string]any) (string, string, any) {
-	name, _ := m["name"].(string)
-	desc, _ := m["description"].(string)
-	schemaObj := m["input_schema"]
-	if schemaObj == nil {
-		schemaObj = m["parameters"]
-	}
-
-	if fn, ok := m["function"].(map[string]any); ok {
-		if strings.TrimSpace(name) == "" {
-			name, _ = fn["name"].(string)
-		}
-		if strings.TrimSpace(desc) == "" {
-			desc, _ = fn["description"].(string)
-		}
-		if schemaObj == nil {
-			if v, ok := fn["input_schema"]; ok {
-				schemaObj = v
-			}
-		}
-		if schemaObj == nil {
-			if v, ok := fn["parameters"]; ok {
-				schemaObj = v
-			}
-		}
+	name, desc, schemaObj := toolcall.ExtractToolMeta(m)
+	if strings.TrimSpace(desc) == "" {
+		desc = "No description available"
 	}
 	return strings.TrimSpace(name), strings.TrimSpace(desc), schemaObj
 }

@@ -319,10 +319,10 @@ func TestChatCompletionsCurrentInputFilePersistsNeutralMessagesAndHistoryText(t 
 	if len(full.Messages) != 1 {
 		t.Fatalf("expected neutral live request message to be persisted, got %#v", full.Messages)
 	}
-	if !strings.Contains(full.UserInput, "Attached context belongs only to the current API request") {
+	if !strings.Contains(full.UserInput, "HISTORY.txt WORKING STATE") {
 		t.Fatalf("expected neutral current-input prompt to be persisted, got %q", full.UserInput)
 	}
-	if full.Messages[0].Role != "user" || !strings.Contains(full.Messages[0].Content, "Attached context belongs only to the current API request") {
+	if full.Messages[0].Role != "user" || !strings.Contains(full.Messages[0].Content, "HISTORY.txt WORKING STATE") {
 		t.Fatalf("expected neutral current-input message to be persisted, got %#v", full.Messages[0])
 	}
 }

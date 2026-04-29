@@ -675,13 +675,13 @@ func TestApplyCurrentInputFileUploadsFirstTurnWithInjectedWrapper(t *testing.T) 
 	if strings.Contains(out.FinalPrompt, "CURRENT_USER_INPUT.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
 		t.Fatalf("expected live prompt not to use deprecated file-read wording, got %s", out.FinalPrompt)
 	}
-	if !strings.Contains(out.FinalPrompt, "current API request") {
+	if !strings.Contains(out.FinalPrompt, "latest user message") {
 		t.Fatalf("expected neutral continuation instruction in live prompt, got %s", out.FinalPrompt)
 	}
 	if !strings.Contains(out.FinalPrompt, "HISTORY.txt") {
 		t.Fatalf("expected final prompt to mention HISTORY.txt, got %s", out.FinalPrompt)
 	}
-	if !strings.Contains(out.FinalPrompt, "follow its WORKING STATE section") {
+	if !strings.Contains(out.FinalPrompt, "WORKING STATE") {
 		t.Fatalf("expected final prompt to instruct following HISTORY.txt working state, got %s", out.FinalPrompt)
 	}
 	if !strings.Contains(out.FinalPrompt, "no_active_working") {
@@ -735,7 +735,7 @@ func TestApplyCurrentInputFileUploadsFullContextFile(t *testing.T) {
 	if strings.Contains(out.FinalPrompt, "first user turn") || strings.Contains(out.FinalPrompt, "latest user turn") || strings.Contains(out.FinalPrompt, "CURRENT_USER_INPUT.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
 		t.Fatalf("expected live prompt to use only a neutral continuation instruction, got %s", out.FinalPrompt)
 	}
-	if !strings.Contains(out.FinalPrompt, "current API request") {
+	if !strings.Contains(out.FinalPrompt, "latest user") {
 		t.Fatalf("expected neutral continuation instruction in live prompt, got %s", out.FinalPrompt)
 	}
 }
@@ -802,14 +802,14 @@ func TestApplyCurrentInputFileUsesRequestLocalPrompt(t *testing.T) {
 		strings.Contains(strings.ToLower(out.FinalPrompt), "do not restart") {
 		t.Fatalf("expected request-local neutral prompt, got %q", out.FinalPrompt)
 	}
-	for _, want := range []string{"current API request", "latest user message", "previous sessions"} {
+	for _, want := range []string{"latest user message", "other sessions", "no_active_working"} {
 		if !strings.Contains(out.FinalPrompt, want) {
 			t.Fatalf("expected final prompt to contain %q, got %q", want, out.FinalPrompt)
 		}
 	}
 	for _, want := range []string{
-		"If the latest user message explicitly asks to continue prior work",
-		"Otherwise, answer the latest user message directly.",
+		"Continue only if the latest user asks",
+		"otherwise answer the latest user directly",
 	} {
 		if !strings.Contains(out.FinalPrompt, want) {
 			t.Fatalf("expected revised neutral prompt to contain %q, got %q", want, out.FinalPrompt)
@@ -882,15 +882,15 @@ func TestApplyCurrentInputFileUploadsToolPromptFileWhenEnabled(t *testing.T) {
 		t.Fatalf("expected final prompt not to reference concrete tool/context files, got %s", out.FinalPrompt)
 	}
 	for _, want := range []string{
-		"Before emitting any tool call, read TOOL_PROMPT.txt and follow its exact tool-call syntax.",
-		"When emitting a tool call, output only the tool call and no additional prose before or after it.",
+		"Read HISTORY.txt WORKING STATE and TOOL_PROMPT.txt first.",
+		"Tool calls must use TOOL_PROMPT.txt",
+		"with no prose",
 		"<|DSML|tool_calls>",
-		"Never use SML_DOLLAR_EM_OLLAR_",
 		"HISTORY.txt",
-		"follow its WORKING STATE section",
+		"WORKING STATE",
 		"no_active_working",
-		"If the latest user message explicitly asks to continue prior work",
-		"Otherwise, answer the latest user message directly.",
+		"Continue only if the latest user asks",
+		"otherwise answer the latest user directly",
 	} {
 		if !strings.Contains(out.FinalPrompt, want) {
 			t.Fatalf("expected final prompt to contain tool prompt anchor %q, got %s", want, out.FinalPrompt)
@@ -904,7 +904,7 @@ func TestApplyCurrentInputFileUploadsToolPromptFileWhenEnabled(t *testing.T) {
 	if strings.Contains(out.FinalPrompt, "Tool: search") {
 		t.Fatalf("expected final prompt to avoid full tool schema inlining, got %s", out.FinalPrompt)
 	}
-	if !strings.Contains(out.FinalPrompt, "current API request") || !strings.Contains(out.FinalPrompt, "active tool instructions") {
+	if !strings.Contains(out.FinalPrompt, "latest user message") || !strings.Contains(out.FinalPrompt, "tool instructions") {
 		t.Fatalf("expected final prompt to activate attached tool instructions, got %s", out.FinalPrompt)
 	}
 	if len(out.RefFileIDs) < 2 || out.RefFileIDs[0] != "file-inline-2" || out.RefFileIDs[1] != "file-inline-1" {
@@ -991,7 +991,7 @@ func TestChatCompletionsCurrentInputFileUploadsContextAndKeepsNeutralPrompt(t *t
 		t.Fatal("expected completion payload to be captured")
 	}
 	promptText, _ := ds.completionReq["prompt"].(string)
-	if !strings.Contains(promptText, "current API request") {
+	if !strings.Contains(promptText, "HISTORY.txt WORKING STATE") {
 		t.Fatalf("expected neutral completion prompt, got %s", promptText)
 	}
 	if strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
@@ -1037,7 +1037,7 @@ func TestResponsesCurrentInputFileUploadsContextAndKeepsNeutralPrompt(t *testing
 		t.Fatal("expected completion payload to be captured")
 	}
 	promptText, _ := ds.completionReq["prompt"].(string)
-	if !strings.Contains(promptText, "current API request") {
+	if !strings.Contains(promptText, "HISTORY.txt WORKING STATE") {
 		t.Fatalf("expected neutral completion prompt, got %s", promptText)
 	}
 	if strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
@@ -1173,7 +1173,7 @@ func TestCurrentInputFileWorksAcrossAutoDeleteModes(t *testing.T) {
 				t.Fatalf("expected completion payload for mode=%s", mode)
 			}
 			promptText, _ := ds.completionReq["prompt"].(string)
-			if !strings.Contains(promptText, "current API request") || strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
+			if !strings.Contains(promptText, "HISTORY.txt WORKING STATE") || strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
 				t.Fatalf("unexpected prompt for mode=%s: %s", mode, promptText)
 			}
 		})

@@ -129,11 +129,11 @@ func latestUserInputForFile(messages []any) (int, string) {
 }
 
 func currentInputFilePrompt() string {
-	return "Attached context belongs only to the current API request. Use only the attached request-local context and the latest user message. Read HISTORY.txt first and follow its WORKING STATE section. If WORKING STATE says no_active_working, do not repeat completed assistant answers. Do not use account-level memories, recent chats, previous sessions, or files not listed in ref_file_ids. If the latest user message explicitly asks to continue prior work, use the attached request-local context to continue. Otherwise, answer the latest user message directly."
+	return "Read HISTORY.txt WORKING STATE first. If it says no_active_working, do not repeat completed answers. Use only this request's attached context, ref_file_ids, and latest user message; no account memories, recent chats, or other sessions. Continue only if the latest user asks; otherwise answer the latest user directly."
 }
 
 func currentInputFilePromptWithTools() string {
-	return "Attached context belongs only to the current API request and includes active tool instructions. Use only the attached request-local context, active tool instructions, and the latest user message. Before emitting any tool call, read TOOL_PROMPT.txt and follow its exact tool-call syntax. Valid tool calls must use only the <|DSML|tool_calls> wrapper format described in TOOL_PROMPT.txt. When emitting a tool call, output only the tool call and no additional prose before or after it. Never use SML_DOLLAR_EM_OLLAR_, SM_OPEN_ATTR, JSON tool_calls, markdown fences, or any other tool-call format. Read HISTORY.txt first and follow its WORKING STATE section. If WORKING STATE says no_active_working, do not repeat completed assistant answers. Do not use account-level memories, recent chats, previous sessions, or files not listed in ref_file_ids. If the latest user message explicitly asks to continue prior work, use the attached request-local context to continue. Otherwise, answer the latest user message directly."
+	return "Read HISTORY.txt WORKING STATE and TOOL_PROMPT.txt first. If WORKING STATE says no_active_working, do not repeat completed answers. Use only this request's attached context, tool instructions, ref_file_ids, and latest user message; no account memories, recent chats, or other sessions. Tool calls must use TOOL_PROMPT.txt <|DSML|tool_calls> syntax only, with no prose. Continue only if the latest user asks; otherwise answer the latest user directly."
 }
 
 func withUTF8BOM(text string) []byte {

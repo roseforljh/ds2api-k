@@ -158,6 +158,33 @@ func TestBuildOpenAICurrentInputContextTranscriptUsesLatestUserInWorkingState(t 
 	}
 }
 
+func TestBuildOpenAICurrentInputContextTranscriptLatestUserInterruptsAssistantTail(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "先做 A"},
+		map[string]any{"role": "assistant", "content": "我准备继续 A"},
+		map[string]any{"role": "user", "content": "别做 A 了，改做 B"},
+	}
+	transcript := buildOpenAICurrentInputContextTranscript(messages)
+	workingStart := strings.Index(transcript, "=== WORKING STATE, READ FIRST ===")
+	fullStart := strings.Index(transcript, "=== FULL CHRONOLOGICAL CONTEXT, REFERENCE ONLY ===")
+	if workingStart < 0 || fullStart < 0 || fullStart <= workingStart {
+		t.Fatalf("expected working and full context sections, got %q", transcript)
+	}
+	working := transcript[workingStart:fullStart]
+	for _, want := range []string{
+		"Mode:\n- answer_latest_user",
+		"Latest user message:\n[User]\n别做 A 了，改做 B",
+		"Answer the latest user message. Do not continue stale assistant/tool working state.",
+	} {
+		if !strings.Contains(working, want) {
+			t.Fatalf("expected latest user to interrupt assistant tail %q, got %q", want, working)
+		}
+	}
+	if strings.Contains(working, "我准备继续 A") {
+		t.Fatalf("stale assistant tail must not drive latest-user request, got %q", working)
+	}
+}
+
 func TestBuildOpenAICurrentInputContextTranscriptUsesAssistantTailWhenLatestAssistantHasToolCalls(t *testing.T) {
 	messages := []any{
 		map[string]any{"role": "user", "content": "分析项目"},

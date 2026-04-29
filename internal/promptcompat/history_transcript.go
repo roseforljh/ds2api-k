@@ -239,7 +239,7 @@ func hasNonEmptyToolCalls(raw any) bool {
 }
 
 func workingStateLatestObservation(messages []map[string]any, mode string) string {
-	if mode == "no_active_working" {
+	if mode == "answer_latest_user" || mode == "no_active_working" {
 		return "No tool observation yet."
 	}
 	return latestObservation(messages)

@@ -44,13 +44,16 @@ func consumeXMLToolCapture(captured string, toolNames []string) (prefix string, 
 		xmlBlock := captured[tag.Start : closeTag.End+1]
 		prefixPart := captured[:tag.Start]
 		suffixPart := captured[closeTag.End+1:]
-		parsed := toolcall.ParseToolCalls(xmlBlock, toolNames)
-		if len(parsed) > 0 {
+		parseResult := toolcall.ParseToolCallsDetailed(xmlBlock, toolNames)
+		if len(parseResult.Calls) > 0 {
 			prefixPart, suffixPart = trimWrappingJSONFence(prefixPart, suffixPart)
 			if best == nil || tag.Start < best.start {
-				best = &candidate{start: tag.Start, prefix: prefixPart, calls: parsed, suffix: suffixPart}
+				best = &candidate{start: tag.Start, prefix: prefixPart, calls: parseResult.Calls, suffix: suffixPart}
 			}
 			break
+		}
+		if parseResult.RejectedInvalid {
+			return prefixPart, nil, suffixPart, true
 		}
 		if rejected == nil || tag.Start < rejected.start {
 			rejected = &rejectedBlock{start: tag.Start, prefix: prefixPart + xmlBlock, suffix: suffixPart}
@@ -75,10 +78,13 @@ func consumeXMLToolCapture(captured string, toolNames []string) (prefix string, 
 				xmlBlock := "<tool_calls>" + captured[invokeTag.Start:closeTag.End+1]
 				prefixPart := captured[:invokeTag.Start]
 				suffixPart := captured[closeTag.End+1:]
-				parsed := toolcall.ParseToolCalls(xmlBlock, toolNames)
-				if len(parsed) > 0 {
+				parseResult := toolcall.ParseToolCallsDetailed(xmlBlock, toolNames)
+				if len(parseResult.Calls) > 0 {
 					prefixPart, suffixPart = trimWrappingJSONFence(prefixPart, suffixPart)
-					return prefixPart, parsed, suffixPart, true
+					return prefixPart, parseResult.Calls, suffixPart, true
+				}
+				if parseResult.RejectedInvalid {
+					return prefixPart, nil, suffixPart, true
 				}
 				return prefixPart + captured[invokeTag.Start:closeTag.End+1], nil, suffixPart, true
 			}
@@ -151,6 +157,10 @@ func findPartialXMLToolTagStart(s string) int {
 	lowerTail := strings.ToLower(tail)
 	for _, tag := range []string{
 		"<tool_calls", "<invoke", "<parameter",
+		"<#dsml#tool_calls", "<#dsml#invoke", "<#dsml#parameter",
+		"<#dsm#tool_calls", "<#dsm#invoke", "<#dsm#parameter",
+		"<⌜dsml⌝tool_calls", "<⌜dsml⌝invoke", "<⌜dsml⌝parameter",
+		"<⌜dsm⌝tool_calls", "<⌜dsm⌝invoke", "<⌜dsm⌝parameter",
 		"<|tool_calls", "<|invoke", "<|parameter",
 		"<｜tool_calls", "<｜invoke", "<｜parameter",
 		"<|dsml|tool_calls", "<|dsml|invoke", "<|dsml|parameter",

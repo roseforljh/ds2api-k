@@ -13,6 +13,8 @@ import (
 	openaifmt "ds2api/internal/format/openai"
 	"ds2api/internal/sse"
 	streamengine "ds2api/internal/stream"
+	"ds2api/internal/toolcall"
+	"ds2api/internal/toolstream"
 )
 
 type chatNonStreamResult struct {
@@ -21,6 +23,7 @@ type chatNonStreamResult struct {
 	text                  string
 	contentFilter         bool
 	detectedCalls         int
+	malformedToolFeedback string
 	body                  map[string]any
 	finishReason          string
 	responseMessageID     int
@@ -43,6 +46,10 @@ func (h *Handler) handleNonStreamWithRetry(w http.ResponseWriter, ctx context.Co
 		result.toolDetectionThinking = accumulatedToolDetectionThinking
 		detected := detectAssistantToolCalls(result.text, result.thinking, result.toolDetectionThinking, toolNames)
 		result.detectedCalls = len(detected.Calls)
+		if shouldRetryMalformedToolCall(detected, result.text) {
+			result.malformedToolFeedback = result.text
+			result.text = ""
+		}
 		result.body = openaifmt.BuildChatCompletionWithToolCalls(completionID, model, usagePrompt, result.thinking, result.text, detected.Calls, toolsRaw)
 		result.finishReason = chatFinishReason(result.body)
 		if !shouldRetryChatNonStream(result, attempts) {
@@ -57,7 +64,7 @@ func (h *Handler) handleNonStreamWithRetry(w http.ResponseWriter, ctx context.Co
 			config.Logger.Warn("[openai_empty_retry] retry PoW fetch failed, falling back to original PoW", "surface", "chat.completions", "stream", false, "retry_attempt", attempts, "error", powErr)
 			retryPow = pow
 		}
-		retryPayload := clonePayloadForEmptyOutputRetry(payload, result.responseMessageID)
+		retryPayload := clonePayloadForMalformedOrEmptyRetry(payload, result.responseMessageID, result.malformedToolFeedback)
 		nextResp, err := h.DS.CallCompletion(ctx, a, retryPayload, retryPow, 3)
 		if err != nil {
 			if historySession != nil {
@@ -136,7 +143,36 @@ func shouldRetryChatNonStream(result chatNonStreamResult, attempts int) bool {
 		attempts < emptyOutputRetryMaxAttempts() &&
 		!result.contentFilter &&
 		result.detectedCalls == 0 &&
-		strings.TrimSpace(result.text) == ""
+		(strings.TrimSpace(result.text) == "" || strings.TrimSpace(result.malformedToolFeedback) != "")
+}
+
+func shouldRetryMalformedToolCall(parsed toolcall.ToolCallParseResult, text string) bool {
+	return parsed.RejectedInvalid && strings.TrimSpace(text) != ""
+}
+
+func clonePayloadForMalformedOrEmptyRetry(payload map[string]any, parentMessageID int, malformedToolFeedback string) map[string]any {
+	if strings.TrimSpace(malformedToolFeedback) == "" {
+		return clonePayloadForEmptyOutputRetry(payload, parentMessageID)
+	}
+	clone := make(map[string]any, len(payload))
+	for k, v := range payload {
+		clone[k] = v
+	}
+	original, _ := payload["prompt"].(string)
+	clone["prompt"] = appendMalformedToolCallRetrySuffix(original, malformedToolFeedback)
+	if parentMessageID > 0 {
+		clone["parent_message_id"] = parentMessageID
+	}
+	return clone
+}
+
+func appendMalformedToolCallRetrySuffix(prompt string, malformedToolFeedback string) string {
+	prompt = strings.TrimRight(prompt, "\r\n\t ")
+	suffix := "Previous reply attempted a tool call, but the tool call format was invalid and was not shown to the user. You MUST carefully follow TOOL_PROMPT.txt, especially the exact tool-call XML/DSML format, then regenerate the tool call only. Required tool parameters must be non-empty. For Read, file_path must contain the absolute or relative path to read. Invalid hidden tool call:\n\n" + strings.TrimSpace(malformedToolFeedback)
+	if prompt == "" {
+		return suffix
+	}
+	return prompt + "\n\n" + suffix
 }
 
 func (h *Handler) handleStreamWithRetry(w http.ResponseWriter, r *http.Request, a *auth.RequestAuth, resp *http.Response, payload map[string]any, pow, completionID, model, finalPrompt string, thinkingEnabled, searchEnabled bool, toolNames []string, toolsRaw any, historySession *chatHistorySession) {
@@ -165,7 +201,8 @@ func (h *Handler) handleStreamWithRetry(w http.ResponseWriter, r *http.Request, 
 			config.Logger.Warn("[openai_empty_retry] retry PoW fetch failed, falling back to original PoW", "surface", "chat.completions", "stream", true, "retry_attempt", attempts, "error", powErr)
 			retryPow = pow
 		}
-		nextResp, err := h.DS.CallCompletion(r.Context(), a, clonePayloadForEmptyOutputRetry(payload, streamRuntime.responseMessageID), retryPow, 3)
+		malformedFeedback := streamRuntime.malformedToolFeedback
+		nextResp, err := h.DS.CallCompletion(r.Context(), a, clonePayloadForMalformedOrEmptyRetry(payload, streamRuntime.responseMessageID, malformedFeedback), retryPow, 3)
 		if err != nil {
 			failChatStreamRetry(streamRuntime, historySession, http.StatusInternalServerError, "Failed to get completion.", "error")
 			config.Logger.Warn("[openai_empty_retry] retry request failed", "surface", "chat.completions", "stream", true, "retry_attempt", attempts, "error", err)
@@ -176,6 +213,11 @@ func (h *Handler) handleStreamWithRetry(w http.ResponseWriter, r *http.Request, 
 			body, _ := io.ReadAll(nextResp.Body)
 			failChatStreamRetry(streamRuntime, historySession, nextResp.StatusCode, string(body), "error")
 			return
+		}
+		if strings.TrimSpace(malformedFeedback) != "" {
+			streamRuntime.text.Reset()
+			streamRuntime.toolSieve = toolstream.State{}
+			streamRuntime.malformedToolFeedback = ""
 		}
 		streamRuntime.finalPrompt = usagePromptWithEmptyOutputRetry(finalPrompt, attempts)
 		currentResp = nextResp

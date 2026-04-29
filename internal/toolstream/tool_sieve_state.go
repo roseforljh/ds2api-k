@@ -22,6 +22,7 @@ type State struct {
 	toolArgsSent           int
 	toolArgsString         bool
 	toolArgsDone           bool
+	MalformedToolFeedback  string
 }
 
 type Event struct {

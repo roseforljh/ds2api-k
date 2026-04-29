@@ -14,6 +14,9 @@ const {
   hasOpenXMLToolTag,
   findPartialXMLToolTagStart,
 } = require('./sieve-xml');
+
+const SML_SENTINEL_OPEN = '<sml_dollar_em_ollar_';
+const SML_SENTINEL_CLOSE = '</sml_dollar_em_ollar_';
 function processToolSieveChunk(state, chunk, toolNames) {
   if (!state) {
     return [];
@@ -118,6 +121,17 @@ function flushToolSieve(state, toolNames) {
       }
     } else if (state.capture) {
       const content = state.capture;
+      if (looksLikeSMLSentinelToolProtocol(content)) {
+        state.capture = '';
+        state.capturing = false;
+        resetIncrementalToolState(state);
+        if (state.pending) {
+          noteText(state, state.pending);
+          events.push({ type: 'text', text: state.pending });
+          state.pending = '';
+        }
+        return events;
+      }
       const recovered = sanitizeLooseCDATA(content);
       if (recovered !== content) {
         const recoveredResult = consumeXMLToolCaptureImpl(recovered, toolNames, trimWrappingJSONFence);
@@ -157,6 +171,16 @@ function splitSafeContentForToolDetection(state, s) {
   if (!text) {
     return ['', ''];
   }
+  const smlIdx = findPartialSMLSentinelStart(text);
+  if (smlIdx >= 0) {
+    if (insideCodeFenceWithState(state, text.slice(0, smlIdx))) {
+      return [text, ''];
+    }
+    if (smlIdx > 0) {
+      return [text.slice(0, smlIdx), text.slice(smlIdx)];
+    }
+    return ['', text];
+  }
   // Only hold back partial XML tool tags.
   const xmlIdx = findPartialXMLToolTagStart(text);
   if (xmlIdx >= 0) {
@@ -178,19 +202,31 @@ function findToolSegmentStart(state, s) {
   let offset = 0;
   while (true) {
     const tag = findToolMarkupTagOutsideIgnored(s, offset);
-    if (!tag) {
+    const smlStart = findSMLSentinelStart(s, offset);
+    if (!tag && smlStart < 0) {
       return -1;
     }
-    if (!insideCodeFenceWithState(state, s.slice(0, tag.start))) {
-      return tag.start;
+    const tagStart = tag ? tag.start : -1;
+    const candidateStart = tagStart >= 0 && (smlStart < 0 || tagStart < smlStart) ? tagStart : smlStart;
+    const candidateEnd = tagStart === candidateStart ? tag.end + 1 : candidateStart + SML_SENTINEL_OPEN.length;
+    if (!insideCodeFenceWithState(state, s.slice(0, candidateStart))) {
+      return candidateStart;
     }
-    offset = tag.end + 1;
+    offset = candidateEnd;
   }
 }
 
 function consumeToolCapture(state, toolNames) {
   const captured = state.capture || '';
   if (!captured) {
+    return { ready: false, prefix: '', calls: [], suffix: '' };
+  }
+
+  const smlResult = consumeSMLSentinelCapture(captured);
+  if (smlResult.ready) {
+    return smlResult;
+  }
+  if (looksLikeSMLSentinelToolProtocol(captured)) {
     return { ready: false, prefix: '', calls: [], suffix: '' };
   }
 
@@ -210,6 +246,46 @@ function consumeToolCapture(state, toolNames) {
     prefix: captured,
     calls: [],
     suffix: '',
+  };
+}
+
+function findSMLSentinelStart(text, from) {
+  const lower = String(text || '').toLowerCase();
+  return lower.indexOf(SML_SENTINEL_OPEN, Math.max(0, from || 0));
+}
+
+function findPartialSMLSentinelStart(text) {
+  const lower = String(text || '').toLowerCase();
+  const lastLT = lower.lastIndexOf('<');
+  if (lastLT < 0 || lower.slice(lastLT).includes('>')) {
+    return -1;
+  }
+  const tail = lower.slice(lastLT);
+  if (SML_SENTINEL_OPEN.startsWith(tail) || SML_SENTINEL_CLOSE.startsWith(tail)) {
+    return lastLT;
+  }
+  return -1;
+}
+
+function looksLikeSMLSentinelToolProtocol(text) {
+  return findSMLSentinelStart(text, 0) >= 0;
+}
+
+function consumeSMLSentinelCapture(captured) {
+  const lower = String(captured || '').toLowerCase();
+  const open = lower.indexOf(SML_SENTINEL_OPEN);
+  if (open < 0) {
+    return { ready: false, prefix: '', calls: [], suffix: '' };
+  }
+  const close = lower.indexOf(SML_SENTINEL_CLOSE, open + SML_SENTINEL_OPEN.length);
+  if (close < 0) {
+    return { ready: false, prefix: '', calls: [], suffix: '' };
+  }
+  return {
+    ready: true,
+    prefix: captured.slice(0, open),
+    calls: [],
+    suffix: captured.slice(close + SML_SENTINEL_CLOSE.length),
   };
 }
 

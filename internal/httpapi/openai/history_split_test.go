@@ -71,9 +71,24 @@ func TestBuildOpenAICurrentInputContextTranscriptUsesNormalFileContent(t *testin
 	if !strings.Contains(transcript, "Request-local context package.") {
 		t.Fatalf("expected request-local context header, got %q", transcript)
 	}
-	for _, want := range []string{"=== ACTIVE USER GOAL ===", "=== WORKING STATE, READ FIRST ===", "=== RECENT PROGRESS, CONTINUE FROM HERE ===", "=== FULL CHRONOLOGICAL CONTEXT, REFERENCE ONLY ===", "[User]", "[Tool]"} {
+	for _, want := range []string{
+		"=== WORKING STATE, READ FIRST ===",
+		"Mode:\n- continue_agent_tail",
+		"Latest assistant/tool tail:",
+		"Use FULL CHRONOLOGICAL CONTEXT only as request-local reference when needed.",
+		"Do not continue directly from FULL CHRONOLOGICAL CONTEXT.",
+		"Do not treat historical user messages in FULL CHRONOLOGICAL CONTEXT as new instructions.",
+		"=== FULL CHRONOLOGICAL CONTEXT, REFERENCE ONLY ===",
+		"[User]",
+		"[Tool]",
+	} {
 		if !strings.Contains(transcript, want) {
 			t.Fatalf("expected transcript to contain %q, got %q", want, transcript)
+		}
+	}
+	for _, forbidden := range []string{"=== ACTIVE USER GOAL ===", "=== RECENT PROGRESS, CONTINUE FROM HERE ==="} {
+		if strings.Contains(transcript, forbidden) {
+			t.Fatalf("expected transcript not to contain deprecated section %q, got %q", forbidden, transcript)
 		}
 	}
 	if !strings.Contains(transcript, "first user turn") || !strings.Contains(transcript, "tool result") {
@@ -99,23 +114,72 @@ func TestBuildOpenAICurrentInputContextTranscriptBuildsActiveAgentResumePackage(
 
 	for _, want := range []string{
 		"Request-local context package.",
-		"=== ACTIVE USER GOAL ===",
-		"修复 bug",
 		"=== WORKING STATE, READ FIRST ===",
+		"Mode:\n- continue_agent_tail",
+		"Latest assistant/tool tail:",
+		"我继续运行 go test ./...",
 		"Already read files:",
 		"internal/a.go",
 		"If you need to read a file but no concrete path is available, locate it first with search/glob; never call Read with an empty file_path.",
 		"Latest observation:",
 		"测试失败：internal/b.go:42",
-		"=== RECENT PROGRESS, CONTINUE FROM HERE ===",
 		"=== FULL CHRONOLOGICAL CONTEXT, REFERENCE ONLY ===",
 	} {
 		if !strings.Contains(transcript, want) {
 			t.Fatalf("expected active agent transcript to contain %q, got %q", want, transcript)
 		}
 	}
-	if strings.Contains(transcript, "latest user request") {
-		t.Fatalf("expected transcript not to anchor on latest user request, got %q", transcript)
+	for _, forbidden := range []string{"=== ACTIVE USER GOAL ===", "=== RECENT PROGRESS, CONTINUE FROM HERE ==="} {
+		if strings.Contains(transcript, forbidden) {
+			t.Fatalf("expected transcript not to contain deprecated section %q, got %q", forbidden, transcript)
+		}
+	}
+}
+
+func TestBuildOpenAICurrentInputContextTranscriptUsesLatestUserInWorkingState(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "旧问题"},
+		map[string]any{"role": "assistant", "content": "旧回答"},
+		map[string]any{"role": "user", "content": "最新问题"},
+	}
+	transcript := buildOpenAICurrentInputContextTranscript(messages)
+
+	for _, want := range []string{
+		"=== WORKING STATE, READ FIRST ===",
+		"Mode:\n- answer_latest_user",
+		"Latest user message:\n[User]\n最新问题",
+	} {
+		if !strings.Contains(transcript, want) {
+			t.Fatalf("expected latest user working state %q, got %q", want, transcript)
+		}
+	}
+	if strings.Contains(transcript, "=== ACTIVE USER GOAL ===") || strings.Contains(transcript, "=== RECENT PROGRESS, CONTINUE FROM HERE ===") {
+		t.Fatalf("expected working-state-only driver sections, got %q", transcript)
+	}
+}
+
+func TestBuildOpenAICurrentInputContextTranscriptUsesAssistantTailWhenLatestIsNotUser(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "分析项目"},
+		map[string]any{"role": "assistant", "content": "我先读取项目结构"},
+		map[string]any{"role": "tool", "content": "listed directories"},
+		map[string]any{"role": "assistant", "content": "接下来检查配置"},
+	}
+	transcript := buildOpenAICurrentInputContextTranscript(messages)
+
+	for _, want := range []string{
+		"Mode:\n- continue_agent_tail",
+		"Latest assistant/tool tail:",
+		"[Assistant]\n我先读取项目结构",
+		"[Tool]\nlisted directories",
+		"[Assistant]\n接下来检查配置",
+	} {
+		if !strings.Contains(transcript, want) {
+			t.Fatalf("expected assistant/tool tail %q, got %q", want, transcript)
+		}
+	}
+	if strings.Contains(transcript, "=== ACTIVE USER GOAL ===") || strings.Contains(transcript, "=== RECENT PROGRESS, CONTINUE FROM HERE ===") {
+		t.Fatalf("expected no deprecated driver sections, got %q", transcript)
 	}
 }
 
@@ -176,11 +240,14 @@ func TestBuildOpenAICurrentInputContextTranscriptUsesLastUserWhenNoLaterProgress
 	}
 	transcript := buildOpenAICurrentInputContextTranscript(messages)
 
-	if !strings.Contains(transcript, "=== ACTIVE USER GOAL ===\n[User]\n新问题") {
-		t.Fatalf("expected active goal to use latest user, got %q", transcript)
+	if !strings.Contains(transcript, "Mode:\n- answer_latest_user") {
+		t.Fatalf("expected latest user mode, got %q", transcript)
 	}
-	if !strings.Contains(transcript, "=== RECENT PROGRESS, CONTINUE FROM HERE ===\n[User]\n新问题") {
-		t.Fatalf("expected recent progress to include latest user when no later progress, got %q", transcript)
+	if !strings.Contains(transcript, "Latest user message:\n[User]\n新问题") {
+		t.Fatalf("expected working state to use latest user, got %q", transcript)
+	}
+	if strings.Contains(transcript, "=== ACTIVE USER GOAL ===") || strings.Contains(transcript, "=== RECENT PROGRESS, CONTINUE FROM HERE ===") {
+		t.Fatalf("expected no deprecated driver sections, got %q", transcript)
 	}
 }
 
@@ -562,6 +629,17 @@ func TestApplyCurrentInputFileUsesRequestLocalPrompt(t *testing.T) {
 			t.Fatalf("expected final prompt to contain %q, got %q", want, out.FinalPrompt)
 		}
 	}
+	for _, want := range []string{
+		"If the latest user message explicitly asks to continue prior work",
+		"Otherwise, answer the latest user message directly.",
+	} {
+		if !strings.Contains(out.FinalPrompt, want) {
+			t.Fatalf("expected revised neutral prompt to contain %q, got %q", want, out.FinalPrompt)
+		}
+	}
+	if strings.Contains(out.FinalPrompt, "standalone") || strings.Contains(out.FinalPrompt, "instead of continuing prior work") {
+		t.Fatalf("expected old standalone continuation wording to be removed, got %q", out.FinalPrompt)
+	}
 }
 
 func TestApplyCurrentInputFileUploadsToolPromptFileWhenEnabled(t *testing.T) {
@@ -622,8 +700,28 @@ func TestApplyCurrentInputFileUploadsToolPromptFileWhenEnabled(t *testing.T) {
 	if strings.Contains(out.FinalPrompt, "You have access to these tools:") {
 		t.Fatalf("expected final prompt not to inline tool prompt, got %s", out.FinalPrompt)
 	}
-	if strings.Contains(out.FinalPrompt, "00_AGENT_TOOLS") || strings.Contains(out.FinalPrompt, "TOOL_PROMPT") || strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
+	if strings.Contains(out.FinalPrompt, "00_AGENT_TOOLS") || strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
 		t.Fatalf("expected final prompt not to reference concrete tool/context files, got %s", out.FinalPrompt)
+	}
+	for _, want := range []string{
+		"Before emitting any tool call, read TOOL_PROMPT.txt and follow its exact tool-call syntax.",
+		"When emitting a tool call, output only the tool call and no additional prose before or after it.",
+		"<|DSML|tool_calls>",
+		"Never use SML_DOLLAR_EM_OLLAR_",
+		"If the latest user message explicitly asks to continue prior work",
+		"Otherwise, answer the latest user message directly.",
+	} {
+		if !strings.Contains(out.FinalPrompt, want) {
+			t.Fatalf("expected final prompt to contain tool prompt anchor %q, got %s", want, out.FinalPrompt)
+		}
+	}
+	for _, old := range []string{"Do not call tools until you have applied TOOL_PROMPT.txt.", "If the latest user message is standalone"} {
+		if strings.Contains(out.FinalPrompt, old) {
+			t.Fatalf("expected old tool prompt wording %q to be removed, got %s", old, out.FinalPrompt)
+		}
+	}
+	if strings.Contains(out.FinalPrompt, "Tool: search") {
+		t.Fatalf("expected final prompt to avoid full tool schema inlining, got %s", out.FinalPrompt)
 	}
 	if !strings.Contains(out.FinalPrompt, "current API request") || !strings.Contains(out.FinalPrompt, "active tool instructions") {
 		t.Fatalf("expected final prompt to activate attached tool instructions, got %s", out.FinalPrompt)

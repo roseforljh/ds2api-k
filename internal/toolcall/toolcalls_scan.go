@@ -138,7 +138,15 @@ func scanToolMarkupTagAt(text string, start int) (ToolMarkupTag, bool) {
 		dsmlLike = true
 		i = next
 	}
-	if strings.HasPrefix(lower[i:], "dsml") {
+	if next, markerClosing, ok := consumeBracketToolMarkupAlias(text, i); ok {
+		dsmlLike = true
+		closing = closing || markerClosing
+		i = next
+	} else if next, markerClosing, ok := consumeHashToolMarkupAlias(text, i); ok {
+		dsmlLike = true
+		closing = closing || markerClosing
+		i = next
+	} else if strings.HasPrefix(lower[i:], "dsml") {
 		dsmlLike = true
 		i += len("dsml")
 		for next, ok := consumeToolMarkupSeparator(text, i); ok; next, ok = consumeToolMarkupSeparator(text, i) {
@@ -203,6 +211,48 @@ func consumeToolMarkupPipe(text string, idx int) (int, bool) {
 		break
 	}
 	return idx, idx > start
+}
+
+func consumeBracketToolMarkupAlias(text string, idx int) (next int, closing bool, ok bool) {
+	if idx >= len(text) || !strings.HasPrefix(text[idx:], "⌜") {
+		return idx, false, false
+	}
+	endRel := strings.Index(text[idx+len("⌜"):], "⌝")
+	if endRel < 0 {
+		return idx, false, false
+	}
+	bodyStart := idx + len("⌜")
+	bodyEnd := bodyStart + endRel
+	marker := strings.TrimSpace(strings.ToLower(text[bodyStart:bodyEnd]))
+	if strings.HasPrefix(marker, "/") {
+		closing = true
+		marker = strings.TrimSpace(strings.TrimPrefix(marker, "/"))
+	}
+	if marker != "dsml" && marker != "dsm" {
+		return idx, false, false
+	}
+	return bodyEnd + len("⌝"), closing, true
+}
+
+func consumeHashToolMarkupAlias(text string, idx int) (next int, closing bool, ok bool) {
+	if idx >= len(text) || text[idx] != '#' {
+		return idx, false, false
+	}
+	endRel := strings.Index(text[idx+1:], "#")
+	if endRel < 0 {
+		return idx, false, false
+	}
+	bodyStart := idx + 1
+	bodyEnd := bodyStart + endRel
+	marker := strings.TrimSpace(strings.ToLower(text[bodyStart:bodyEnd]))
+	if strings.HasPrefix(marker, "/") {
+		closing = true
+		marker = strings.TrimSpace(strings.TrimPrefix(marker, "/"))
+	}
+	if marker != "dsml" && marker != "dsm" {
+		return idx, false, false
+	}
+	return bodyEnd + 1, closing, true
 }
 
 func consumeToolMarkupSeparator(text string, idx int) (int, bool) {

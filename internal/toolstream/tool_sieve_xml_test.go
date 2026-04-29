@@ -136,6 +136,113 @@ func TestProcessToolSieveInterceptsBareMixedFullwidthDSMLToolCallWithoutLeak(t *
 	}
 }
 
+func TestProcessToolSieveInterceptsBracketDSMLToolCallWithoutLeak(t *testing.T) {
+	var state State
+	chunks := []string{
+		"<⌜DSML⌝tool",
+		"_calls>\n",
+		`  <⌜DSML⌝invoke name="Bash">` + "\n",
+		`    <⌜DSML⌝parameter name="command"><![CDATA[pwd]]><⌜/DSML⌝parameter>` + "\n",
+		"  <⌜/DSML⌝invoke>\n",
+		"<⌜/DSML⌝tool_calls>",
+	}
+	var events []Event
+	for _, chunk := range chunks {
+		events = append(events, ProcessChunk(&state, chunk, []string{"Bash"})...)
+	}
+	events = append(events, Flush(&state, []string{"Bash"})...)
+
+	var textContent strings.Builder
+	toolCalls := 0
+	for _, evt := range events {
+		textContent.WriteString(evt.Content)
+		toolCalls += len(evt.ToolCalls)
+	}
+
+	if strings.Contains(textContent.String(), "DSML") || strings.Contains(textContent.String(), "Bash") {
+		t.Fatalf("bracket DSML tool call content leaked to text: %q", textContent.String())
+	}
+	if toolCalls != 1 {
+		t.Fatalf("expected one bracket DSML tool call, got %d events=%#v", toolCalls, events)
+	}
+}
+
+func TestProcessToolSieveDropsBracketDSMEmptyReadWithoutLeak(t *testing.T) {
+	var state State
+	chunk := `<⌜DSML⌝tool_calls><⌜DSML⌝invoke name="Read"><⌜DSML⌝parameter name="file_path"><⌜/DSML⌝parameter><⌜/DSML⌝invoke><⌜/DSML⌝tool_calls>`
+	events := ProcessChunk(&state, chunk, []string{"Read"})
+	events = append(events, Flush(&state, []string{"Read"})...)
+	for _, evt := range events {
+		if evt.Content != "" || len(evt.ToolCalls) > 0 {
+			t.Fatalf("expected invalid empty Read call to be hidden from client and not emitted, got %#v", events)
+		}
+	}
+}
+
+func TestProcessToolSieveDropsSMLSentinelProtocolWithoutLeak(t *testing.T) {
+	var state State
+	chunk := strings.Join([]string{
+		"prefix ",
+		"<SML_DOLLAR_EM_OLLAR_\n",
+		"<SM_OPEN_ATTR\n",
+		"name=\"Read\"\n",
+		"file_path=\"C:\\Users\\33039\\Desktop\\KunBoxForWindows\\graphify-out\\GRAPH_REPORT.md\"\n",
+		"<SM_CLOSE_ATTR\n",
+		"<SM_OPEN_ATTR\n",
+		"name=\"Bash\"\n",
+		"command=\"ls -la C:/Users/33039/Desktop/KunBoxForWindows/\"\n",
+		"description=\"List top-level project structure\"\n",
+		"<SMCLOSE_ATTR\n",
+		"</SML_DOLLAR_EM_OLLAR_",
+		" suffix",
+	}, "")
+	events := ProcessChunk(&state, chunk, []string{"Read", "Bash"})
+	events = append(events, Flush(&state, []string{"Read", "Bash"})...)
+	var textContent strings.Builder
+	toolCalls := 0
+	for _, evt := range events {
+		textContent.WriteString(evt.Content)
+		toolCalls += len(evt.ToolCalls)
+	}
+	if toolCalls != 0 {
+		t.Fatalf("expected SML sentinel protocol not to emit tool calls, got %d events=%#v", toolCalls, events)
+	}
+	if textContent.String() != "prefix  suffix" {
+		t.Fatalf("expected SML sentinel protocol to be dropped without leaking text, got %q", textContent.String())
+	}
+}
+
+func TestProcessToolSieveDropsUnparseableReadFilePathWithoutLeak(t *testing.T) {
+	var state State
+	chunk := `<⌜DSML⌝tool_calls><⌜DSML⌝invoke name="Read"><⌜DSML⌝parameter name="file_path">C:\Users\me\repo\README.md`
+	events := ProcessChunk(&state, chunk, []string{"Read"})
+	events = append(events, Flush(&state, []string{"Read"})...)
+	for _, evt := range events {
+		if evt.Content != "" || len(evt.ToolCalls) > 0 {
+			t.Fatalf("expected unparseable Read.file_path call to be hidden from client and not emitted, got %#v", events)
+		}
+	}
+}
+
+func TestProcessToolSieveDropsHashDSMLReadFilePathWithoutLeak(t *testing.T) {
+	var state State
+	chunk := `<#DSML#tool_calls>
+<#DSML#invoke name="Read">
+<#DSML#parameter name="file_path">#CDATA#C:\Users\me\repo\settings.rs#CDATA#</#DSML#parameter>
+</#DSML#invoke>
+</#DSML#tool_calls>`
+	events := ProcessChunk(&state, chunk, []string{"Read"})
+	events = append(events, Flush(&state, []string{"Read"})...)
+	for _, evt := range events {
+		if evt.Content != "" || len(evt.ToolCalls) > 0 {
+			t.Fatalf("expected hash DSML Read.file_path call to be hidden from client and not emitted, got %#v", events)
+		}
+	}
+	if !strings.Contains(state.MalformedToolFeedback, "<#DSML#tool_calls>") {
+		t.Fatalf("expected hash DSML malformed feedback to be retained for retry, got %q", state.MalformedToolFeedback)
+	}
+}
+
 func TestProcessToolSievePreservesMixedFullwidthDSMLMentionBeforeToolCall(t *testing.T) {
 	var state State
 	chunks := []string{

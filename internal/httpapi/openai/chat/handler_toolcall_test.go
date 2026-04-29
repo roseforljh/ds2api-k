@@ -1,12 +1,16 @@
 package chat
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"ds2api/internal/auth"
+	dsclient "ds2api/internal/deepseek/client"
 )
 
 func makeSSEHTTPResponse(lines ...string) *http.Response {
@@ -226,6 +230,171 @@ func TestHandleNonStreamPromotesDSMFullwidthToolCalls(t *testing.T) {
 	}
 	if content, exists := message["content"]; !exists || content != nil {
 		t.Fatalf("expected raw DSM content hidden when promoted, got %#v", message["content"])
+	}
+}
+
+type malformedToolRetryDSStub struct {
+	payloads []map[string]any
+}
+
+func (m *malformedToolRetryDSStub) CreateSession(_ context.Context, _ *auth.RequestAuth, _ int) (string, error) {
+	return "session-id", nil
+}
+
+func (m *malformedToolRetryDSStub) GetPow(_ context.Context, _ *auth.RequestAuth, _ int) (string, error) {
+	return "pow-retry", nil
+}
+
+func (m *malformedToolRetryDSStub) UploadFile(_ context.Context, _ *auth.RequestAuth, _ dsclient.UploadFileRequest, _ int) (*dsclient.UploadFileResult, error) {
+	return &dsclient.UploadFileResult{ID: "file-id"}, nil
+}
+
+func (m *malformedToolRetryDSStub) CallCompletion(_ context.Context, _ *auth.RequestAuth, payload map[string]any, _ string, _ int) (*http.Response, error) {
+	m.payloads = append(m.payloads, payload)
+	return makeSSEHTTPResponse(
+		`data: {"p":"response/content","v":"final answer after retry"}`,
+		`data: [DONE]`,
+	), nil
+}
+
+func (m *malformedToolRetryDSStub) DeleteSessionForToken(_ context.Context, _ string, _ string) (*dsclient.DeleteSessionResult, error) {
+	return &dsclient.DeleteSessionResult{Success: true}, nil
+}
+
+func (m *malformedToolRetryDSStub) DeleteAllSessionsForToken(_ context.Context, _ string) error {
+	return nil
+}
+
+func TestHandleNonStreamRetriesMalformedEmptyReadToolCallWithoutClientLeak(t *testing.T) {
+	ds := &malformedToolRetryDSStub{}
+	h := &Handler{DS: ds}
+	malformed := `<⌜DSML⌝tool_calls><⌜DSML⌝invoke name="Read"><⌜DSML⌝parameter name="file_path"><⌜/DSML⌝parameter><⌜/DSML⌝invoke><⌜/DSML⌝tool_calls>`
+	payload, _ := json.Marshal(map[string]any{"p": "response/content", "v": malformed})
+	resp := makeSSEHTTPResponse("data: "+string(payload), `data: [DONE]`)
+	rec := httptest.NewRecorder()
+
+	h.handleNonStreamWithRetry(rec, context.Background(), &auth.RequestAuth{}, resp, map[string]any{"prompt": "original prompt"}, "pow", "cid-malformed", "deepseek-v4-flash", "original prompt", false, false, []string{"Read"}, nil, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected hidden retry to recover with 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(ds.payloads) != 1 {
+		t.Fatalf("expected one hidden retry payload, got %d", len(ds.payloads))
+	}
+	retryPrompt, _ := ds.payloads[0]["prompt"].(string)
+	if !strings.Contains(retryPrompt, "file_path") || !strings.Contains(retryPrompt, malformed) {
+		t.Fatalf("expected retry prompt to include malformed tool feedback, got %q", retryPrompt)
+	}
+	if !strings.Contains(retryPrompt, "TOOL_PROMPT.txt") {
+		t.Fatalf("expected retry prompt to instruct model to review TOOL_PROMPT.txt, got %q", retryPrompt)
+	}
+	if strings.Contains(rec.Body.String(), "DSML") || strings.Contains(rec.Body.String(), "file_path") {
+		t.Fatalf("malformed tool feedback leaked to client: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "final answer after retry") {
+		t.Fatalf("expected final retry output, got %s", rec.Body.String())
+	}
+}
+
+func TestHandleNonStreamRetriesUnparseableReadFilePathWithoutClientLeak(t *testing.T) {
+	ds := &malformedToolRetryDSStub{}
+	h := &Handler{DS: ds}
+	malformed := `<⌜DSML⌝tool_calls><⌜DSML⌝invoke name="Read"><⌜DSML⌝parameter name="file_path">C:\Users\me\repo\README.md`
+	payload, _ := json.Marshal(map[string]any{"p": "response/content", "v": malformed})
+	resp := makeSSEHTTPResponse("data: "+string(payload), `data: [DONE]`)
+	rec := httptest.NewRecorder()
+
+	h.handleNonStreamWithRetry(rec, context.Background(), &auth.RequestAuth{}, resp, map[string]any{"prompt": "original prompt"}, "pow", "cid-malformed-unparseable", "deepseek-v4-flash", "original prompt", false, false, []string{"Read"}, nil, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected hidden retry to recover with 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(ds.payloads) != 1 {
+		t.Fatalf("expected one hidden retry payload, got %d", len(ds.payloads))
+	}
+	retryPrompt, _ := ds.payloads[0]["prompt"].(string)
+	if !strings.Contains(retryPrompt, "file_path") || !strings.Contains(retryPrompt, malformed) {
+		t.Fatalf("expected retry prompt to include unparseable tool feedback, got %q", retryPrompt)
+	}
+	if !strings.Contains(retryPrompt, "TOOL_PROMPT.txt") {
+		t.Fatalf("expected retry prompt to instruct model to review TOOL_PROMPT.txt, got %q", retryPrompt)
+	}
+	if strings.Contains(rec.Body.String(), "DSML") || strings.Contains(rec.Body.String(), "file_path") || strings.Contains(rec.Body.String(), "README.md") {
+		t.Fatalf("unparseable tool feedback leaked to client: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "final answer after retry") {
+		t.Fatalf("expected final retry output, got %s", rec.Body.String())
+	}
+}
+
+func TestHandleStreamRetriesUnparseableReadFilePathWithToolPromptFeedback(t *testing.T) {
+	ds := &malformedToolRetryDSStub{}
+	h := &Handler{DS: ds}
+	malformed := `<⌜DSML⌝tool_calls><⌜DSML⌝invoke name="Read"><⌜DSML⌝parameter name="file_path">C:\Users\me\repo\README.md`
+	payload, _ := json.Marshal(map[string]any{"p": "response/content", "v": malformed})
+	resp := makeSSEHTTPResponse("data: "+string(payload), `data: [DONE]`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	h.handleStreamWithRetry(rec, req, &auth.RequestAuth{}, resp, map[string]any{"prompt": "original prompt"}, "pow", "cid-stream-malformed", "deepseek-v4-flash", "original prompt", false, false, []string{"Read"}, nil, nil)
+	if len(ds.payloads) != 1 {
+		t.Fatalf("expected one hidden stream retry payload, got %d body=%s", len(ds.payloads), rec.Body.String())
+	}
+	retryPrompt, _ := ds.payloads[0]["prompt"].(string)
+	if !strings.Contains(retryPrompt, "TOOL_PROMPT.txt") || !strings.Contains(retryPrompt, malformed) {
+		t.Fatalf("expected stream retry prompt to include TOOL_PROMPT.txt and malformed feedback, got %q", retryPrompt)
+	}
+	if strings.Contains(rec.Body.String(), "DSML") || strings.Contains(rec.Body.String(), "file_path") || strings.Contains(rec.Body.String(), "README.md") {
+		t.Fatalf("unparseable stream tool feedback leaked to client: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "final answer after retry") {
+		t.Fatalf("expected final stream retry output, got %s", rec.Body.String())
+	}
+}
+
+func TestHandleStreamRetriesHashDSMLReadFilePathWithToolPromptFeedback(t *testing.T) {
+	ds := &malformedToolRetryDSStub{}
+	h := &Handler{DS: ds}
+	malformed := `<#DSML#tool_calls>
+<#DSML#invoke name="Read">
+<#DSML#parameter name="file_path">#CDATA#C:\Users\me\repo\settings.rs#CDATA#</#DSML#parameter>
+</#DSML#invoke>
+</#DSML#tool_calls>`
+	payload, _ := json.Marshal(map[string]any{"p": "response/content", "v": malformed})
+	resp := makeSSEHTTPResponse("data: "+string(payload), `data: [DONE]`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	h.handleStreamWithRetry(rec, req, &auth.RequestAuth{}, resp, map[string]any{"prompt": "original prompt"}, "pow", "cid-stream-hash-dsml", "deepseek-v4-flash", "original prompt", false, false, []string{"Read"}, nil, nil)
+	if len(ds.payloads) != 1 {
+		t.Fatalf("expected one hidden stream retry payload, got %d body=%s", len(ds.payloads), rec.Body.String())
+	}
+	retryPrompt, _ := ds.payloads[0]["prompt"].(string)
+	if !strings.Contains(retryPrompt, "TOOL_PROMPT.txt") || !strings.Contains(retryPrompt, malformed) {
+		t.Fatalf("expected stream retry prompt to include TOOL_PROMPT.txt and hash DSML feedback, got %q", retryPrompt)
+	}
+	if strings.Contains(rec.Body.String(), "#DSML#") || strings.Contains(rec.Body.String(), "settings.rs") {
+		t.Fatalf("hash DSML tool feedback leaked to client: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "final answer after retry") {
+		t.Fatalf("expected final stream retry output, got %s", rec.Body.String())
+	}
+}
+
+func TestHandleStreamSuppressesTextAfterToolCallInSameTurn(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`data: {"p":"response/content","v":"<tool_calls><invoke name=\"Read\"><parameter name=\"file_path\">/tmp/input.txt</parameter></invoke></tool_calls>\n继续读取剩余文件。"}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	h.handleStream(rec, req, resp, "cid-tool-post-text", "deepseek-v4-flash", "prompt", false, false, []string{"Read"}, nil, nil)
+	frames, _ := parseSSEDataFrames(t, rec.Body.String())
+	if !streamHasToolCallsDelta(frames) {
+		t.Fatalf("expected tool call delta, body=%s", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "继续读取剩余文件") {
+		t.Fatalf("post-tool text leaked after tool call boundary: %s", rec.Body.String())
 	}
 }
 

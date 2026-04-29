@@ -14,6 +14,7 @@ type ToolCallParseResult struct {
 	SawToolCallSyntax bool
 	RejectedByPolicy  bool
 	RejectedToolNames []string
+	RejectedInvalid   bool
 }
 
 func ParseToolCalls(text string, availableToolNames []string) []ParsedToolCall {
@@ -62,6 +63,13 @@ func parseToolCallsDetailedXMLOnly(text string) ToolCallParseResult {
 
 	normalized, ok := normalizeDSMLToolCallMarkup(trimmed)
 	if !ok {
+		if result.SawToolCallSyntax && LooksLikeMalformedRequiredToolCall(trimmed) {
+			result.RejectedInvalid = true
+		}
+		return result
+	}
+	if looksLikeHashDSMLPseudoToolSyntax(trimmed) && LooksLikeMalformedRequiredToolCall(trimmed) {
+		result.RejectedInvalid = true
 		return result
 	}
 	parsed := parseXMLToolCalls(normalized)
@@ -72,19 +80,30 @@ func parseToolCallsDetailedXMLOnly(text string) ToolCallParseResult {
 		}
 	}
 	if len(parsed) == 0 {
+		if result.SawToolCallSyntax && LooksLikeMalformedRequiredToolCall(trimmed) {
+			result.RejectedInvalid = true
+		}
 		return result
 	}
 
 	result.SawToolCallSyntax = true
-	calls, rejectedNames := filterToolCallsDetailed(parsed)
+	calls, rejectedNames, rejectedInvalid := filterToolCallsDetailed(parsed)
 	result.Calls = calls
 	result.RejectedToolNames = rejectedNames
 	result.RejectedByPolicy = len(rejectedNames) > 0 && len(calls) == 0
+	result.RejectedInvalid = rejectedInvalid
 	return result
 }
 
-func filterToolCallsDetailed(parsed []ParsedToolCall) ([]ParsedToolCall, []string) {
+func looksLikeHashDSMLPseudoToolSyntax(text string) bool {
+	lower := strings.ToLower(text)
+	return strings.Contains(lower, "<#dsml#") || strings.Contains(lower, "</#dsml#") ||
+		strings.Contains(lower, "<#dsm#") || strings.Contains(lower, "</#dsm#")
+}
+
+func filterToolCallsDetailed(parsed []ParsedToolCall) ([]ParsedToolCall, []string, bool) {
 	out := make([]ParsedToolCall, 0, len(parsed))
+	rejectedInvalid := false
 	for _, tc := range parsed {
 		if tc.Name == "" {
 			continue
@@ -92,9 +111,81 @@ func filterToolCallsDetailed(parsed []ParsedToolCall) ([]ParsedToolCall, []strin
 		if tc.Input == nil {
 			tc.Input = map[string]any{}
 		}
+		if hasEmptyRequiredToolParameter(tc) {
+			rejectedInvalid = true
+			continue
+		}
 		out = append(out, tc)
 	}
-	return out, nil
+	return out, nil, rejectedInvalid
+}
+
+func hasEmptyRequiredToolParameter(tc ParsedToolCall) bool {
+	required := requiredToolParameters(tc.Name)
+	if len(required) == 0 {
+		return false
+	}
+	for _, name := range required {
+		if isBlankToolParameterValue(tc.Input[name]) {
+			return true
+		}
+	}
+	return false
+}
+
+func requiredToolParameters(name string) []string {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "read":
+		return []string{"file_path"}
+	case "bash", "execute", "execute_command":
+		return []string{"command"}
+	case "exec_command":
+		return []string{"cmd"}
+	default:
+		return nil
+	}
+}
+
+func isBlankToolParameterValue(value any) bool {
+	if value == nil {
+		return true
+	}
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v) == ""
+	default:
+		return false
+	}
+}
+
+func LooksLikeMalformedRequiredToolCall(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return false
+	}
+	hasDSML, hasCanonical := ContainsToolCallWrapperSyntaxOutsideIgnored(trimmed)
+	if !hasDSML && !hasCanonical {
+		return false
+	}
+	lower := strings.ToLower(trimmed)
+	requiredPairs := map[string][]string{
+		"read":            {"file_path"},
+		"bash":            {"command"},
+		"execute":         {"command"},
+		"execute_command": {"command"},
+		"exec_command":    {"cmd"},
+	}
+	for toolName, params := range requiredPairs {
+		if !strings.Contains(lower, toolName) {
+			continue
+		}
+		for _, param := range params {
+			if strings.Contains(lower, param) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func looksLikeToolCallSyntax(text string) bool {

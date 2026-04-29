@@ -41,13 +41,14 @@ type chatStreamRuntime struct {
 	text                  strings.Builder
 	responseMessageID     int
 
-	finalThinking     string
-	finalText         string
-	finalFinishReason string
-	finalUsage        map[string]any
-	finalErrorStatus  int
-	finalErrorMessage string
-	finalErrorCode    string
+	finalThinking         string
+	finalText             string
+	finalFinishReason     string
+	finalUsage            map[string]any
+	finalErrorStatus      int
+	finalErrorMessage     string
+	finalErrorCode        string
+	malformedToolFeedback string
 }
 
 func newChatStreamRuntime(
@@ -185,6 +186,9 @@ func (s *chatStreamRuntime) finalize(finishReason string, deferEmptyOutput bool)
 			if evt.Content == "" {
 				continue
 			}
+			if s.toolCallsEmitted {
+				continue
+			}
 			cleaned := cleanVisibleOutput(evt.Content, s.stripReferenceMarkers)
 			if cleaned == "" {
 				continue
@@ -204,6 +208,11 @@ func (s *chatStreamRuntime) finalize(finishReason string, deferEmptyOutput bool)
 				nil,
 			))
 		}
+	}
+	if strings.TrimSpace(s.toolSieve.MalformedToolFeedback) != "" {
+		s.malformedToolFeedback = s.toolSieve.MalformedToolFeedback
+		s.finalText = ""
+		finalText = ""
 	}
 
 	if len(detected.Calls) > 0 || s.toolCallsEmitted {
@@ -272,10 +281,6 @@ func (s *chatStreamRuntime) onParsed(parsed sse.LineResult) streamengine.ParsedD
 		}
 		contentSeen = true
 		delta := map[string]any{}
-		if !s.firstChunkSent {
-			delta["role"] = "assistant"
-			s.firstChunkSent = true
-		}
 		if p.Type == "thinking" {
 			if s.thinkingEnabled {
 				trimmed := sse.TrimContinuationOverlap(s.thinking.String(), cleanedText)
@@ -283,6 +288,10 @@ func (s *chatStreamRuntime) onParsed(parsed sse.LineResult) streamengine.ParsedD
 					continue
 				}
 				s.thinking.WriteString(trimmed)
+				if !s.firstChunkSent {
+					delta["role"] = "assistant"
+					s.firstChunkSent = true
+				}
 				delta["reasoning_content"] = trimmed
 			}
 		} else {
@@ -292,6 +301,10 @@ func (s *chatStreamRuntime) onParsed(parsed sse.LineResult) streamengine.ParsedD
 			}
 			s.text.WriteString(trimmed)
 			if !s.bufferToolContent {
+				if !s.firstChunkSent {
+					delta["role"] = "assistant"
+					s.firstChunkSent = true
+				}
 				delta["content"] = trimmed
 			} else {
 				events := toolstream.ProcessChunk(&s.toolSieve, trimmed, s.toolNames)
@@ -334,6 +347,9 @@ func (s *chatStreamRuntime) onParsed(parsed sse.LineResult) streamengine.ParsedD
 						continue
 					}
 					if evt.Content != "" {
+						if s.toolCallsEmitted {
+							continue
+						}
 						cleaned := cleanVisibleOutput(evt.Content, s.stripReferenceMarkers)
 						if cleaned == "" {
 							continue

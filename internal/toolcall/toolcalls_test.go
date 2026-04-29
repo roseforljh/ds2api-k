@@ -89,6 +89,74 @@ func TestParseToolCallsSupportsDSMFullwidthAlias(t *testing.T) {
 	}
 }
 
+func TestParseToolCallsSupportsBracketDSMLAlias(t *testing.T) {
+	text := `<⌜DSML⌝tool_calls><⌜DSML⌝invoke name="Bash"><⌜DSML⌝parameter name="command"><![CDATA[pwd]]><⌜/DSML⌝parameter><⌜/DSML⌝invoke><⌜/DSML⌝tool_calls>`
+	calls := ParseToolCalls(text, []string{"Bash"})
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 bracket DSML alias call, got %#v", calls)
+	}
+	if calls[0].Name != "Bash" || calls[0].Input["command"] != "pwd" {
+		t.Fatalf("unexpected bracket DSML parse result: %#v", calls[0])
+	}
+}
+
+func TestParseToolCallsRejectsReadWithEmptyFilePath(t *testing.T) {
+	text := `<⌜DSML⌝tool_calls><⌜DSML⌝invoke name="Read"><⌜DSML⌝parameter name="file_path"><⌜/DSML⌝parameter><⌜/DSML⌝invoke><⌜/DSML⌝tool_calls>`
+	res := ParseToolCallsDetailed(text, []string{"Read"})
+	if !res.SawToolCallSyntax {
+		t.Fatalf("expected malformed-empty Read call to be recognized as tool syntax")
+	}
+	if len(res.Calls) != 0 {
+		t.Fatalf("expected empty Read.file_path call to be rejected, got %#v", res.Calls)
+	}
+}
+
+func TestParseToolCallsMarksUnparseableReadFilePathForHiddenRetry(t *testing.T) {
+	text := `<⌜DSML⌝tool_calls><⌜DSML⌝invoke name="Read"><⌜DSML⌝parameter name="file_path">C:\Users\me\repo\README.md`
+	res := ParseToolCallsDetailed(text, []string{"Read"})
+	if !res.SawToolCallSyntax {
+		t.Fatalf("expected malformed Read.file_path call to be recognized as tool syntax")
+	}
+	if !res.RejectedInvalid {
+		t.Fatalf("expected unparseable Read.file_path call to be marked invalid for retry, got %#v", res)
+	}
+	if len(res.Calls) != 0 {
+		t.Fatalf("expected unparseable Read.file_path call to be hidden, got %#v", res.Calls)
+	}
+}
+
+func TestParseToolCallsMarksHashDSMLReadFilePathForHiddenRetry(t *testing.T) {
+	text := `<#DSML#tool_calls>
+<#DSML#invoke name="Read">
+<#DSML#parameter name="file_path">#CDATA#C:\Users\me\repo\settings.rs#CDATA#</#DSML#parameter>
+</#DSML#invoke>
+</#DSML#tool_calls>`
+	res := ParseToolCallsDetailed(text, []string{"Read"})
+	if !res.SawToolCallSyntax {
+		t.Fatalf("expected hash DSML Read.file_path call to be recognized as tool syntax")
+	}
+	if !res.RejectedInvalid {
+		t.Fatalf("expected hash DSML Read.file_path call to be marked invalid for retry, got %#v", res)
+	}
+	if len(res.Calls) != 0 {
+		t.Fatalf("expected hash DSML Read.file_path call to be hidden, got %#v", res.Calls)
+	}
+}
+
+func TestParseToolCallsMarksUnparseableBashCommandForHiddenRetry(t *testing.T) {
+	text := `<⌜DSML⌝tool_calls><⌜DSML⌝invoke name="Bash"><⌜DSML⌝parameter name="command">pwd`
+	res := ParseToolCallsDetailed(text, []string{"Bash"})
+	if !res.SawToolCallSyntax {
+		t.Fatalf("expected malformed Bash.command call to be recognized as tool syntax")
+	}
+	if !res.RejectedInvalid {
+		t.Fatalf("expected unparseable Bash.command call to be marked invalid for retry, got %#v", res)
+	}
+	if len(res.Calls) != 0 {
+		t.Fatalf("expected unparseable Bash.command call to be hidden, got %#v", res.Calls)
+	}
+}
+
 func TestParseToolCallsSkipsProseMentionOfMixedFullwidthDSMLWrapper(t *testing.T) {
 	text := strings.Join([]string{
 		"Summary: support mixed <|DSML｜tool_calls> wrappers.",

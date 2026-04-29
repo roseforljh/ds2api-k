@@ -300,6 +300,32 @@ test('sieve keeps DSML space lookalike tag names as text', () => {
   assert.equal(collectText(events), input);
 });
 
+test('sieve drops SML sentinel tool protocol without leaking text', () => {
+  const input = [
+    'prefix ',
+    '<SML_DOLLAR_EM_OLLAR_\n',
+    '<SM_OPEN_ATTR\n',
+    'name="Read"\n',
+    'file_path="C:\\Users\\33039\\Desktop\\KunBoxForWindows\\graphify-out\\GRAPH_REPORT.md"\n',
+    '<SM_CLOSE_ATTR\n',
+    '<SM_OPEN_ATTR\n',
+    'name="Bash"\n',
+    'command="ls -la C:/Users/33039/Desktop/KunBoxForWindows/"\n',
+    'description="List top-level project structure"\n',
+    '<SMCLOSE_ATTR\n',
+    '</SML_DOLLAR_EM_OLLAR_',
+    ' suffix',
+  ].join('');
+  const events = runSieve([input], ['Read', 'Bash']);
+  const text = collectText(events);
+  const finalCalls = events.filter((evt) => evt.type === 'tool_calls').flatMap((evt) => evt.calls || []);
+
+  assert.equal(finalCalls.length, 0);
+  assert.equal(text, 'prefix  suffix');
+  assert.equal(text.includes('SML_DOLLAR_EM_OLLAR'), false);
+  assert.equal(text.includes('SM_OPEN_ATTR'), false);
+});
+
 test('sieve emits tool_calls for collapsed DSML tag names and preserves prefix text', () => {
   const todos = [
     '[x] 检查 toolcalls_format.go 格式化逻辑',

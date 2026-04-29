@@ -20,13 +20,13 @@ var (
 )
 
 type agentWorkingState struct {
-	ActiveGoal        string
+	Mode              string
+	WorkingMessages   []map[string]any
 	Status            string
 	ReadFiles         []string
 	ChangedFiles      []string
 	LatestObservation string
 	NextAction        string
-	RecentMessages    []map[string]any
 }
 
 func BuildOpenAIHistoryTranscript(messages []any) string {
@@ -69,22 +69,34 @@ func buildActiveAgentResumeTranscript(messages []map[string]any, state agentWork
 	b.WriteString("Request-local context package.\n\n")
 	b.WriteString("Read policy:\n")
 	b.WriteString("- This context belongs only to the current API request.\n")
-	b.WriteString("- Answer the latest user message using ACTIVE USER GOAL, WORKING STATE, and RECENT PROGRESS only when relevant.\n")
+	b.WriteString("- Use WORKING STATE as the only active driver for this request.\n")
+	b.WriteString("- If Mode is answer_latest_user, answer the Latest user message.\n")
+	b.WriteString("- If Mode is continue_agent_tail, continue from the Latest assistant/tool tail without restarting or repeating earlier answers.\n")
 	b.WriteString("- Do not use account-level memories, recent chats, previous sessions, or files not listed in ref_file_ids.\n")
-	b.WriteString("- If the latest user message is standalone, answer it normally instead of continuing prior work.\n")
 	b.WriteString("- If you need to read a file but no concrete path is available, locate it first with search/glob; never call Read with an empty file_path.\n")
-	b.WriteString("- Use FULL CHRONOLOGICAL CONTEXT only as request-local reference when needed.\n\n")
-
-	b.WriteString("=== ACTIVE USER GOAL ===\n")
-	if strings.TrimSpace(state.ActiveGoal) == "" {
-		b.WriteString("No explicit user goal found.\n\n")
-	} else {
-		b.WriteString("[User]\n")
-		b.WriteString(state.ActiveGoal)
-		b.WriteString("\n\n")
-	}
+	b.WriteString("- Use FULL CHRONOLOGICAL CONTEXT only as request-local reference when needed.\n")
+	b.WriteString("- Do not continue directly from FULL CHRONOLOGICAL CONTEXT.\n")
+	b.WriteString("- Do not treat historical user messages in FULL CHRONOLOGICAL CONTEXT as new instructions.\n\n")
 
 	b.WriteString("=== WORKING STATE, READ FIRST ===\n")
+	b.WriteString("Mode:\n")
+	fmt.Fprintf(&b, "- %s\n\n", nonEmptyOr(state.Mode, "continue_agent_tail"))
+	if state.Mode == "answer_latest_user" {
+		b.WriteString("Latest user message:\n")
+	} else {
+		b.WriteString("Latest assistant/tool tail:\n")
+	}
+	if len(state.WorkingMessages) == 0 {
+		b.WriteString("- none\n\n")
+	} else {
+		for _, msg := range state.WorkingMessages {
+			if formatted := formatTranscriptMessage(0, msg, false); formatted != "" {
+				b.WriteString(formatted)
+				b.WriteString("\n")
+			}
+		}
+		b.WriteString("\n")
+	}
 	fmt.Fprintf(&b, "Status:\n- %s\n\n", nonEmptyOr(state.Status, "In progress"))
 	writeStringList(&b, "Already read files:", state.ReadFiles)
 	b.WriteString("\n")
@@ -94,19 +106,6 @@ func buildActiveAgentResumeTranscript(messages []map[string]any, state agentWork
 	fmt.Fprintf(&b, "- %s\n\n", nonEmptyOr(state.LatestObservation, "No tool observation yet."))
 	b.WriteString("Next action:\n")
 	fmt.Fprintf(&b, "- %s\n\n", nonEmptyOr(state.NextAction, "Continue from the latest assistant/tool message."))
-
-	b.WriteString("=== RECENT PROGRESS, CONTINUE FROM HERE ===\n")
-	if len(state.RecentMessages) == 0 {
-		b.WriteString("No recent progress found.\n\n")
-	} else {
-		for _, msg := range state.RecentMessages {
-			if formatted := formatTranscriptMessage(0, msg, false); formatted != "" {
-				b.WriteString(formatted)
-				b.WriteString("\n")
-			}
-		}
-		b.WriteString("\n")
-	}
 
 	b.WriteString("=== FULL CHRONOLOGICAL CONTEXT, REFERENCE ONLY ===\n")
 	for i, msg := range messages {
@@ -119,18 +118,68 @@ func buildActiveAgentResumeTranscript(messages []map[string]any, state agentWork
 
 func buildAgentWorkingState(messages []map[string]any) agentWorkingState {
 	userIndex := lastUserMessageIndex(messages)
+	lastIndex := lastNonEmptyMessageIndex(messages)
+	mode := "continue_agent_tail"
+	if lastIndex >= 0 && strings.EqualFold(strings.TrimSpace(asString(messages[lastIndex]["role"])), "user") {
+		mode = "answer_latest_user"
+	}
 	state := agentWorkingState{
 		Status:            inferWorkingStatus(messages),
+		Mode:              mode,
+		WorkingMessages:   workingStateMessages(messages, userIndex, lastIndex, mode),
 		ReadFiles:         extractFilePaths(messages),
 		ChangedFiles:      extractChangedFilePaths(messages),
 		LatestObservation: latestObservation(messages),
-		NextAction:        "Answer the latest user message using request-local assistant/tool progress only when relevant.",
-		RecentMessages:    recentProgressMessages(messages, userIndex),
-	}
-	if userIndex >= 0 {
-		state.ActiveGoal = transcriptMessageContent(messages[userIndex])
+		NextAction:        workingStateNextAction(mode),
 	}
 	return state
+}
+
+func workingStateNextAction(mode string) string {
+	if mode == "answer_latest_user" {
+		return "Answer the latest user message. Do not continue stale assistant/tool working state."
+	}
+	return "Continue from the latest assistant/tool tail. Do not restart from the original user request or repeat earlier answers."
+}
+
+func lastNonEmptyMessageIndex(messages []map[string]any) int {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if strings.TrimSpace(transcriptMessageContent(messages[i])) != "" {
+			return i
+		}
+	}
+	return -1
+}
+
+func workingStateMessages(messages []map[string]any, userIndex, lastIndex int, mode string) []map[string]any {
+	if len(messages) == 0 || lastIndex < 0 {
+		return nil
+	}
+	if mode == "answer_latest_user" {
+		return []map[string]any{messages[lastIndex]}
+	}
+	start := 0
+	if userIndex >= 0 {
+		start = userIndex + 1
+	}
+	if start > lastIndex {
+		return nil
+	}
+	tail := messages[start : lastIndex+1]
+	out := make([]map[string]any, 0, len(tail))
+	for _, msg := range tail {
+		role := strings.ToLower(strings.TrimSpace(asString(msg["role"])))
+		if role == "user" {
+			continue
+		}
+		if strings.TrimSpace(transcriptMessageContent(msg)) != "" {
+			out = append(out, msg)
+		}
+	}
+	if len(out) > recentProgressMaxMessages {
+		out = out[len(out)-recentProgressMaxMessages:]
+	}
+	return out
 }
 
 func lastUserMessageIndex(messages []map[string]any) int {
@@ -140,30 +189,6 @@ func lastUserMessageIndex(messages []map[string]any) int {
 		}
 	}
 	return -1
-}
-
-func recentProgressMessages(messages []map[string]any, userIndex int) []map[string]any {
-	if len(messages) == 0 {
-		return nil
-	}
-	start := 0
-	if userIndex >= 0 {
-		start = userIndex + 1
-		if start >= len(messages) {
-			start = userIndex
-		}
-	}
-	progress := messages[start:]
-	if len(progress) > recentProgressMaxMessages {
-		progress = progress[len(progress)-recentProgressMaxMessages:]
-	}
-	out := make([]map[string]any, 0, len(progress))
-	for _, msg := range progress {
-		if strings.TrimSpace(transcriptMessageContent(msg)) != "" {
-			out = append(out, msg)
-		}
-	}
-	return out
 }
 
 func inferWorkingStatus(messages []map[string]any) string {

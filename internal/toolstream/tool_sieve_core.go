@@ -6,6 +6,11 @@ import (
 	"ds2api/internal/toolcall"
 )
 
+const (
+	smlSentinelOpen  = "<sml_dollar_em_ollar_"
+	smlSentinelClose = "</sml_dollar_em_ollar_"
+)
+
 func ProcessChunk(state *State, chunk string, toolNames []string) []Event {
 	if state == nil {
 		return nil
@@ -31,6 +36,12 @@ func ProcessChunk(state *State, chunk string, toolNames []string) []Event {
 				break
 			}
 			captured := state.capture.String()
+			malformed := toolcall.LooksLikeMalformedRequiredToolCall(captured) && len(calls) == 0
+			if malformed {
+				state.MalformedToolFeedback = captured
+				prefix = ""
+				suffix = ""
+			}
 			state.capture.Reset()
 			state.capturing = false
 			state.resetIncrementalToolState()
@@ -39,11 +50,11 @@ func ProcessChunk(state *State, chunk string, toolNames []string) []Event {
 					state.noteText(prefix)
 					events = append(events, Event{Content: prefix})
 				}
+				_ = captured
+				events = append(events, Event{ToolCalls: calls})
 				if suffix != "" {
 					state.pending.WriteString(suffix)
 				}
-				_ = captured
-				state.pendingToolCalls = calls
 				continue
 			}
 			if prefix != "" {
@@ -100,6 +111,12 @@ func Flush(state *State, toolNames []string) []Event {
 	if state.capturing {
 		consumedPrefix, consumedCalls, consumedSuffix, ready := consumeToolCapture(state, toolNames)
 		if ready {
+			captured := state.capture.String()
+			if len(consumedCalls) == 0 && toolcall.LooksLikeMalformedRequiredToolCall(captured) {
+				state.MalformedToolFeedback = captured
+				consumedPrefix = ""
+				consumedSuffix = ""
+			}
 			if consumedPrefix != "" {
 				state.noteText(consumedPrefix)
 				events = append(events, Event{Content: consumedPrefix})
@@ -114,6 +131,31 @@ func Flush(state *State, toolNames []string) []Event {
 		} else {
 			content := state.capture.String()
 			if content != "" {
+				if looksLikeSMLSentinelToolProtocol(content) {
+					state.capture.Reset()
+					state.capturing = false
+					state.resetIncrementalToolState()
+					if state.pending.Len() > 0 {
+						content := state.pending.String()
+						state.noteText(content)
+						events = append(events, Event{Content: content})
+						state.pending.Reset()
+					}
+					return events
+				}
+				if toolcall.LooksLikeMalformedRequiredToolCall(content) {
+					state.MalformedToolFeedback = content
+					state.capture.Reset()
+					state.capturing = false
+					state.resetIncrementalToolState()
+					if state.pending.Len() > 0 {
+						content := state.pending.String()
+						state.noteText(content)
+						events = append(events, Event{Content: content})
+						state.pending.Reset()
+					}
+					return events
+				}
 				recovered := toolcall.SanitizeLooseCDATA(content)
 				if recovered != content {
 					if prefix, calls, suffix, recoveredReady := consumeXMLToolCapture(recovered, toolNames); recoveredReady && len(calls) > 0 {
@@ -158,6 +200,15 @@ func splitSafeContentForToolDetection(state *State, s string) (safe, hold string
 	if s == "" {
 		return "", ""
 	}
+	if smlIdx := findPartialSMLSentinelStart(s); smlIdx >= 0 {
+		if insideCodeFenceWithState(state, s[:smlIdx]) {
+			return s, ""
+		}
+		if smlIdx > 0 {
+			return s[:smlIdx], s[smlIdx:]
+		}
+		return "", s
+	}
 	if xmlIdx := findPartialXMLToolTagStart(s); xmlIdx >= 0 {
 		if insideCodeFenceWithState(state, s[:xmlIdx]) {
 			return s, ""
@@ -189,6 +240,13 @@ func findToolSegmentStart(state *State, s string) int {
 				}
 			}
 		}
+		if idx := strings.Index(lower[offset:], smlSentinelOpen); idx >= 0 {
+			idx += offset
+			if bestKeyIdx < 0 || idx < bestKeyIdx {
+				bestKeyIdx = idx
+				matchedTag = smlSentinelOpen
+			}
+		}
 		if bestKeyIdx < 0 {
 			return -1
 		}
@@ -205,6 +263,13 @@ func consumeToolCapture(state *State, toolNames []string) (prefix string, calls 
 		return "", nil, "", false
 	}
 
+	if prefix, suffix, ready := consumeSMLSentinelCapture(captured); ready {
+		return prefix, nil, suffix, true
+	}
+	if looksLikeSMLSentinelToolProtocol(captured) {
+		return "", nil, "", false
+	}
+
 	// XML tool call extraction only.
 	if xmlPrefix, xmlCalls, xmlSuffix, xmlReady := consumeXMLToolCapture(captured, toolNames); xmlReady {
 		return xmlPrefix, xmlCalls, xmlSuffix, true
@@ -217,4 +282,37 @@ func consumeToolCapture(state *State, toolNames []string) (prefix string, calls 
 		return "", nil, "", false
 	}
 	return captured, nil, "", true
+}
+
+func findPartialSMLSentinelStart(s string) int {
+	lastLT := strings.LastIndex(s, "<")
+	if lastLT < 0 {
+		return -1
+	}
+	tail := strings.ToLower(s[lastLT:])
+	if strings.Contains(tail, ">") {
+		return -1
+	}
+	if strings.HasPrefix(smlSentinelOpen, tail) || strings.HasPrefix(smlSentinelClose, tail) {
+		return lastLT
+	}
+	return -1
+}
+
+func looksLikeSMLSentinelToolProtocol(s string) bool {
+	return strings.Contains(strings.ToLower(s), smlSentinelOpen)
+}
+
+func consumeSMLSentinelCapture(captured string) (prefix, suffix string, ready bool) {
+	lower := strings.ToLower(captured)
+	open := strings.Index(lower, smlSentinelOpen)
+	if open < 0 {
+		return "", "", false
+	}
+	close := strings.Index(lower[open+len(smlSentinelOpen):], smlSentinelClose)
+	if close < 0 {
+		return "", "", false
+	}
+	close += open + len(smlSentinelOpen)
+	return captured[:open], captured[close+len(smlSentinelClose):], true
 }

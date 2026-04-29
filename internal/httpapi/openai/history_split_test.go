@@ -183,6 +183,35 @@ func TestBuildOpenAICurrentInputContextTranscriptUsesAssistantTailWhenLatestIsNo
 	}
 }
 
+func TestBuildOpenAICurrentInputContextTranscriptDoesNotReviveFinalAssistantAnswer(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "问题 A"},
+		map[string]any{"role": "assistant", "content": "这是 A 的最终回答。"},
+	}
+	transcript := buildOpenAICurrentInputContextTranscript(messages)
+	for _, want := range []string{
+		"Mode:\n- no_active_working",
+		"Latest assistant/tool tail:\n- none",
+		"No active assistant task is pending. Do not repeat a completed answer.",
+	} {
+		if !strings.Contains(transcript, want) {
+			t.Fatalf("expected completed assistant answer not to be active working %q, got %q", want, transcript)
+		}
+	}
+	workingStart := strings.Index(transcript, "=== WORKING STATE, READ FIRST ===")
+	fullStart := strings.Index(transcript, "=== FULL CHRONOLOGICAL CONTEXT, REFERENCE ONLY ===")
+	if workingStart < 0 || fullStart < 0 || fullStart <= workingStart {
+		t.Fatalf("expected working and full context sections, got %q", transcript)
+	}
+	working := transcript[workingStart:fullStart]
+	if strings.Contains(working, "这是 A 的最终回答。") {
+		t.Fatalf("completed assistant answer must not be injected as working state, got %q", working)
+	}
+	if !strings.Contains(transcript[fullStart:], "这是 A 的最终回答。") {
+		t.Fatalf("completed answer may remain in reference-only chronological context, got %q", transcript)
+	}
+}
+
 func TestBuildOpenAICurrentInputContextTranscriptPreservesReadUIPaths(t *testing.T) {
 	messages := []any{
 		map[string]any{"role": "user", "content": "继续修复"},

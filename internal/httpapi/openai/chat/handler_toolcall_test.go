@@ -201,6 +201,34 @@ func TestHandleNonStreamPromotesHiddenThinkingDSMLToolCallsWhenTextEmpty(t *test
 	}
 }
 
+func TestHandleNonStreamPromotesDSMFullwidthToolCalls(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`data: {"p":"response/content","v":"<DSM｜tool_calls><DSM｜invoke name=\"Bash\"><DSM｜parameter name=\"command\"><![CDATA[pwd]]></DSM｜parameter></DSM｜invoke></DSM｜tool_calls>"}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+
+	h.handleNonStream(rec, resp, "cid-dsm-tool", "deepseek-v4-flash", "prompt", false, false, []string{"Bash"}, nil, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for DSM alias tool calls, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	out := decodeJSONBody(t, rec.Body.String())
+	choices, _ := out["choices"].([]any)
+	choice, _ := choices[0].(map[string]any)
+	if got := asString(choice["finish_reason"]); got != "tool_calls" {
+		t.Fatalf("expected finish_reason=tool_calls, got %#v", choice["finish_reason"])
+	}
+	message, _ := choice["message"].(map[string]any)
+	toolCalls, _ := message["tool_calls"].([]any)
+	if len(toolCalls) != 1 {
+		t.Fatalf("expected one DSM alias tool call, got %#v", message["tool_calls"])
+	}
+	if content, exists := message["content"]; !exists || content != nil {
+		t.Fatalf("expected raw DSM content hidden when promoted, got %#v", message["content"])
+	}
+}
+
 func TestHandleStreamToolsPlainTextStreamsBeforeFinish(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(

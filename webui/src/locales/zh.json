@@ -289,6 +289,8 @@
         "copyFailed": "复制失败",
         "downloadSuccess": "已开始下载",
         "downloadFailed": "下载失败",
+        "preview": "预览",
+        "previewFailed": "预览失败，可能被浏览器拦截",
         "expand": "展开全部",
         "collapse": "收起",
         "reasoningTrace": "思维链过程",

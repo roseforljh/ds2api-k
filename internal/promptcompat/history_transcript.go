@@ -60,18 +60,20 @@ func buildOpenAIFileTranscript(messages []any) string {
 		return ""
 	}
 	state := buildAgentWorkingState(normalized)
+	state.ReadFiles = mergeTranscriptPaths(state.ReadFiles, extractReadUIFilePathsFromMessages(messages))
 	return buildActiveAgentResumeTranscript(normalized, state)
 }
 
 func buildActiveAgentResumeTranscript(messages []map[string]any, state agentWorkingState) string {
 	var b strings.Builder
-	b.WriteString("Active agent session resume package.\n\n")
+	b.WriteString("Request-local context package.\n\n")
 	b.WriteString("Read policy:\n")
-	b.WriteString("- Read WORKING STATE first.\n")
-	b.WriteString("- Continue from RECENT PROGRESS, especially the latest Tool result.\n")
-	b.WriteString("- Use ACTIVE USER GOAL as the objective, not as a request to restart.\n")
-	b.WriteString("- Do not restate the whole task, repeat prior analysis, or re-read files listed as already read unless needed.\n")
-	b.WriteString("- Use FULL CHRONOLOGICAL CONTEXT only as reference when WORKING STATE and RECENT PROGRESS are insufficient.\n\n")
+	b.WriteString("- This context belongs only to the current API request.\n")
+	b.WriteString("- Answer the latest user message using ACTIVE USER GOAL, WORKING STATE, and RECENT PROGRESS only when relevant.\n")
+	b.WriteString("- Do not use account-level memories, recent chats, previous sessions, or files not listed in ref_file_ids.\n")
+	b.WriteString("- If the latest user message is standalone, answer it normally instead of continuing prior work.\n")
+	b.WriteString("- If you need to read a file but no concrete path is available, locate it first with search/glob; never call Read with an empty file_path.\n")
+	b.WriteString("- Use FULL CHRONOLOGICAL CONTEXT only as request-local reference when needed.\n\n")
 
 	b.WriteString("=== ACTIVE USER GOAL ===\n")
 	if strings.TrimSpace(state.ActiveGoal) == "" {
@@ -122,7 +124,7 @@ func buildAgentWorkingState(messages []map[string]any) agentWorkingState {
 		ReadFiles:         extractFilePaths(messages),
 		ChangedFiles:      extractChangedFilePaths(messages),
 		LatestObservation: latestObservation(messages),
-		NextAction:        "Continue from the latest assistant/tool message. Do not repeat completed inspection or re-read already read files unless the latest progress requires it.",
+		NextAction:        "Answer the latest user message using request-local assistant/tool progress only when relevant.",
 		RecentMessages:    recentProgressMessages(messages, userIndex),
 	}
 	if userIndex >= 0 {
@@ -312,6 +314,57 @@ func extractPathsFromText(text string) []string {
 		addUniqueTranscriptPath(&out, seen, match)
 	}
 	return out
+}
+
+func extractReadUIFilePathsFromMessages(messages []any) []string {
+	seen := map[string]struct{}{}
+	out := []string{}
+	for _, raw := range messages {
+		msg, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		role := strings.ToLower(strings.TrimSpace(asString(msg["role"])))
+		switch role {
+		case "assistant", "tool", "function":
+		default:
+			continue
+		}
+		lines := strings.Split(NormalizeOpenAIContentForPrompt(msg["content"]), "\n")
+		afterReadUI := false
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if internalToolUILinePattern.MatchString(trimmed) {
+				afterReadUI = true
+				continue
+			}
+			if !afterReadUI {
+				continue
+			}
+			if !internalToolResultUILinePattern.MatchString(trimmed) {
+				if trimmed != "" {
+					afterReadUI = false
+				}
+				continue
+			}
+			for _, path := range extractPathsFromText(trimmed) {
+				addUniqueTranscriptPath(&out, seen, path)
+			}
+		}
+	}
+	return out
+}
+
+func mergeTranscriptPaths(primary, secondary []string) []string {
+	seen := map[string]struct{}{}
+	out := []string{}
+	for _, path := range primary {
+		addUniqueTranscriptPath(&out, seen, path)
+	}
+	for _, path := range secondary {
+		addUniqueTranscriptPath(&out, seen, path)
+	}
+	return limitStrings(out, workingStateMaxFiles)
 }
 
 func addUniqueTranscriptPath(out *[]string, seen map[string]struct{}, raw string) {

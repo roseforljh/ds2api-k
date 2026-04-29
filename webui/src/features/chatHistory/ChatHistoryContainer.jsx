@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Bot, ChevronDown, Clock3, Copy, Download, Loader2, MessageSquareText, RefreshCcw, Sparkles, Trash2, UserRound, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Bot, Clock3, Download, Eye, FileText, Loader2, MessageSquareText, RefreshCcw, Sparkles, Trash2, UserRound, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 
@@ -6,18 +6,6 @@ import { useI18n } from '../../i18n'
 
 const LIMIT_OPTIONS = [0, 10, 20, 50]
 const DISABLED_LIMIT = 0
-const MESSAGE_COLLAPSE_AT = 700
-const VIEW_MODE_KEY = 'ds2api_chat_history_view_mode'
-const BEGIN_SENTENCE_MARKER = '<｜begin▁of▁sentence｜>'
-const SYSTEM_MARKER = '<｜System｜>'
-const USER_MARKER = '<｜User｜>'
-const ASSISTANT_MARKER = '<｜Assistant｜>'
-const TOOL_MARKER = '<｜Tool｜>'
-const END_INSTRUCTIONS_MARKER = '<｜end▁of▁instructions｜>'
-const END_SENTENCE_MARKER = '<｜end▁of▁sentence｜>'
-const END_TOOL_RESULTS_MARKER = '<｜end▁of▁toolresults｜>'
-const CURRENT_INPUT_FILE_PROMPT = 'Attached context contains an active agent session resume package'
-
 function formatDateTime(value, lang) {
     if (!value) return '-'
     try {
@@ -57,63 +45,6 @@ function statusTone(status) {
     }
 }
 
-function ExpandableText({ text = '', threshold = MESSAGE_COLLAPSE_AT, expandLabel, collapseLabel, buttonClassName = 'text-white hover:text-white/80' }) {
-    const shouldCollapse = text.length > threshold
-    const [expanded, setExpanded] = useState(false)
-    const contentRef = useRef(null)
-    const [maxHeight, setMaxHeight] = useState('none')
-
-    useEffect(() => {
-        setExpanded(false)
-    }, [text])
-
-    const visibleText = shouldCollapse && !expanded ? `${text.slice(0, threshold)}...` : text
-
-    useEffect(() => {
-        if (!contentRef.current) return
-        setMaxHeight(`${contentRef.current.scrollHeight}px`)
-    }, [expanded, visibleText])
-
-    return (
-        <div>
-            <div
-                className="overflow-hidden transition-[max-height] duration-300 ease-out"
-                style={{ maxHeight }}
-            >
-                <div ref={contentRef} className="whitespace-pre-wrap break-words">
-                    {visibleText}
-                </div>
-            </div>
-            {shouldCollapse && (
-                <button
-                    type="button"
-                    onClick={() => setExpanded(prev => !prev)}
-                    className={clsx('mt-3 inline-flex items-center gap-2 text-xs font-medium transition-colors', buttonClassName)}
-                >
-                    <ChevronDown className={clsx('w-3.5 h-3.5 transition-transform duration-300', expanded && 'rotate-180')} />
-                    {expanded ? collapseLabel : expandLabel}
-                </button>
-            )}
-        </div>
-    )
-}
-
-function ListModeIcon() {
-    return (
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M3 0h10a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2m0 1a1 1 0 0 0-1 1v3a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zm0 8h10a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2m0 1a1 1 0 0 0-1 1v3a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1z" />
-        </svg>
-    )
-}
-
-function MergeModeIcon() {
-    return (
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M4 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm0 1h8a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1" />
-        </svg>
-    )
-}
-
 function downloadTextFile(filename, text) {
     const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
     const url = URL.createObjectURL(blob)
@@ -126,219 +57,90 @@ function downloadTextFile(filename, text) {
     URL.revokeObjectURL(url)
 }
 
-function fallbackCopyText(text) {
-    const textArea = document.createElement('textarea')
-    textArea.value = text
-    textArea.setAttribute('readonly', '')
-    textArea.style.position = 'fixed'
-    textArea.style.opacity = '0'
-    document.body.appendChild(textArea)
-    textArea.select()
-    let copied = false
-    try {
-        copied = document.execCommand('copy')
-    } finally {
-        document.body.removeChild(textArea)
+function openTextPreview(text) {
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const preview = window.open(url, '_blank', 'noopener,noreferrer')
+    if (!preview) {
+        URL.revokeObjectURL(url)
+        throw new Error('preview blocked')
     }
-    if (!copied) {
-        throw new Error('copy failed')
-    }
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
 
-async function copyTextWithFallback(text) {
-    try {
-        if (navigator.clipboard?.writeText) {
-            await navigator.clipboard.writeText(text)
-            return
-        }
-    } catch {}
-    fallbackCopyText(text)
-}
-
-function skipWhitespace(text, start) {
-    let cursor = start
-    while (cursor < text.length && /\s/.test(text[cursor])) {
-        cursor += 1
-    }
-    return cursor
-}
-
-function parseStrictHistoryMessages(historyText) {
-    const rawText = String(historyText || '')
-    const beginIndex = rawText.indexOf(BEGIN_SENTENCE_MARKER)
-    if (beginIndex < 0) return null
-
-    const transcript = rawText.slice(beginIndex)
-
-    let cursor = BEGIN_SENTENCE_MARKER.length
-    const parsed = []
-    let expectedRole = null
-    let trailingAssistantPromptOnly = false
-
-    while (cursor < transcript.length) {
-        if (expectedRole === null) {
-            if (transcript.startsWith(SYSTEM_MARKER, cursor)) {
-                expectedRole = 'system'
-            } else if (transcript.startsWith(USER_MARKER, cursor)) {
-                expectedRole = 'user'
-            } else if (transcript.startsWith(ASSISTANT_MARKER, cursor)) {
-                expectedRole = 'assistant'
-            } else if (transcript.startsWith(TOOL_MARKER, cursor)) {
-                expectedRole = 'tool'
-            } else if (transcript.slice(cursor).trim() === '') {
-                break
-            } else {
-                return null
-            }
-        }
-
-        if (transcript.startsWith(SYSTEM_MARKER, cursor)) {
-            if (expectedRole !== 'system') return null
-            cursor += SYSTEM_MARKER.length
-            const nextInstructionsEnd = transcript.indexOf(END_INSTRUCTIONS_MARKER, cursor)
-            if (nextInstructionsEnd < 0) return null
-            parsed.push({
-                role: 'system',
-                content: transcript.slice(cursor, nextInstructionsEnd),
-            })
-            cursor = nextInstructionsEnd + END_INSTRUCTIONS_MARKER.length
-            expectedRole = 'user'
-            continue
-        }
-
-        if (transcript.startsWith(USER_MARKER, cursor)) {
-            if (expectedRole !== 'user' && expectedRole !== 'user_or_tool' && expectedRole !== 'assistant_or_user') return null
-            cursor += USER_MARKER.length
-            const nextAssistant = transcript.indexOf(ASSISTANT_MARKER, cursor)
-            const nextTool = transcript.indexOf(TOOL_MARKER, cursor)
-            const nextSentenceEnd = transcript.indexOf(END_SENTENCE_MARKER, cursor)
-            let nextRoleIndex = nextAssistant
-            if (nextRoleIndex < 0 || (nextTool >= 0 && nextTool < nextRoleIndex)) {
-                nextRoleIndex = nextTool
-            }
-            if (nextRoleIndex < 0) return null
-            if (nextSentenceEnd >= 0 && nextSentenceEnd < nextRoleIndex) {
-                const assistantStart = skipWhitespace(transcript, nextSentenceEnd + END_SENTENCE_MARKER.length)
-                if (!transcript.startsWith(ASSISTANT_MARKER, assistantStart)) return null
-                parsed.push({
-                    role: 'user',
-                    content: transcript.slice(cursor, nextSentenceEnd),
-                })
-                cursor = assistantStart
-                expectedRole = 'assistant'
-                continue
-            }
-            parsed.push({
-                role: 'user',
-                content: transcript.slice(cursor, nextRoleIndex),
-            })
-            if (transcript.startsWith(TOOL_MARKER, nextRoleIndex)) {
-                cursor = nextRoleIndex
-                expectedRole = 'tool'
-                continue
-            }
-            const assistantStart = nextRoleIndex + ASSISTANT_MARKER.length
-            if (transcript.indexOf(END_SENTENCE_MARKER, assistantStart) < 0) {
-                trailingAssistantPromptOnly = true
-                cursor = assistantStart
-                break
-            }
-            cursor = nextRoleIndex
-            expectedRole = 'assistant'
-            continue
-        }
-
-        if (transcript.startsWith(ASSISTANT_MARKER, cursor)) {
-            if (expectedRole !== 'assistant' && expectedRole !== 'assistant_or_user') return null
-            cursor += ASSISTANT_MARKER.length
-            const nextSentenceEnd = transcript.indexOf(END_SENTENCE_MARKER, cursor)
-            if (nextSentenceEnd < 0) return null
-            parsed.push({
-                role: 'assistant',
-                content: transcript.slice(cursor, nextSentenceEnd),
-            })
-            cursor = nextSentenceEnd + END_SENTENCE_MARKER.length
-            expectedRole = 'user_or_tool'
-            continue
-        }
-
-        if (transcript.startsWith(TOOL_MARKER, cursor)) {
-            if (expectedRole !== 'tool' && expectedRole !== 'user' && expectedRole !== 'user_or_tool') return null
-            cursor += TOOL_MARKER.length
-            const nextToolResultsEnd = transcript.indexOf(END_TOOL_RESULTS_MARKER, cursor)
-            if (nextToolResultsEnd < 0) return null
-            parsed.push({
-                role: 'tool',
-                content: transcript.slice(cursor, nextToolResultsEnd),
-            })
-            cursor = nextToolResultsEnd + END_TOOL_RESULTS_MARKER.length
-            expectedRole = 'assistant_or_user'
-            continue
-        }
-
-        if (parsed.length && (expectedRole === 'user' || expectedRole === 'user_or_tool' || expectedRole === 'assistant_or_user')) break
-        if (transcript.slice(cursor).trim() === '') break
-        return null
-    }
-
-    if (!parsed.length) {
-        return null
-    }
-
-    if (!trailingAssistantPromptOnly && parsed[parsed.length - 1]?.role !== 'assistant') {
-        return null
-    }
-
-    return parsed
-}
-
-function parseActiveResumeHistoryMessages(historyText) {
-    const rawText = String(historyText || '')
-    const fullContextIndex = rawText.indexOf('=== FULL CHRONOLOGICAL CONTEXT, REFERENCE ONLY ===')
-    const source = fullContextIndex >= 0 ? rawText.slice(fullContextIndex) : rawText
-    const markerPattern = /(?:^|\n)(?:\[(\d+)\]\s+)?\[(User|Assistant|Tool|System|Developer)\]\n/g
-    const markers = [...source.matchAll(markerPattern)]
-    if (!markers.length) return null
-
-    const parsed = []
-    for (let i = 0; i < markers.length; i += 1) {
-        const match = markers[i]
-        const roleLabel = String(match[2] || '').toLowerCase()
-        const contentStart = (match.index || 0) + match[0].length
-        const contentEnd = i + 1 < markers.length ? markers[i + 1].index : source.length
-        const content = source.slice(contentStart, contentEnd).trim()
-        if (!content) continue
-        parsed.push({
-            role: roleLabel === 'developer' ? 'system' : roleLabel,
-            content,
-        })
-    }
-    return parsed.length ? parsed : null
+function formatBytes(text) {
+    const bytes = new Blob([text || '']).size
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    return `${(bytes / 1024 / 1024).toFixed(2)} MB`
 }
 
 function buildListModeMessages(item, t) {
     const liveMessages = Array.isArray(item?.messages) && item.messages.length > 0
         ? item.messages
         : [{ role: 'user', content: item?.user_input || t('chatHistory.emptyUserInput') }]
-    const historyMessages = parseStrictHistoryMessages(item?.history_text) || parseActiveResumeHistoryMessages(item?.history_text)
     const historyAvailable = Boolean(String(item?.history_text || '').trim())
 
-    if (!historyMessages?.length) {
-        return { messages: liveMessages, historyMerged: false, historyAvailable }
-    }
-
-    const hasCurrentInputPrompt = liveMessages.some(message => String(message?.role || '').trim().toLowerCase() === 'user'
-        && String(message?.content || '').includes(CURRENT_INPUT_FILE_PROMPT)
-    )
-
-    if (hasCurrentInputPrompt) {
-        return { messages: historyMessages, historyMerged: true, historyAvailable: true }
-    }
-
-    return { messages: liveMessages, historyMerged: false, historyAvailable: true }
+    return { messages: liveMessages, historyAvailable }
 }
 
-function RequestMessages({ item, t, messages }) {
+function TextFileCard({ filename, text, t, onMessage }) {
+    const content = String(text || '').trim()
+    if (!content) return null
+
+    const handleDownload = () => {
+        try {
+            downloadTextFile(filename, content)
+            onMessage?.('success', t('chatHistory.downloadSuccess'))
+        } catch {
+            onMessage?.('error', t('chatHistory.downloadFailed'))
+        }
+    }
+
+    const handlePreview = () => {
+        try {
+            openTextPreview(content)
+        } catch {
+            onMessage?.('error', t('chatHistory.previewFailed'))
+        }
+    }
+
+    return (
+        <div className="max-w-4xl mx-auto rounded-2xl border border-border bg-background px-5 py-4">
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3 min-w-0">
+                    <div className="h-10 w-10 rounded-xl border border-border bg-secondary/60 text-muted-foreground flex items-center justify-center shrink-0">
+                        <FileText className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0 text-left">
+                        <div className="text-sm font-semibold text-foreground truncate">{filename}</div>
+                        <div className="text-xs text-muted-foreground mt-1">{formatBytes(content)}</div>
+                    </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                    <button
+                        type="button"
+                        onClick={handleDownload}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/60 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+                    >
+                        <Download className="w-3.5 h-3.5" />
+                        {t('chatHistory.download')}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handlePreview}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/60 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+                    >
+                        <Eye className="w-3.5 h-3.5" />
+                        {t('chatHistory.preview')}
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+function RequestMessages({ item, t, messages, onMessage }) {
     const requestMessages = Array.isArray(messages) && messages.length > 0
         ? messages
         : [{ role: 'user', content: item?.user_input || t('chatHistory.emptyUserInput') }]
@@ -389,144 +191,42 @@ function RequestMessages({ item, t, messages }) {
     )
 }
 
-function MergedPromptView({ item, t, onMessage }) {
-    const merged = item?.final_prompt || ''
-    const mergedFilename = `Merged_${item?.id || 'prompt'}.txt`
-
-    const handleCopy = async () => {
-        try {
-            await copyTextWithFallback(merged)
-            onMessage?.('success', t('chatHistory.copySuccess'))
-        } catch {
-            onMessage?.('error', t('chatHistory.copyFailed'))
-        }
-    }
-
-    const handleDownload = () => {
-        try {
-            downloadTextFile(mergedFilename, merged)
-            onMessage?.('success', t('chatHistory.downloadSuccess'))
-        } catch {
-            onMessage?.('error', t('chatHistory.downloadFailed'))
-        }
-    }
-
-    return (
-        <div
-            className="max-w-4xl mx-auto rounded-2xl border px-5 py-4"
-            style={{
-                backgroundColor: 'rgb(231, 176, 8)',
-                borderColor: 'rgba(231, 176, 8, 0.45)',
-            }}
-        >
-            <div className="mb-3 flex items-center justify-between gap-3">
-                <div className="text-[11px] uppercase tracking-[0.12em] text-[#5b4300]">
-                    {t('chatHistory.mergedInput')}
-                </div>
-                <div className="flex items-center gap-2">
-                    <button
-                        type="button"
-                        onClick={handleCopy}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-[#5b4300]/25 bg-white/20 px-2 py-1 text-[11px] font-medium text-[#2f2200] hover:bg-white/30"
-                    >
-                        <Copy className="w-3.5 h-3.5" />
-                        {t('chatHistory.copy')}
-                    </button>
-                    <button
-                        type="button"
-                        onClick={handleDownload}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-[#5b4300]/25 bg-white/20 px-2 py-1 text-[11px] font-medium text-[#2f2200] hover:bg-white/30"
-                    >
-                        <Download className="w-3.5 h-3.5" />
-                        {t('chatHistory.download')}
-                    </button>
-                </div>
-            </div>
-            <div className="text-sm leading-7 text-[#2f2200] whitespace-pre-wrap break-words font-mono">
-                <ExpandableText
-                    text={merged || t('chatHistory.emptyMergedPrompt')}
-                    expandLabel={t('chatHistory.expand')}
-                    collapseLabel={t('chatHistory.collapse')}
-                    buttonClassName="text-[#2f2200] hover:text-black"
-                />
-            </div>
-        </div>
-    )
-}
-
 function HistoryTextView({ item, t, onMessage }) {
     const historyText = (item?.history_text || '').trim()
     if (!historyText) return null
-    const historyFilename = `History_${item?.id || 'history'}.txt`
-
-    const handleCopy = async () => {
-        try {
-            await copyTextWithFallback(historyText)
-            onMessage?.('success', t('chatHistory.copySuccess'))
-        } catch {
-            onMessage?.('error', t('chatHistory.copyFailed'))
-        }
-    }
-
-    const handleDownload = () => {
-        try {
-            downloadTextFile(historyFilename, historyText)
-            onMessage?.('success', t('chatHistory.downloadSuccess'))
-        } catch {
-            onMessage?.('error', t('chatHistory.downloadFailed'))
-        }
-    }
-
     return (
-        <div className="max-w-4xl mx-auto rounded-2xl border border-border bg-background px-5 py-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-                <div className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground text-left">
-                    HISTORY
-                </div>
-                <div className="flex items-center gap-2">
-                    <button
-                        type="button"
-                        onClick={handleCopy}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/60 px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
-                    >
-                        <Copy className="w-3.5 h-3.5" />
-                        {t('chatHistory.copy')}
-                    </button>
-                    <button
-                        type="button"
-                        onClick={handleDownload}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/60 px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
-                    >
-                        <Download className="w-3.5 h-3.5" />
-                        {t('chatHistory.download')}
-                    </button>
-                </div>
-            </div>
-            <div className="text-sm leading-7 text-foreground whitespace-pre-wrap break-words font-mono">
-                <ExpandableText
-                    text={historyText}
-                    threshold={Math.floor(MESSAGE_COLLAPSE_AT / 4)}
-                    expandLabel={t('chatHistory.expand')}
-                    collapseLabel={t('chatHistory.collapse')}
-                    buttonClassName="text-foreground hover:text-muted-foreground"
-                />
-            </div>
-        </div>
+        <TextFileCard
+            filename="HISTORY.txt"
+            text={historyText}
+            t={t}
+            onMessage={onMessage}
+        />
     )
 }
 
-function DetailConversation({ selectedItem, t, viewMode, detailScrollRef, assistantStartRef, bottomButtonClassName, onMessage }) {
+function ToolPromptTextView({ item, t, onMessage }) {
+    const toolPromptText = (item?.tool_prompt_text || '').trim()
+    if (!toolPromptText) return null
+    return (
+        <TextFileCard
+            filename="TOOL_PROMPT.txt"
+            text={toolPromptText}
+            t={t}
+            onMessage={onMessage}
+        />
+    )
+}
+
+function DetailConversation({ selectedItem, t, detailScrollRef, assistantStartRef, bottomButtonClassName, onMessage }) {
     if (!selectedItem) return null
-    const listModeState = viewMode === 'list' ? buildListModeMessages(selectedItem, t) : null
-    const showHistoryAtTop = viewMode !== 'list' || !listModeState?.historyAvailable
+    const listModeState = buildListModeMessages(selectedItem, t)
 
     return (
         <>
-            {showHistoryAtTop && <HistoryTextView item={selectedItem} t={t} onMessage={onMessage} />}
+            {listModeState.historyAvailable && <HistoryTextView item={selectedItem} t={t} onMessage={onMessage} />}
+            <ToolPromptTextView item={selectedItem} t={t} onMessage={onMessage} />
 
-            {viewMode === 'list'
-                ? <RequestMessages item={selectedItem} t={t} messages={listModeState?.messages} />
-                : <MergedPromptView item={selectedItem} t={t} onMessage={onMessage} />}
+            <RequestMessages item={selectedItem} t={t} messages={listModeState.messages} onMessage={onMessage} />
 
             <div ref={assistantStartRef} className="flex gap-4 max-w-4xl mx-auto">
                 <div className={clsx(
@@ -616,11 +316,6 @@ export default function ChatHistoryContainer({ authFetch, onMessage }) {
     const [detail, setDetail] = useState('')
     const [confirmClearOpen, setConfirmClearOpen] = useState(false)
     const [autoRefreshReady, setAutoRefreshReady] = useState(false)
-    const [viewMode, setViewMode] = useState(() => {
-        if (typeof localStorage === 'undefined') return 'list'
-        const stored = localStorage.getItem(VIEW_MODE_KEY)
-        return stored === 'merged' ? 'merged' : 'list'
-    })
     const [isMobileView, setIsMobileView] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 1024 : false)
     const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
     const [mobileDetailVisible, setMobileDetailVisible] = useState(false)
@@ -753,12 +448,7 @@ export default function ChatHistoryContainer({ authFetch, onMessage }) {
             setPendingJumpToAssistant(false)
         })
         return () => window.cancelAnimationFrame(frame)
-    }, [pendingJumpToAssistant, selectedId, selectedItem?.id, selectedItem?.revision, mobileDetailOpen, viewMode])
-
-    useEffect(() => {
-        if (typeof localStorage === 'undefined') return
-        localStorage.setItem(VIEW_MODE_KEY, viewMode)
-    }, [viewMode])
+    }, [pendingJumpToAssistant, selectedId, selectedItem?.id, selectedItem?.revision, mobileDetailOpen])
 
     useEffect(() => {
         if (typeof window === 'undefined') return undefined
@@ -1042,34 +732,6 @@ export default function ChatHistoryContainer({ authFetch, onMessage }) {
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
-                            <div className="inline-flex items-center rounded-xl border border-border bg-background p-1">
-                                <button
-                                    type="button"
-                                    onClick={() => setViewMode('list')}
-                                    className={clsx(
-                                        'h-9 w-12 rounded-lg flex items-center justify-center transition-colors',
-                                        viewMode === 'list'
-                                            ? 'bg-secondary text-foreground'
-                                            : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
-                                    )}
-                                    title={t('chatHistory.viewModeList')}
-                                >
-                                    <ListModeIcon />
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setViewMode('merged')}
-                                    className={clsx(
-                                        'h-9 w-12 rounded-lg flex items-center justify-center transition-colors',
-                                        viewMode === 'merged'
-                                            ? 'bg-secondary text-foreground'
-                                            : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
-                                    )}
-                                    title={t('chatHistory.viewModeMerged')}
-                                >
-                                    <MergeModeIcon />
-                                </button>
-                            </div>
                             <button
                                 type="button"
                                 onClick={() => detailScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
@@ -1097,7 +759,6 @@ export default function ChatHistoryContainer({ authFetch, onMessage }) {
                             <DetailConversation
                                 selectedItem={selectedItem}
                                 t={t}
-                                viewMode={viewMode}
                                 detailScrollRef={detailScrollRef}
                                 assistantStartRef={assistantStartRef}
                                 bottomButtonClassName="absolute right-5 bottom-5"
@@ -1132,34 +793,6 @@ export default function ChatHistoryContainer({ authFetch, onMessage }) {
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
-                                <div className="inline-flex items-center rounded-xl border border-border bg-background p-1">
-                                    <button
-                                        type="button"
-                                        onClick={() => setViewMode('list')}
-                                        className={clsx(
-                                            'h-9 w-10 rounded-lg flex items-center justify-center transition-colors',
-                                            viewMode === 'list'
-                                                ? 'bg-secondary text-foreground'
-                                                : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
-                                        )}
-                                        title={t('chatHistory.viewModeList')}
-                                    >
-                                        <ListModeIcon />
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setViewMode('merged')}
-                                        className={clsx(
-                                            'h-9 w-10 rounded-lg flex items-center justify-center transition-colors',
-                                            viewMode === 'merged'
-                                                ? 'bg-secondary text-foreground'
-                                                : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
-                                        )}
-                                        title={t('chatHistory.viewModeMerged')}
-                                    >
-                                        <MergeModeIcon />
-                                    </button>
-                                </div>
                                 <button
                                     type="button"
                                     onClick={() => detailScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
@@ -1183,7 +816,6 @@ export default function ChatHistoryContainer({ authFetch, onMessage }) {
                             <DetailConversation
                                 selectedItem={selectedItem}
                                 t={t}
-                                viewMode={viewMode}
                                 detailScrollRef={detailScrollRef}
                                 assistantStartRef={assistantStartRef}
                                 bottomButtonClassName="fixed right-5 bottom-5"

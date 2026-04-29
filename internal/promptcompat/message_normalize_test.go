@@ -227,10 +227,13 @@ func TestBuildOpenAICurrentInputContextTranscriptScrubsReadUICodeBlockWithoutToo
 	}
 
 	transcript := BuildOpenAICurrentInputContextTranscript(messages)
-	for _, leaked := range []string{"Read 1 file", "blockIndex := 0", "accumulatedText", "emitClaudeSSE", "Fallback: byte copy", "stream_translator.go"} {
+	for _, leaked := range []string{"Read 1 file", "blockIndex := 0", "accumulatedText", "emitClaudeSSE", "Fallback: byte copy"} {
 		if strings.Contains(transcript, leaked) {
 			t.Fatalf("expected read UI/code block %q to be scrubbed, got %q", leaked, transcript)
 		}
+	}
+	if !strings.Contains(transcript, "Already read files:\n- internal\\provider\\stream_translator.go") {
+		t.Fatalf("expected read UI file path to be preserved in working state, got %q", transcript)
 	}
 	for _, want := range []string{"好的，Fix 2 的 switch case 已添加", "先确认插入位置"} {
 		if !strings.Contains(transcript, want) {

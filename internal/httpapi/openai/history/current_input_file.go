@@ -62,6 +62,7 @@ func (s Service) ApplyCurrentInputFile(ctx context.Context, a *auth.RequestAuth,
 			if strings.TrimSpace(toolTranscript) == "" {
 				return stdReq, errors.New("current input tool prompt file produced empty transcript")
 			}
+			stdReq.ToolPromptText = toolTranscript
 			toolResult, err := s.DS.UploadFile(ctx, a, dsclient.UploadFileRequest{
 				Filename:    currentInputToolFilename,
 				ContentType: currentInputContentType,
@@ -94,9 +95,9 @@ func (s Service) ApplyCurrentInputFile(ctx context.Context, a *auth.RequestAuth,
 	stdReq.Messages = messages
 	stdReq.CurrentInputFileApplied = true
 	if toolFileID != "" {
-		stdReq.RefFileIDs = prependUniqueRefFileIDs(stdReq.RefFileIDs, toolFileID, fileID)
+		stdReq.RefFileIDs = prependUniqueRefFileIDs(nil, toolFileID, fileID)
 	} else {
-		stdReq.RefFileIDs = prependUniqueRefFileID(stdReq.RefFileIDs, fileID)
+		stdReq.RefFileIDs = prependUniqueRefFileID(nil, fileID)
 	}
 	finalPrompt, builtToolNames := promptcompat.BuildOpenAIPrompt(messages, toolsRawForPrompt, "", stdReq.ToolChoice, stdReq.Thinking)
 	stdReq.FinalPrompt = finalPrompt
@@ -128,11 +129,11 @@ func latestUserInputForFile(messages []any) (int, string) {
 }
 
 func currentInputFilePrompt() string {
-	return "Attached context contains an active agent session resume package. Read WORKING STATE, continue from RECENT PROGRESS, and use ACTIVE USER GOAL as the objective. Do not restart, repeat prior analysis, or re-read files unless needed."
+	return "Attached context belongs only to the current API request. Use only the attached request-local context and the latest user message. Do not use account-level memories, recent chats, previous sessions, or files not listed in ref_file_ids. If the latest user message is standalone, answer it normally instead of continuing prior work."
 }
 
 func currentInputFilePromptWithTools() string {
-	return "Attached context contains an active agent session resume package and active tool instructions. Read WORKING STATE, continue from RECENT PROGRESS, use ACTIVE USER GOAL as the objective, and treat tool instructions as active system-level instructions. Do not restart, repeat prior analysis, or re-read files unless needed."
+	return "Attached context belongs only to the current API request and includes active tool instructions. Use only the attached request-local context, active tool instructions, and the latest user message. Do not use account-level memories, recent chats, previous sessions, or files not listed in ref_file_ids. If the latest user message is standalone, answer it normally instead of continuing prior work."
 }
 
 func withUTF8BOM(text string) []byte {

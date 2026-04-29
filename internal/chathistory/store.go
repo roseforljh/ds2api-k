@@ -47,6 +47,7 @@ type Entry struct {
 	UserInput        string         `json:"user_input,omitempty"`
 	Messages         []Message      `json:"messages,omitempty"`
 	HistoryText      string         `json:"history_text,omitempty"`
+	ToolPromptText   string         `json:"tool_prompt_text,omitempty"`
 	FinalPrompt      string         `json:"final_prompt,omitempty"`
 	ReasoningContent string         `json:"reasoning_content,omitempty"`
 	Content          string         `json:"content,omitempty"`
@@ -89,14 +90,15 @@ type File struct {
 }
 
 type StartParams struct {
-	CallerID    string
-	AccountID   string
-	Model       string
-	Stream      bool
-	UserInput   string
-	Messages    []Message
-	HistoryText string
-	FinalPrompt string
+	CallerID       string
+	AccountID      string
+	Model          string
+	Stream         bool
+	UserInput      string
+	Messages       []Message
+	HistoryText    string
+	ToolPromptText string
+	FinalPrompt    string
 }
 
 type UpdateParams struct {
@@ -263,19 +265,20 @@ func (s *Store) Start(params StartParams) (Entry, error) {
 	now := time.Now().UnixMilli()
 	revision := s.nextRevisionLocked()
 	entry := Entry{
-		ID:          "chat_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
-		Revision:    revision,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-		Status:      "streaming",
-		CallerID:    strings.TrimSpace(params.CallerID),
-		AccountID:   strings.TrimSpace(params.AccountID),
-		Model:       strings.TrimSpace(params.Model),
-		Stream:      params.Stream,
-		UserInput:   strings.TrimSpace(params.UserInput),
-		Messages:    cloneMessages(params.Messages),
-		HistoryText: params.HistoryText,
-		FinalPrompt: strings.TrimSpace(params.FinalPrompt),
+		ID:             "chat_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
+		Revision:       revision,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		Status:         "streaming",
+		CallerID:       strings.TrimSpace(params.CallerID),
+		AccountID:      strings.TrimSpace(params.AccountID),
+		Model:          strings.TrimSpace(params.Model),
+		Stream:         params.Stream,
+		UserInput:      strings.TrimSpace(params.UserInput),
+		Messages:       cloneMessages(params.Messages),
+		HistoryText:    params.HistoryText,
+		ToolPromptText: params.ToolPromptText,
+		FinalPrompt:    strings.TrimSpace(params.FinalPrompt),
 	}
 	s.details[entry.ID] = entry
 	s.markDetailDirtyLocked(entry.ID)

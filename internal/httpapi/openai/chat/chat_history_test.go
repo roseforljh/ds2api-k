@@ -272,7 +272,7 @@ func TestChatCompletionsSkipsHistoryWhenDisabled(t *testing.T) {
 	}
 }
 
-func TestChatCompletionsCurrentInputFilePersistsOriginalMessagesAndHistoryText(t *testing.T) {
+func TestChatCompletionsCurrentInputFilePersistsNeutralMessagesAndHistoryText(t *testing.T) {
 	historyStore := newTestChatHistoryStore(t)
 	ds := &inlineUploadDSStub{}
 	h := &Handler{
@@ -316,13 +316,13 @@ func TestChatCompletionsCurrentInputFilePersistsOriginalMessagesAndHistoryText(t
 	if ds.uploadCalls[0].Filename != "HISTORY.txt" {
 		t.Fatalf("expected HISTORY.txt upload, got %q", ds.uploadCalls[0].Filename)
 	}
-	if len(full.Messages) != 4 {
-		t.Fatalf("expected original request messages to be persisted, got %#v", full.Messages)
+	if len(full.Messages) != 1 {
+		t.Fatalf("expected neutral live request message to be persisted, got %#v", full.Messages)
 	}
-	if full.UserInput != "latest user turn" {
-		t.Fatalf("expected latest original user input to be persisted, got %q", full.UserInput)
+	if !strings.Contains(full.UserInput, "Attached context belongs only to the current API request") {
+		t.Fatalf("expected neutral current-input prompt to be persisted, got %q", full.UserInput)
 	}
-	if full.Messages[len(full.Messages)-1].Content != "latest user turn" {
-		t.Fatalf("expected latest original message to be persisted, got %#v", full.Messages[len(full.Messages)-1])
+	if full.Messages[0].Role != "user" || !strings.Contains(full.Messages[0].Content, "Attached context belongs only to the current API request") {
+		t.Fatalf("expected neutral current-input message to be persisted, got %#v", full.Messages[0])
 	}
 }

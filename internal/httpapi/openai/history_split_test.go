@@ -68,8 +68,8 @@ func TestBuildOpenAICurrentInputContextTranscriptUsesNormalFileContent(t *testin
 	if strings.Contains(transcript, "[file content end]") || strings.Contains(transcript, "[file content begin]") || strings.Contains(transcript, "[file name]:") {
 		t.Fatalf("expected normal file content without DeepSeek file-boundary tags, got %q", transcript)
 	}
-	if !strings.Contains(transcript, "Active agent session resume package.") {
-		t.Fatalf("expected active session resume header, got %q", transcript)
+	if !strings.Contains(transcript, "Request-local context package.") {
+		t.Fatalf("expected request-local context header, got %q", transcript)
 	}
 	for _, want := range []string{"=== ACTIVE USER GOAL ===", "=== WORKING STATE, READ FIRST ===", "=== RECENT PROGRESS, CONTINUE FROM HERE ===", "=== FULL CHRONOLOGICAL CONTEXT, REFERENCE ONLY ===", "[User]", "[Tool]"} {
 		if !strings.Contains(transcript, want) {
@@ -98,12 +98,13 @@ func TestBuildOpenAICurrentInputContextTranscriptBuildsActiveAgentResumePackage(
 	transcript := buildOpenAICurrentInputContextTranscript(messages)
 
 	for _, want := range []string{
-		"Active agent session resume package.",
+		"Request-local context package.",
 		"=== ACTIVE USER GOAL ===",
 		"修复 bug",
 		"=== WORKING STATE, READ FIRST ===",
 		"Already read files:",
 		"internal/a.go",
+		"If you need to read a file but no concrete path is available, locate it first with search/glob; never call Read with an empty file_path.",
 		"Latest observation:",
 		"测试失败：internal/b.go:42",
 		"=== RECENT PROGRESS, CONTINUE FROM HERE ===",
@@ -115,6 +116,21 @@ func TestBuildOpenAICurrentInputContextTranscriptBuildsActiveAgentResumePackage(
 	}
 	if strings.Contains(transcript, "latest user request") {
 		t.Fatalf("expected transcript not to anchor on latest user request, got %q", transcript)
+	}
+}
+
+func TestBuildOpenAICurrentInputContextTranscriptPreservesReadUIPaths(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "继续修复"},
+		map[string]any{"role": "assistant", "content": "先读目标文件。\n\n● Read 1 file (ctrl+o to expand)\n  ⎿  internal\\provider\\stream_translator.go"},
+	}
+	transcript := buildOpenAICurrentInputContextTranscript(messages)
+
+	if !strings.Contains(transcript, "Already read files:\n- internal\\provider\\stream_translator.go") {
+		t.Fatalf("expected read UI path to be preserved in working state, got %q", transcript)
+	}
+	if strings.Contains(transcript, "Read 1 file") {
+		t.Fatalf("expected Read UI noise to stay scrubbed, got %q", transcript)
 	}
 }
 
@@ -423,7 +439,7 @@ func TestApplyCurrentInputFileUploadsFirstTurnWithInjectedWrapper(t *testing.T) 
 	if strings.Contains(out.FinalPrompt, "CURRENT_USER_INPUT.txt") || strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
 		t.Fatalf("expected live prompt not to instruct file reads, got %s", out.FinalPrompt)
 	}
-	if !strings.Contains(out.FinalPrompt, "Read WORKING STATE") {
+	if !strings.Contains(out.FinalPrompt, "current API request") {
 		t.Fatalf("expected neutral continuation instruction in live prompt, got %s", out.FinalPrompt)
 	}
 	if len(out.RefFileIDs) != 1 || out.RefFileIDs[0] != "file-inline-1" {
@@ -474,8 +490,77 @@ func TestApplyCurrentInputFileUploadsFullContextFile(t *testing.T) {
 	if strings.Contains(out.FinalPrompt, "first user turn") || strings.Contains(out.FinalPrompt, "latest user turn") || strings.Contains(out.FinalPrompt, "CURRENT_USER_INPUT.txt") || strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
 		t.Fatalf("expected live prompt to use only a neutral continuation instruction, got %s", out.FinalPrompt)
 	}
-	if !strings.Contains(out.FinalPrompt, "Read WORKING STATE") {
+	if !strings.Contains(out.FinalPrompt, "current API request") {
 		t.Fatalf("expected neutral continuation instruction in live prompt, got %s", out.FinalPrompt)
+	}
+}
+
+func TestApplyCurrentInputFileDropsStaleRefFileIDs(t *testing.T) {
+	ds := &inlineUploadDSStub{}
+	h := &openAITestSurface{
+		Store: mockOpenAIConfig{
+			wideInput:           true,
+			currentInputEnabled: true,
+			currentInputMin:     0,
+			thinkingInjection:   boolPtr(true),
+		},
+		DS: ds,
+	}
+	req := map[string]any{
+		"model":        "deepseek-v4-flash",
+		"ref_file_ids": []any{"stale-history-file"},
+		"messages": []any{
+			map[string]any{"role": "user", "content": "latest user turn"},
+		},
+	}
+	stdReq, err := promptcompat.NormalizeOpenAIChatRequest(h.Store, req, "")
+	if err != nil {
+		t.Fatalf("normalize failed: %v", err)
+	}
+
+	out, err := h.applyCurrentInputFile(context.Background(), &auth.RequestAuth{DeepSeekToken: "token"}, stdReq)
+	if err != nil {
+		t.Fatalf("apply current input file failed: %v", err)
+	}
+	if len(out.RefFileIDs) != 1 || out.RefFileIDs[0] != "file-inline-1" {
+		t.Fatalf("expected only current HISTORY file id, got %#v", out.RefFileIDs)
+	}
+}
+
+func TestApplyCurrentInputFileUsesRequestLocalPrompt(t *testing.T) {
+	ds := &inlineUploadDSStub{}
+	h := &openAITestSurface{
+		Store: mockOpenAIConfig{
+			wideInput:           true,
+			currentInputEnabled: true,
+			currentInputMin:     0,
+		},
+		DS: ds,
+	}
+	req := map[string]any{
+		"model": "deepseek-v4-flash",
+		"messages": []any{
+			map[string]any{"role": "user", "content": "hi"},
+		},
+	}
+	stdReq, err := promptcompat.NormalizeOpenAIChatRequest(h.Store, req, "")
+	if err != nil {
+		t.Fatalf("normalize failed: %v", err)
+	}
+
+	out, err := h.applyCurrentInputFile(context.Background(), &auth.RequestAuth{DeepSeekToken: "token"}, stdReq)
+	if err != nil {
+		t.Fatalf("apply current input file failed: %v", err)
+	}
+	if strings.Contains(strings.ToLower(out.FinalPrompt), "resume") ||
+		strings.Contains(strings.ToLower(out.FinalPrompt), "continue from") ||
+		strings.Contains(strings.ToLower(out.FinalPrompt), "do not restart") {
+		t.Fatalf("expected request-local neutral prompt, got %q", out.FinalPrompt)
+	}
+	for _, want := range []string{"current API request", "latest user message", "previous sessions"} {
+		if !strings.Contains(out.FinalPrompt, want) {
+			t.Fatalf("expected final prompt to contain %q, got %q", want, out.FinalPrompt)
+		}
 	}
 }
 
@@ -540,7 +625,7 @@ func TestApplyCurrentInputFileUploadsToolPromptFileWhenEnabled(t *testing.T) {
 	if strings.Contains(out.FinalPrompt, "00_AGENT_TOOLS") || strings.Contains(out.FinalPrompt, "TOOL_PROMPT") || strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
 		t.Fatalf("expected final prompt not to reference concrete tool/context files, got %s", out.FinalPrompt)
 	}
-	if !strings.Contains(out.FinalPrompt, "active agent session resume package and active tool instructions") {
+	if !strings.Contains(out.FinalPrompt, "current API request") || !strings.Contains(out.FinalPrompt, "active tool instructions") {
 		t.Fatalf("expected final prompt to activate attached tool instructions, got %s", out.FinalPrompt)
 	}
 	if len(out.RefFileIDs) < 2 || out.RefFileIDs[0] != "file-inline-2" || out.RefFileIDs[1] != "file-inline-1" {
@@ -627,7 +712,7 @@ func TestChatCompletionsCurrentInputFileUploadsContextAndKeepsNeutralPrompt(t *t
 		t.Fatal("expected completion payload to be captured")
 	}
 	promptText, _ := ds.completionReq["prompt"].(string)
-	if !strings.Contains(promptText, "Read WORKING STATE") {
+	if !strings.Contains(promptText, "current API request") {
 		t.Fatalf("expected neutral completion prompt, got %s", promptText)
 	}
 	if strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
@@ -673,7 +758,7 @@ func TestResponsesCurrentInputFileUploadsContextAndKeepsNeutralPrompt(t *testing
 		t.Fatal("expected completion payload to be captured")
 	}
 	promptText, _ := ds.completionReq["prompt"].(string)
-	if !strings.Contains(promptText, "Read WORKING STATE") {
+	if !strings.Contains(promptText, "current API request") {
 		t.Fatalf("expected neutral completion prompt, got %s", promptText)
 	}
 	if strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
@@ -809,7 +894,7 @@ func TestCurrentInputFileWorksAcrossAutoDeleteModes(t *testing.T) {
 				t.Fatalf("expected completion payload for mode=%s", mode)
 			}
 			promptText, _ := ds.completionReq["prompt"].(string)
-			if !strings.Contains(promptText, "Read WORKING STATE") || strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
+			if !strings.Contains(promptText, "current API request") || strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
 				t.Fatalf("unexpected prompt for mode=%s: %s", mode, promptText)
 			}
 		})

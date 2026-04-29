@@ -289,6 +289,8 @@
         "copyFailed": "Copy failed.",
         "downloadSuccess": "Download started.",
         "downloadFailed": "Download failed.",
+        "preview": "Preview",
+        "previewFailed": "Preview failed. It may have been blocked by the browser.",
         "expand": "Expand",
         "collapse": "Collapse",
         "reasoningTrace": "Reasoning Trace",

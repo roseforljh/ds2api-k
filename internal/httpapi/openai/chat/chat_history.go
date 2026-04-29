@@ -39,24 +39,26 @@ func startChatHistory(store *chathistory.Store, r *http.Request, a *auth.Request
 	}
 	historyMessages := chatHistoryMessages(stdReq)
 	entry, err := store.Start(chathistory.StartParams{
-		CallerID:    strings.TrimSpace(a.CallerID),
-		AccountID:   strings.TrimSpace(a.AccountID),
-		Model:       strings.TrimSpace(stdReq.ResponseModel),
-		Stream:      stdReq.Stream,
-		UserInput:   extractSingleUserInput(historyMessages),
-		Messages:    extractAllMessages(historyMessages),
-		HistoryText: stdReq.HistoryText,
-		FinalPrompt: stdReq.FinalPrompt,
+		CallerID:       strings.TrimSpace(a.CallerID),
+		AccountID:      strings.TrimSpace(a.AccountID),
+		Model:          strings.TrimSpace(stdReq.ResponseModel),
+		Stream:         stdReq.Stream,
+		UserInput:      extractSingleUserInput(historyMessages),
+		Messages:       extractAllMessages(historyMessages),
+		HistoryText:    stdReq.HistoryText,
+		ToolPromptText: stdReq.ToolPromptText,
+		FinalPrompt:    stdReq.FinalPrompt,
 	})
 	startParams := chathistory.StartParams{
-		CallerID:    strings.TrimSpace(a.CallerID),
-		AccountID:   strings.TrimSpace(a.AccountID),
-		Model:       strings.TrimSpace(stdReq.ResponseModel),
-		Stream:      stdReq.Stream,
-		UserInput:   extractSingleUserInput(historyMessages),
-		Messages:    extractAllMessages(historyMessages),
-		HistoryText: stdReq.HistoryText,
-		FinalPrompt: stdReq.FinalPrompt,
+		CallerID:       strings.TrimSpace(a.CallerID),
+		AccountID:      strings.TrimSpace(a.AccountID),
+		Model:          strings.TrimSpace(stdReq.ResponseModel),
+		Stream:         stdReq.Stream,
+		UserInput:      extractSingleUserInput(historyMessages),
+		Messages:       extractAllMessages(historyMessages),
+		HistoryText:    stdReq.HistoryText,
+		ToolPromptText: stdReq.ToolPromptText,
+		FinalPrompt:    stdReq.FinalPrompt,
 	}
 	session := &chatHistorySession{
 		store:       store,
@@ -77,9 +79,6 @@ func startChatHistory(store *chathistory.Store, r *http.Request, a *auth.Request
 }
 
 func chatHistoryMessages(stdReq promptcompat.StandardRequest) []any {
-	if stdReq.CurrentInputFileApplied && len(stdReq.OriginalMessages) > 0 {
-		return stdReq.OriginalMessages
-	}
 	return stdReq.Messages
 }
 

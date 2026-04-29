@@ -144,6 +144,12 @@ func scanToolMarkupTagAt(text string, start int) (ToolMarkupTag, bool) {
 		for next, ok := consumeToolMarkupSeparator(text, i); ok; next, ok = consumeToolMarkupSeparator(text, i) {
 			i = next
 		}
+	} else if strings.HasPrefix(lower[i:], "dsm") {
+		dsmlLike = true
+		i += len("dsm")
+		for next, ok := consumeToolMarkupSeparator(text, i); ok; next, ok = consumeToolMarkupSeparator(text, i) {
+			i = next
+		}
 	}
 	name, nameLen := matchToolMarkupName(lower, i)
 	if nameLen == 0 {

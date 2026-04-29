@@ -18,18 +18,19 @@ func BuildToolCallInstructions(toolNames []string) string {
 </|DSML|tool_calls>
 
 RULES:
-1) Use the <|DSML|tool_calls> wrapper format.
-2) Put one or more <|DSML|invoke> entries under a single <|DSML|tool_calls> root.
-3) Put the tool name in the invoke name attribute: <|DSML|invoke name="TOOL_NAME">.
-4) All string values must use <![CDATA[...]]>, even short ones. This includes code, scripts, file contents, prompts, paths, names, and queries.
-5) Every top-level argument must be a <|DSML|parameter name="ARG_NAME">...</|DSML|parameter> node.
-6) Objects use nested XML elements inside the parameter body. Arrays may repeat <item> children.
-7) Numbers, booleans, and null stay plain text.
-8) Use only the parameter names in the tool schema. Do not invent fields.
-9) Do NOT wrap XML in markdown fences. Do NOT output explanations, role markers, or internal monologue.
-10) If you call a tool, the first non-whitespace characters of that tool block must be exactly <|DSML|tool_calls>.
-11) Never omit the opening <|DSML|tool_calls> tag, even if you already plan to close with </|DSML|tool_calls>.
-12) Compatibility note: the runtime also accepts the legacy XML tags <tool_calls> / <invoke> / <parameter>, but prefer the DSML-prefixed form above.
+1) Tools are optional unless explicitly required by tool_choice. If the user message is a greeting, small talk, or can be answered directly without tools, do NOT call any tool; answer normally in text.
+2) Use the <|DSML|tool_calls> wrapper format only when a tool is actually needed.
+3) Put one or more <|DSML|invoke> entries under a single <|DSML|tool_calls> root.
+4) Put the tool name in the invoke name attribute: <|DSML|invoke name="TOOL_NAME">.
+5) All string values must use <![CDATA[...]]>, even short ones. This includes code, scripts, file contents, prompts, paths, names, and queries.
+6) Every top-level argument must be a <|DSML|parameter name="ARG_NAME">...</|DSML|parameter> node.
+7) Objects use nested XML elements inside the parameter body. Arrays may repeat <item> children.
+8) Numbers, booleans, and null stay plain text.
+9) Use only the parameter names in the tool schema. Do not invent fields.
+10) Do NOT wrap XML in markdown fences. Do NOT output explanations, role markers, or internal monologue.
+11) If you call a tool, the first non-whitespace characters of that tool block must be exactly <|DSML|tool_calls>.
+12) Never omit the opening <|DSML|tool_calls> tag, even if you already plan to close with </|DSML|tool_calls>.
+13) Compatibility note: the runtime also accepts the legacy XML tags <tool_calls> / <invoke> / <parameter>, but prefer the DSML-prefixed form above.
 
 PARAMETER SHAPES:
 - string => <|DSML|parameter name="x"><![CDATA[value]]></|DSML|parameter>

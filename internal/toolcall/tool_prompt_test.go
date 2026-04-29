@@ -119,6 +119,20 @@ func TestBuildToolCallInstructions_AnchorsMissingOpeningWrapperFailureMode(t *te
 	}
 }
 
+func TestBuildToolCallInstructions_StatesToolsAreOptionalForDirectAnswers(t *testing.T) {
+	out := BuildToolCallInstructions([]string{"Skill"})
+	for _, want := range []string{
+		"Tools are optional unless explicitly required",
+		"greeting",
+		"small talk",
+		"answer normally in text",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected direct-answer guard %q, got: %s", want, out)
+		}
+	}
+}
+
 func findInvokeBlocks(text, name string) []string {
 	open := `<|DSML|invoke name="` + name + `">`
 	remaining := text

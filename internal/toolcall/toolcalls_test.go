@@ -78,6 +78,17 @@ func TestParseToolCallsSupportsMixedFullwidthDSMLSeparators(t *testing.T) {
 	}
 }
 
+func TestParseToolCallsSupportsDSMFullwidthAlias(t *testing.T) {
+	text := `<DSM｜tool_calls><DSM｜invoke name="Bash"><DSM｜parameter name="command"><![CDATA[pwd]]></DSM｜parameter><DSM｜parameter name="description"><![CDATA[show cwd]]></DSM｜parameter></DSM｜invoke></DSM｜tool_calls>`
+	calls := ParseToolCalls(text, []string{"Bash"})
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 DSM alias call, got %#v", calls)
+	}
+	if calls[0].Name != "Bash" || calls[0].Input["command"] != "pwd" || calls[0].Input["description"] != "show cwd" {
+		t.Fatalf("unexpected DSM alias parse result: %#v", calls[0])
+	}
+}
+
 func TestParseToolCallsSkipsProseMentionOfMixedFullwidthDSMLWrapper(t *testing.T) {
 	text := strings.Join([]string{
 		"Summary: support mixed <|DSML｜tool_calls> wrappers.",

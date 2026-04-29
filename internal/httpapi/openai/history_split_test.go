@@ -678,6 +678,9 @@ func TestApplyCurrentInputFileUploadsFirstTurnWithInjectedWrapper(t *testing.T) 
 	if !strings.Contains(out.FinalPrompt, "current API request") {
 		t.Fatalf("expected neutral continuation instruction in live prompt, got %s", out.FinalPrompt)
 	}
+	if !strings.Contains(out.FinalPrompt, "HISTORY.txt") {
+		t.Fatalf("expected final prompt to mention HISTORY.txt, got %s", out.FinalPrompt)
+	}
 	if !strings.Contains(out.FinalPrompt, "follow its WORKING STATE section") {
 		t.Fatalf("expected final prompt to instruct following HISTORY.txt working state, got %s", out.FinalPrompt)
 	}
@@ -883,6 +886,7 @@ func TestApplyCurrentInputFileUploadsToolPromptFileWhenEnabled(t *testing.T) {
 		"When emitting a tool call, output only the tool call and no additional prose before or after it.",
 		"<|DSML|tool_calls>",
 		"Never use SML_DOLLAR_EM_OLLAR_",
+		"HISTORY.txt",
 		"follow its WORKING STATE section",
 		"no_active_working",
 		"If the latest user message explicitly asks to continue prior work",

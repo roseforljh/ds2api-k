@@ -672,11 +672,17 @@ func TestApplyCurrentInputFileUploadsFirstTurnWithInjectedWrapper(t *testing.T) 
 	if strings.Contains(out.FinalPrompt, "first turn content that is long enough") {
 		t.Fatalf("expected current input text to be replaced in live prompt, got %s", out.FinalPrompt)
 	}
-	if strings.Contains(out.FinalPrompt, "CURRENT_USER_INPUT.txt") || strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
-		t.Fatalf("expected live prompt not to instruct file reads, got %s", out.FinalPrompt)
+	if strings.Contains(out.FinalPrompt, "CURRENT_USER_INPUT.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
+		t.Fatalf("expected live prompt not to use deprecated file-read wording, got %s", out.FinalPrompt)
 	}
 	if !strings.Contains(out.FinalPrompt, "current API request") {
 		t.Fatalf("expected neutral continuation instruction in live prompt, got %s", out.FinalPrompt)
+	}
+	if !strings.Contains(out.FinalPrompt, "follow its WORKING STATE section") {
+		t.Fatalf("expected final prompt to instruct following HISTORY.txt working state, got %s", out.FinalPrompt)
+	}
+	if !strings.Contains(out.FinalPrompt, "no_active_working") {
+		t.Fatalf("expected final prompt to mention no_active_working, got %s", out.FinalPrompt)
 	}
 	if len(out.RefFileIDs) != 1 || out.RefFileIDs[0] != "file-inline-1" {
 		t.Fatalf("expected current input file id in ref_file_ids, got %#v", out.RefFileIDs)
@@ -723,7 +729,7 @@ func TestApplyCurrentInputFileUploadsFullContextFile(t *testing.T) {
 			t.Fatalf("expected full context file to contain %q, got %q", want, uploadedText)
 		}
 	}
-	if strings.Contains(out.FinalPrompt, "first user turn") || strings.Contains(out.FinalPrompt, "latest user turn") || strings.Contains(out.FinalPrompt, "CURRENT_USER_INPUT.txt") || strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
+	if strings.Contains(out.FinalPrompt, "first user turn") || strings.Contains(out.FinalPrompt, "latest user turn") || strings.Contains(out.FinalPrompt, "CURRENT_USER_INPUT.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
 		t.Fatalf("expected live prompt to use only a neutral continuation instruction, got %s", out.FinalPrompt)
 	}
 	if !strings.Contains(out.FinalPrompt, "current API request") {
@@ -869,7 +875,7 @@ func TestApplyCurrentInputFileUploadsToolPromptFileWhenEnabled(t *testing.T) {
 	if strings.Contains(out.FinalPrompt, "You have access to these tools:") {
 		t.Fatalf("expected final prompt not to inline tool prompt, got %s", out.FinalPrompt)
 	}
-	if strings.Contains(out.FinalPrompt, "00_AGENT_TOOLS") || strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
+	if strings.Contains(out.FinalPrompt, "00_AGENT_TOOLS") || strings.Contains(out.FinalPrompt, "Read that file") {
 		t.Fatalf("expected final prompt not to reference concrete tool/context files, got %s", out.FinalPrompt)
 	}
 	for _, want := range []string{
@@ -877,6 +883,8 @@ func TestApplyCurrentInputFileUploadsToolPromptFileWhenEnabled(t *testing.T) {
 		"When emitting a tool call, output only the tool call and no additional prose before or after it.",
 		"<|DSML|tool_calls>",
 		"Never use SML_DOLLAR_EM_OLLAR_",
+		"follow its WORKING STATE section",
+		"no_active_working",
 		"If the latest user message explicitly asks to continue prior work",
 		"Otherwise, answer the latest user message directly.",
 	} {

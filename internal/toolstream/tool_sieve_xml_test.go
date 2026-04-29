@@ -72,6 +72,104 @@ func TestProcessToolSieveInterceptsDSMLToolCallWithoutLeak(t *testing.T) {
 	}
 }
 
+func TestProcessToolSieveInterceptsMixedFullwidthDSMLToolCallWithoutLeak(t *testing.T) {
+	var state State
+	chunks := []string{
+		"<|DSML｜tool",
+		"_calls>\n",
+		`  <|DSML｜invoke name="TaskUpdate">` + "\n",
+		`    <|DSML｜parameter name="status">completed</|DSML｜parameter>` + "\n",
+		`    <|DSML｜parameter name="taskId">1</|DSML｜parameter>` + "\n",
+		"  </|DSML｜invoke>\n",
+		"</|DSML｜tool_calls>",
+	}
+	var events []Event
+	for _, c := range chunks {
+		events = append(events, ProcessChunk(&state, c, []string{"TaskUpdate"})...)
+	}
+	events = append(events, Flush(&state, []string{"TaskUpdate"})...)
+
+	var textContent strings.Builder
+	var toolCalls int
+	for _, evt := range events {
+		textContent.WriteString(evt.Content)
+		toolCalls += len(evt.ToolCalls)
+	}
+
+	if strings.Contains(textContent.String(), "DSML") || strings.Contains(textContent.String(), "TaskUpdate") {
+		t.Fatalf("mixed-separator DSML tool call content leaked to text: %q", textContent.String())
+	}
+	if toolCalls != 1 {
+		t.Fatalf("expected one mixed-separator DSML tool call, got %d events=%#v", toolCalls, events)
+	}
+}
+
+func TestProcessToolSieveInterceptsBareMixedFullwidthDSMLToolCallWithoutLeak(t *testing.T) {
+	var state State
+	chunks := []string{
+		"<DSML｜tool",
+		"_calls>\n",
+		`  <DSML｜invoke name="TaskUpdate">` + "\n",
+		`    <DSML｜parameter name="status">completed</DSML｜parameter>` + "\n",
+		`    <DSML｜parameter name="taskId">1</DSML｜parameter>` + "\n",
+		"  </DSML｜invoke>\n",
+		"</DSML｜tool_calls>",
+	}
+	var events []Event
+	for _, c := range chunks {
+		events = append(events, ProcessChunk(&state, c, []string{"TaskUpdate"})...)
+	}
+	events = append(events, Flush(&state, []string{"TaskUpdate"})...)
+
+	var textContent strings.Builder
+	var toolCalls int
+	for _, evt := range events {
+		textContent.WriteString(evt.Content)
+		toolCalls += len(evt.ToolCalls)
+	}
+
+	if strings.Contains(textContent.String(), "DSML") || strings.Contains(textContent.String(), "TaskUpdate") {
+		t.Fatalf("bare mixed-separator DSML tool call content leaked to text: %q", textContent.String())
+	}
+	if toolCalls != 1 {
+		t.Fatalf("expected one bare mixed-separator DSML tool call, got %d events=%#v", toolCalls, events)
+	}
+}
+
+func TestProcessToolSievePreservesMixedFullwidthDSMLMentionBeforeToolCall(t *testing.T) {
+	var state State
+	chunks := []string{
+		"Summary: support mixed <|DSML｜tool_calls> wrappers.\n\n",
+		"<|DSML｜tool_calls>\n",
+		"<|DSML｜invoke name=\"TaskUpdate\">\n",
+		"<|DSML｜parameter name=\"status\">completed</|DSML｜parameter>\n",
+		"</|DSML｜invoke>\n",
+		"</|DSML｜tool_calls>",
+	}
+	var events []Event
+	for _, c := range chunks {
+		events = append(events, ProcessChunk(&state, c, []string{"TaskUpdate"})...)
+	}
+	events = append(events, Flush(&state, []string{"TaskUpdate"})...)
+
+	var textContent strings.Builder
+	var toolCalls int
+	for _, evt := range events {
+		textContent.WriteString(evt.Content)
+		toolCalls += len(evt.ToolCalls)
+	}
+
+	if !strings.Contains(textContent.String(), "Summary: support mixed <|DSML｜tool_calls> wrappers.") {
+		t.Fatalf("expected mixed-separator DSML prose mention to be preserved, got %q", textContent.String())
+	}
+	if strings.Contains(textContent.String(), "TaskUpdate") {
+		t.Fatalf("real mixed-separator DSML tool call leaked to text: %q", textContent.String())
+	}
+	if toolCalls != 1 {
+		t.Fatalf("expected one mixed-separator DSML tool call, got %d events=%#v", toolCalls, events)
+	}
+}
+
 func TestProcessToolSieveHandlesLongXMLToolCall(t *testing.T) {
 	var state State
 	const toolName = "write_to_file"

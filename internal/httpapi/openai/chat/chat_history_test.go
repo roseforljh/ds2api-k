@@ -272,7 +272,7 @@ func TestChatCompletionsSkipsHistoryWhenDisabled(t *testing.T) {
 	}
 }
 
-func TestChatCompletionsCurrentInputFilePersistsNeutralPrompt(t *testing.T) {
+func TestChatCompletionsCurrentInputFilePersistsOriginalMessagesAndHistoryText(t *testing.T) {
 	historyStore := newTestChatHistoryStore(t)
 	ds := &inlineUploadDSStub{}
 	h := &Handler{
@@ -307,8 +307,8 @@ func TestChatCompletionsCurrentInputFilePersistsNeutralPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected detail item, got %v", err)
 	}
-	if full.HistoryText != "" {
-		t.Fatalf("expected current input file flow to leave history text empty, got %q", full.HistoryText)
+	if !strings.Contains(full.HistoryText, "latest user turn") || !strings.Contains(full.HistoryText, "first user turn") {
+		t.Fatalf("expected current input file flow to persist uploaded history text, got %q", full.HistoryText)
 	}
 	if len(ds.uploadCalls) != 1 {
 		t.Fatalf("expected current input upload to happen, got %d", len(ds.uploadCalls))
@@ -316,10 +316,13 @@ func TestChatCompletionsCurrentInputFilePersistsNeutralPrompt(t *testing.T) {
 	if ds.uploadCalls[0].Filename != "HISTORY.txt" {
 		t.Fatalf("expected HISTORY.txt upload, got %q", ds.uploadCalls[0].Filename)
 	}
-	if len(full.Messages) != 1 {
-		t.Fatalf("expected neutral prompt to be the only persisted message, got %#v", full.Messages)
+	if len(full.Messages) != 4 {
+		t.Fatalf("expected original request messages to be persisted, got %#v", full.Messages)
 	}
-	if !strings.Contains(full.Messages[0].Content, "Read WORKING STATE first") {
-		t.Fatalf("expected neutral prompt to be persisted, got %#v", full.Messages[0])
+	if full.UserInput != "latest user turn" {
+		t.Fatalf("expected latest original user input to be persisted, got %q", full.UserInput)
+	}
+	if full.Messages[len(full.Messages)-1].Content != "latest user turn" {
+		t.Fatalf("expected latest original message to be persisted, got %#v", full.Messages[len(full.Messages)-1])
 	}
 }

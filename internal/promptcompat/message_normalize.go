@@ -29,6 +29,9 @@ func NormalizeOpenAIMessagesForPrompt(raw []any, traceID string) []map[string]an
 			})
 		case "tool", "function":
 			content := buildToolContentForPrompt(msg)
+			if content == "" {
+				continue
+			}
 			out = append(out, map[string]any{
 				"role":    "tool",
 				"content": content,
@@ -56,7 +59,7 @@ func NormalizeOpenAIMessagesForPrompt(raw []any, traceID string) []map[string]an
 }
 
 func buildAssistantContentForPrompt(msg map[string]any) string {
-	content := strings.TrimSpace(NormalizeOpenAIContentForPrompt(msg["content"]))
+	content := strings.TrimSpace(sanitizePromptVisibleInternalToolEvents("assistant", NormalizeOpenAIContentForPrompt(msg["content"])))
 	reasoning := strings.TrimSpace(normalizeOpenAIReasoningContentForPrompt(msg["reasoning_content"]))
 	if reasoning == "" {
 		reasoning = strings.TrimSpace(extractOpenAIReasoningContentFromMessage(msg["content"]))
@@ -149,7 +152,10 @@ func formatPromptLabeledBlock(label, text string) string {
 }
 
 func buildToolContentForPrompt(msg map[string]any) string {
-	content := NormalizeOpenAIContentForPrompt(msg["content"])
+	content := sanitizePromptVisibleInternalToolEvents("tool", NormalizeOpenAIContentForPrompt(msg["content"]))
+	if strings.TrimSpace(content) == "" && strings.TrimSpace(NormalizeOpenAIContentForPrompt(msg["content"])) != "" {
+		return ""
+	}
 	if strings.TrimSpace(content) == "" {
 		return "null"
 	}

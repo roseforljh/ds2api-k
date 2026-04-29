@@ -67,6 +67,36 @@ func TestParseToolCallsSupportsDSMLShell(t *testing.T) {
 	}
 }
 
+func TestParseToolCallsSupportsMixedFullwidthDSMLSeparators(t *testing.T) {
+	text := `<|DSML｜tool_calls><|DSML｜invoke name="Bash"><|DSML｜parameter name="command"><![CDATA[pwd]]></|DSML｜parameter></|DSML｜invoke></|DSML｜tool_calls>`
+	calls := ParseToolCalls(text, []string{"Bash"})
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 mixed-separator DSML call, got %#v", calls)
+	}
+	if calls[0].Name != "Bash" || calls[0].Input["command"] != "pwd" {
+		t.Fatalf("unexpected mixed-separator DSML parse result: %#v", calls[0])
+	}
+}
+
+func TestParseToolCallsSkipsProseMentionOfMixedFullwidthDSMLWrapper(t *testing.T) {
+	text := strings.Join([]string{
+		"Summary: support mixed <|DSML｜tool_calls> wrappers.",
+		"",
+		"<|DSML｜tool_calls>",
+		"<|DSML｜invoke name=\"Bash\">",
+		"<|DSML｜parameter name=\"command\"><![CDATA[pwd]]></|DSML｜parameter>",
+		"</|DSML｜invoke>",
+		"</|DSML｜tool_calls>",
+	}, "\n")
+	res := ParseToolCallsDetailed(text, []string{"Bash"})
+	if len(res.Calls) != 1 {
+		t.Fatalf("expected one parsed call after mixed-separator prose mention, got %#v", res.Calls)
+	}
+	if got, _ := res.Calls[0].Input["command"].(string); got != "pwd" {
+		t.Fatalf("expected command to parse, got %q", got)
+	}
+}
+
 func TestParseToolCallsSupportsDSMLShellWithCanonicalExampleInCDATA(t *testing.T) {
 	content := `<tool_calls><invoke name="demo"><parameter name="value">x</parameter></invoke></tool_calls>`
 	text := `<|DSML|tool_calls><|DSML|invoke name="Write"><|DSML|parameter name="file_path">notes.md</|DSML|parameter><|DSML|parameter name="content"><![CDATA[` + content + `]]></|DSML|parameter></|DSML|invoke></|DSML|tool_calls>`

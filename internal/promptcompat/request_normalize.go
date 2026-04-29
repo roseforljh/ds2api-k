@@ -39,20 +39,21 @@ func NormalizeOpenAIChatRequest(store ConfigReader, req map[string]any, traceID 
 	refFileIDs := CollectOpenAIRefFileIDs(req)
 
 	return StandardRequest{
-		Surface:        "openai_chat",
-		RequestedModel: strings.TrimSpace(model),
-		ResolvedModel:  resolvedModel,
-		ResponseModel:  responseModel,
-		Messages:       messagesRaw,
-		ToolsRaw:       req["tools"],
-		FinalPrompt:    finalPrompt,
-		ToolNames:      toolNames,
-		ToolChoice:     toolPolicy,
-		Stream:         util.ToBool(req["stream"]),
-		Thinking:       thinkingEnabled,
-		Search:         searchEnabled,
-		RefFileIDs:     refFileIDs,
-		PassThrough:    passThrough,
+		Surface:          "openai_chat",
+		RequestedModel:   strings.TrimSpace(model),
+		ResolvedModel:    resolvedModel,
+		ResponseModel:    responseModel,
+		Messages:         messagesRaw,
+		OriginalMessages: messagesRaw,
+		ToolsRaw:         req["tools"],
+		FinalPrompt:      finalPrompt,
+		ToolNames:        toolNames,
+		ToolChoice:       toolPolicy,
+		Stream:           util.ToBool(req["stream"]),
+		Thinking:         thinkingEnabled,
+		Search:           searchEnabled,
+		RefFileIDs:       refFileIDs,
+		PassThrough:      passThrough,
 	}, nil
 }
 
@@ -99,20 +100,21 @@ func NormalizeOpenAIResponsesRequest(store ConfigReader, req map[string]any, tra
 	refFileIDs := CollectOpenAIRefFileIDs(req)
 
 	return StandardRequest{
-		Surface:        "openai_responses",
-		RequestedModel: model,
-		ResolvedModel:  resolvedModel,
-		ResponseModel:  model,
-		Messages:       messagesRaw,
-		ToolsRaw:       req["tools"],
-		FinalPrompt:    finalPrompt,
-		ToolNames:      toolNames,
-		ToolChoice:     toolPolicy,
-		Stream:         util.ToBool(req["stream"]),
-		Thinking:       thinkingEnabled,
-		Search:         searchEnabled,
-		RefFileIDs:     refFileIDs,
-		PassThrough:    passThrough,
+		Surface:          "openai_responses",
+		RequestedModel:   model,
+		ResolvedModel:    resolvedModel,
+		ResponseModel:    model,
+		Messages:         messagesRaw,
+		OriginalMessages: messagesRaw,
+		ToolsRaw:         req["tools"],
+		FinalPrompt:      finalPrompt,
+		ToolNames:        toolNames,
+		ToolChoice:       toolPolicy,
+		Stream:           util.ToBool(req["stream"]),
+		Thinking:         thinkingEnabled,
+		Search:           searchEnabled,
+		RefFileIDs:       refFileIDs,
+		PassThrough:      passThrough,
 	}, nil
 }
 

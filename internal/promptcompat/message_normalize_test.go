@@ -147,6 +147,115 @@ func TestNormalizeOpenAIMessagesForPrompt_EmptyToolContentPreservedAsNull(t *tes
 	}
 }
 
+func TestNormalizeOpenAIMessagesForPrompt_DropsInternalTaskToolEvents(t *testing.T) {
+	raw := []any{
+		map[string]any{"role": "user", "content": "修复 5 个 bug"},
+		map[string]any{"role": "tool", "content": "[TaskCreateDone] 'Fix 2: Map Gemini safety/rejection finish reasons' is the second of 5 tasks."},
+		map[string]any{"role": "tool", "content": "Task #9 created: Fix 1: Handle functionCall in translateGeminiToClaude"},
+		map[string]any{"role": "tool", "content": "Updated task #10 status"},
+		map[string]any{"role": "tool", "content": "real command output"},
+	}
+
+	normalized := NormalizeOpenAIMessagesForPrompt(raw, "")
+	if len(normalized) != 2 {
+		t.Fatalf("expected internal task tool events to be dropped, got %#v", normalized)
+	}
+	if got, _ := normalized[1]["content"].(string); got != "real command output" {
+		t.Fatalf("expected real tool output preserved, got %q", got)
+	}
+}
+
+func TestBuildOpenAICurrentInputContextTranscriptScrubsLeakedTaskToolEvents(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "继续修复"},
+		map[string]any{"role": "assistant", "content": "● 119] [Tool]\n[TaskCreateDone] 'Fix 2' is the second of 5 tasks.\nUpdated task #10 status\n继续处理 Fix 2"},
+		map[string]any{"role": "tool", "content": "Updated task #12 status"},
+		map[string]any{"role": "tool", "content": "go test ./... passed"},
+	}
+
+	transcript := BuildOpenAICurrentInputContextTranscript(messages)
+	for _, leaked := range []string{"[TaskCreateDone]", "Updated task #10 status", "Updated task #12 status", "[Tool]\n[TaskCreateDone]", "● 119] [Tool]"} {
+		if strings.Contains(transcript, leaked) {
+			t.Fatalf("expected internal task event %q to be scrubbed, got %q", leaked, transcript)
+		}
+	}
+	if !strings.Contains(transcript, "继续处理 Fix 2") || !strings.Contains(transcript, "go test ./... passed") {
+		t.Fatalf("expected useful assistant/tool content preserved, got %q", transcript)
+	}
+}
+
+func TestBuildOpenAICurrentInputContextTranscriptScrubsTooluTaskEvents(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "分析 Gemini 链路"},
+		map[string]any{"role": "assistant", "content": "● 136] [Tool]\n[toolu_bdrk_016dHDS5Y...] Task #13 created. Use TaskCreate to add new tasks and TaskUpdate to update task status.\n[137] [Assistant]现在我进行全面分析。先读取所有需要验证的文件。\n\n● 138] [Tool]\n[toolu_bdrk_01A5ZPmcT...] Task #13 is now in_progress.\n[139] [Assistant]让我追踪完整的 Gemini → OpenAI → Gemini 双向链路。"},
+	}
+
+	transcript := BuildOpenAICurrentInputContextTranscript(messages)
+	for _, leaked := range []string{"[Tool]", "toolu_bdrk", "Task #13 created", "Task #13 is now in_progress"} {
+		if strings.Contains(transcript, leaked) {
+			t.Fatalf("expected toolu task event %q to be scrubbed, got %q", leaked, transcript)
+		}
+	}
+	for _, want := range []string{"现在我进行全面分析", "让我追踪完整的 Gemini"} {
+		if !strings.Contains(transcript, want) {
+			t.Fatalf("expected useful assistant content %q preserved, got %q", want, transcript)
+		}
+	}
+}
+
+func TestBuildOpenAICurrentInputContextTranscriptScrubsToolTranscriptCodeBlocks(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "分析 Gemini 链路"},
+		map[string]any{"role": "assistant", "content": "136] [Tool]\n[toolu_bdrk_016dHDS5Y...] Task #13 created. Use TaskCreate to add new tasks and TaskUpdate to update task status.\n[137] [Assistant]现在我进行全面分析。先读取所有需要验证的文件。\n\n● 140] [Tool]\n  220\n  221   func geminiToolToOpenAI(raw json.RawMessage) json.RawMessage {\n  222           declarations := extractGeminiDeclarations(raw)\n  223           if declarations == nil {\n  224                   return raw\n  225           }\n  249           out := make([]json.RawMessage, 0, len(declarations))\n  [142] [Tool]\n  141   func decodeOpenAIChatStreamChunk(data []byte) (domain.UnifiedChatResponse, error) {\n  142           var chunk openAISSEChunk\n  143           if err := json.Unmarshal(data, &chunk); err != nil {\n  144                   return domain.UnifiedChatResponse{}, err\n  145           }\n● Reading 2 files… (ctrl+o to expand)\n✽ Processing… (5m 18s · ↑ 5.2k tokens)\n  ⎿  Tip: Use /btw to ask a quick side question"},
+	}
+
+	transcript := BuildOpenAICurrentInputContextTranscript(messages)
+	for _, leaked := range []string{"toolu_bdrk", "func geminiToolToOpenAI", "func decodeOpenAIChatStreamChunk", "openAISSEChunk", "Reading 2 files", "Processing", "Use /btw"} {
+		if strings.Contains(transcript, leaked) {
+			t.Fatalf("expected tool transcript/code block %q to be scrubbed, got %q", leaked, transcript)
+		}
+	}
+	if !strings.Contains(transcript, "现在我进行全面分析") {
+		t.Fatalf("expected assistant text after marker preserved, got %q", transcript)
+	}
+}
+
+func TestBuildOpenAICurrentInputContextTranscriptScrubsReadUICodeBlockWithoutToolMarker(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "实现 translateGeminiToOpenAI"},
+		map[string]any{"role": "assistant", "content": "好的，Fix 2 的 switch case 已添加。现在实现 translateGeminiToOpenAI 函数。\n\n  Read 1 file (ctrl+o to expand)\n\n● 我现在需要写 translateGeminiToOpenAI 函数。先确认插入位置。\n\n● 181] [Tool]\n  640           })\n  641           blockIndex := 0\n  642           text := accumulatedText.String()\n  643           if text != \"\" {\n  644                   _ = emitClaudeSSE(w, \"content_block_start\", map[string]any{\n  700           return nil\n  701   }\n  702\n  703   // ---------------------------------------------------------------------------\n  704   // Fallback: byte copy\n  705   // ---------------------------------------------------------------------------\n\n● Reading 1 file… (ctrl+o to expand)\n  ⎿  internal\\provider\\stream_translator.go"},
+	}
+
+	transcript := BuildOpenAICurrentInputContextTranscript(messages)
+	for _, leaked := range []string{"Read 1 file", "blockIndex := 0", "accumulatedText", "emitClaudeSSE", "Fallback: byte copy", "stream_translator.go"} {
+		if strings.Contains(transcript, leaked) {
+			t.Fatalf("expected read UI/code block %q to be scrubbed, got %q", leaked, transcript)
+		}
+	}
+	for _, want := range []string{"好的，Fix 2 的 switch case 已添加", "先确认插入位置"} {
+		if !strings.Contains(transcript, want) {
+			t.Fatalf("expected assistant prose %q preserved, got %q", want, transcript)
+		}
+	}
+}
+
+func TestBuildOpenAICurrentInputContextTranscriptScrubsEditFailurePayload(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "修复 stream translator"},
+		map[string]any{"role": "assistant", "content": "我需要修复 translateGeminiToOpenAI 函数中被截断的部分。\n\n● 257] [Tool]\nString to replace not found in file.\nString:                       if data == \"[DONE]\" {\n                                if !roleEmitted && (accumulatedText.Len() > 0 || len(funcCalls) > 0) {\n                                        writeOpenAISSE(w, flusher, map[string]any{\n                                                \"id\": chunkID, \"object\": \"chat.completion.chunk\", \"created\": created,\n                                                \"model\": model, \"choices\": []map[string]any{{\"index\": 0, \"delta\": map[string]any{\"role\": \"assistant\"}\n                                        })\n                                }\n  ...[truncated]...\n                return nil\n        }"},
+	}
+
+	transcript := BuildOpenAICurrentInputContextTranscript(messages)
+	for _, leaked := range []string{"String to replace not found", "if data == \"[DONE]\"", "writeOpenAISSE", "...[truncated]"} {
+		if strings.Contains(transcript, leaked) {
+			t.Fatalf("expected edit failure payload %q to be scrubbed, got %q", leaked, transcript)
+		}
+	}
+	if !strings.Contains(transcript, "我需要修复 translateGeminiToOpenAI") {
+		t.Fatalf("expected useful assistant prose preserved, got %q", transcript)
+	}
+}
+
 func TestNormalizeOpenAIMessagesForPrompt_AssistantMultipleToolCallsRemainSeparated(t *testing.T) {
 	raw := []any{
 		map[string]any{

@@ -8,6 +8,7 @@ type StandardRequest struct {
 	ResolvedModel           string
 	ResponseModel           string
 	Messages                []any
+	OriginalMessages        []any
 	HistoryText             string
 	CurrentInputFileApplied bool
 	ToolsRaw                any

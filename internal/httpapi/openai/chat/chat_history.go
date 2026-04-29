@@ -37,13 +37,14 @@ func startChatHistory(store *chathistory.Store, r *http.Request, a *auth.Request
 	if !shouldCaptureChatHistory(r) {
 		return nil
 	}
+	historyMessages := chatHistoryMessages(stdReq)
 	entry, err := store.Start(chathistory.StartParams{
 		CallerID:    strings.TrimSpace(a.CallerID),
 		AccountID:   strings.TrimSpace(a.AccountID),
 		Model:       strings.TrimSpace(stdReq.ResponseModel),
 		Stream:      stdReq.Stream,
-		UserInput:   extractSingleUserInput(stdReq.Messages),
-		Messages:    extractAllMessages(stdReq.Messages),
+		UserInput:   extractSingleUserInput(historyMessages),
+		Messages:    extractAllMessages(historyMessages),
 		HistoryText: stdReq.HistoryText,
 		FinalPrompt: stdReq.FinalPrompt,
 	})
@@ -52,8 +53,8 @@ func startChatHistory(store *chathistory.Store, r *http.Request, a *auth.Request
 		AccountID:   strings.TrimSpace(a.AccountID),
 		Model:       strings.TrimSpace(stdReq.ResponseModel),
 		Stream:      stdReq.Stream,
-		UserInput:   extractSingleUserInput(stdReq.Messages),
-		Messages:    extractAllMessages(stdReq.Messages),
+		UserInput:   extractSingleUserInput(historyMessages),
+		Messages:    extractAllMessages(historyMessages),
 		HistoryText: stdReq.HistoryText,
 		FinalPrompt: stdReq.FinalPrompt,
 	}
@@ -73,6 +74,13 @@ func startChatHistory(store *chathistory.Store, r *http.Request, a *auth.Request
 		config.Logger.Warn("[chat_history] start persisted in memory after write failure", "error", err)
 	}
 	return session
+}
+
+func chatHistoryMessages(stdReq promptcompat.StandardRequest) []any {
+	if stdReq.CurrentInputFileApplied && len(stdReq.OriginalMessages) > 0 {
+		return stdReq.OriginalMessages
+	}
+	return stdReq.Messages
 }
 
 func shouldCaptureChatHistory(r *http.Request) bool {

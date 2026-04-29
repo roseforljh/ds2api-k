@@ -184,13 +184,19 @@ func consumeToolMarkupPipe(text string, idx int) (int, bool) {
 	if idx >= len(text) {
 		return idx, false
 	}
-	if text[idx] == '|' {
-		return idx + 1, true
+	start := idx
+	for idx < len(text) {
+		if text[idx] == '|' {
+			idx++
+			continue
+		}
+		if strings.HasPrefix(text[idx:], "｜") {
+			idx += len("｜")
+			continue
+		}
+		break
 	}
-	if strings.HasPrefix(text[idx:], "｜") {
-		return idx + len("｜"), true
-	}
-	return idx, false
+	return idx, idx > start
 }
 
 func consumeToolMarkupSeparator(text string, idx int) (int, bool) {

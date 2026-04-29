@@ -247,7 +247,8 @@ func formatTranscriptMessage(index int, msg map[string]any, numbered bool) strin
 }
 
 func transcriptMessageContent(msg map[string]any) string {
-	return strings.TrimSpace(NormalizeOpenAIContentForPrompt(msg["content"]))
+	role := strings.ToLower(strings.TrimSpace(asString(msg["role"])))
+	return strings.TrimSpace(sanitizePromptVisibleInternalToolEvents(role, NormalizeOpenAIContentForPrompt(msg["content"])))
 }
 
 func joinAllMessageContent(messages []map[string]any) string {

@@ -36,6 +36,7 @@ func (s Service) ApplyCurrentInputFile(ctx context.Context, a *auth.RequestAuth,
 	if strings.TrimSpace(fileText) == "" {
 		return stdReq, errors.New("current user input file produced empty transcript")
 	}
+	stdReq.HistoryText = fileText
 
 	result, err := s.DS.UploadFile(ctx, a, dsclient.UploadFileRequest{
 		Filename:    currentInputFilename,

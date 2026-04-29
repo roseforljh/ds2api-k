@@ -189,6 +189,81 @@ func TestBuildOpenAICurrentInputContextTranscriptUsesAssistantTailWhenLatestAssi
 	}
 }
 
+func TestBuildOpenAICurrentInputContextTranscriptContinuesAssistantToolCall(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "继续搜索资料"},
+		map[string]any{
+			"role":    "assistant",
+			"content": "我来搜索最新资料。",
+			"tool_calls": []any{
+				map[string]any{
+					"id":   "call_search",
+					"type": "function",
+					"function": map[string]any{
+						"name":      "search",
+						"arguments": `{"query":"最新资料"}`,
+					},
+				},
+			},
+		},
+	}
+	transcript := buildOpenAICurrentInputContextTranscript(messages)
+
+	for _, want := range []string{
+		"Mode:\n- continue_agent_tail",
+		"Latest assistant/tool tail:",
+		"[Assistant]\n我来搜索最新资料。",
+		"<|DSML|tool_calls>",
+		`<|DSML|invoke name="search">`,
+		`<|DSML|parameter name="query"><![CDATA[最新资料]]></|DSML|parameter>`,
+		"Status:\n- Waiting for tool result",
+	} {
+		if !strings.Contains(transcript, want) {
+			t.Fatalf("expected active assistant tool-call transcript to contain %q, got %q", want, transcript)
+		}
+	}
+}
+
+func TestBuildOpenAICurrentInputContextTranscriptContinuesToolResult(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "继续搜索资料"},
+		map[string]any{
+			"role":    "assistant",
+			"content": "我来搜索最新资料。",
+			"tool_calls": []any{
+				map[string]any{
+					"id":   "call_search",
+					"type": "function",
+					"function": map[string]any{
+						"name":      "search",
+						"arguments": `{"query":"最新资料"}`,
+					},
+				},
+			},
+		},
+		map[string]any{
+			"role":         "tool",
+			"tool_call_id": "call_search",
+			"name":         "search",
+			"content":      "搜索结果\n- 文档 A\n- 文档 B",
+		},
+	}
+	transcript := buildOpenAICurrentInputContextTranscript(messages)
+
+	for _, want := range []string{
+		"Mode:\n- continue_agent_tail",
+		"Latest assistant/tool tail:",
+		"[Assistant]\n我来搜索最新资料。",
+		"[Tool]\n搜索结果",
+		"Status:\n- Reviewing latest tool result",
+		"Latest observation:\n- 搜索结果 | - 文档 A | - 文档 B",
+	} {
+		if !strings.Contains(transcript, want) {
+			t.Fatalf("expected active tool-result transcript to contain %q, got %q", want, transcript)
+		}
+	}
+}
+
 func TestBuildOpenAICurrentInputContextTranscriptDoesNotReviveFinalAssistantAnswer(t *testing.T) {
 	messages := []any{
 		map[string]any{"role": "user", "content": "问题 A"},

@@ -295,6 +295,30 @@ func TestHandleNonStreamRetriesMalformedEmptyReadToolCallWithoutClientLeak(t *te
 	}
 }
 
+func TestHandleNonStreamRetriesToolEmptyOutputWithToolPromptGuidance(t *testing.T) {
+	ds := &malformedToolRetryDSStub{}
+	h := &Handler{DS: ds}
+	resp := makeSSEHTTPResponse(`data: [DONE]`)
+	rec := httptest.NewRecorder()
+
+	h.handleNonStreamWithRetry(rec, context.Background(), &auth.RequestAuth{}, resp, map[string]any{"prompt": "original prompt"}, "pow", "cid-tool-empty", "deepseek-v4-flash", "original prompt", false, false, []string{"Read"}, nil, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected hidden retry to recover with 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(ds.payloads) != 1 {
+		t.Fatalf("expected one hidden retry payload, got %d", len(ds.payloads))
+	}
+	retryPrompt, _ := ds.payloads[0]["prompt"].(string)
+	for _, want := range []string{"TOOL_PROMPT.txt", "ended without natural-language content or a valid tool call", "Do not return an empty response"} {
+		if !strings.Contains(retryPrompt, want) {
+			t.Fatalf("expected retry prompt to contain %q, got %q", want, retryPrompt)
+		}
+	}
+	if !strings.Contains(rec.Body.String(), "final answer after retry") {
+		t.Fatalf("expected final retry output, got %s", rec.Body.String())
+	}
+}
+
 func TestHandleNonStreamRetriesUnparseableReadFilePathWithoutClientLeak(t *testing.T) {
 	ds := &malformedToolRetryDSStub{}
 	h := &Handler{DS: ds}
@@ -373,6 +397,28 @@ func TestHandleStreamRetriesHashDSMLReadFilePathWithToolPromptFeedback(t *testin
 	}
 	if strings.Contains(rec.Body.String(), "#DSML#") || strings.Contains(rec.Body.String(), "settings.rs") {
 		t.Fatalf("hash DSML tool feedback leaked to client: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "final answer after retry") {
+		t.Fatalf("expected final stream retry output, got %s", rec.Body.String())
+	}
+}
+
+func TestHandleStreamRetriesToolEmptyOutputWithToolPromptGuidance(t *testing.T) {
+	ds := &malformedToolRetryDSStub{}
+	h := &Handler{DS: ds}
+	resp := makeSSEHTTPResponse(`data: [DONE]`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	h.handleStreamWithRetry(rec, req, &auth.RequestAuth{}, resp, map[string]any{"prompt": "original prompt"}, "pow", "cid-stream-tool-empty", "deepseek-v4-flash", "original prompt", false, false, []string{"Read"}, nil, nil)
+	if len(ds.payloads) != 1 {
+		t.Fatalf("expected one hidden stream retry payload, got %d body=%s", len(ds.payloads), rec.Body.String())
+	}
+	retryPrompt, _ := ds.payloads[0]["prompt"].(string)
+	for _, want := range []string{"TOOL_PROMPT.txt", "ended without natural-language content or a valid tool call", "Do not return an empty response"} {
+		if !strings.Contains(retryPrompt, want) {
+			t.Fatalf("expected stream retry prompt to contain %q, got %q", want, retryPrompt)
+		}
 	}
 	if !strings.Contains(rec.Body.String(), "final answer after retry") {
 		t.Fatalf("expected final stream retry output, got %s", rec.Body.String())

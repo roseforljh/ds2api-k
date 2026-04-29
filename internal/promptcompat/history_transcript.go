@@ -72,6 +72,7 @@ func buildActiveAgentResumeTranscript(messages []map[string]any, state agentWork
 	b.WriteString("- Use WORKING STATE as the only active driver for this request.\n")
 	b.WriteString("- If Mode is answer_latest_user, answer the Latest user message.\n")
 	b.WriteString("- If Mode is continue_agent_tail, continue from the Latest assistant/tool tail without restarting or repeating earlier answers.\n")
+	b.WriteString("- If Mode is no_active_working, do not continue or repeat completed assistant output.\n")
 	b.WriteString("- Do not use account-level memories, recent chats, previous sessions, or files not listed in ref_file_ids.\n")
 	b.WriteString("- If you need to read a file but no concrete path is available, locate it first with search/glob; never call Read with an empty file_path.\n")
 	b.WriteString("- Use FULL CHRONOLOGICAL CONTEXT only as request-local reference when needed.\n")
@@ -119,27 +120,28 @@ func buildActiveAgentResumeTranscript(messages []map[string]any, state agentWork
 func buildAgentWorkingState(messages []map[string]any) agentWorkingState {
 	userIndex := lastUserMessageIndex(messages)
 	lastIndex := lastNonEmptyMessageIndex(messages)
-	mode := "continue_agent_tail"
-	if lastIndex >= 0 && strings.EqualFold(strings.TrimSpace(asString(messages[lastIndex]["role"])), "user") {
-		mode = "answer_latest_user"
-	}
+	mode := determineWorkingMode(messages, lastIndex)
 	state := agentWorkingState{
 		Status:            inferWorkingStatus(messages),
 		Mode:              mode,
 		WorkingMessages:   workingStateMessages(messages, userIndex, lastIndex, mode),
 		ReadFiles:         extractFilePaths(messages),
 		ChangedFiles:      extractChangedFilePaths(messages),
-		LatestObservation: latestObservation(messages),
+		LatestObservation: workingStateLatestObservation(messages, mode),
 		NextAction:        workingStateNextAction(mode),
 	}
 	return state
 }
 
 func workingStateNextAction(mode string) string {
-	if mode == "answer_latest_user" {
+	switch mode {
+	case "answer_latest_user":
 		return "Answer the latest user message. Do not continue stale assistant/tool working state."
+	case "no_active_working":
+		return "No active assistant task is pending. Do not repeat a completed answer."
+	default:
+		return "Continue from the latest assistant/tool tail. Do not restart from the original user request or repeat earlier answers."
 	}
-	return "Continue from the latest assistant/tool tail. Do not restart from the original user request or repeat earlier answers."
 }
 
 func lastNonEmptyMessageIndex(messages []map[string]any) int {
@@ -153,6 +155,9 @@ func lastNonEmptyMessageIndex(messages []map[string]any) int {
 
 func workingStateMessages(messages []map[string]any, userIndex, lastIndex int, mode string) []map[string]any {
 	if len(messages) == 0 || lastIndex < 0 {
+		return nil
+	}
+	if mode == "no_active_working" {
 		return nil
 	}
 	if mode == "answer_latest_user" {
@@ -189,6 +194,68 @@ func lastUserMessageIndex(messages []map[string]any) int {
 		}
 	}
 	return -1
+}
+
+func determineWorkingMode(messages []map[string]any, lastIndex int) string {
+	if lastIndex < 0 {
+		return "no_active_working"
+	}
+	last := messages[lastIndex]
+	role := strings.ToLower(strings.TrimSpace(asString(last["role"])))
+	switch role {
+	case "user":
+		return "answer_latest_user"
+	case "tool", "function":
+		return "continue_agent_tail"
+	case "assistant":
+		if assistantMessageHasPendingWork(last) || latestTurnHasToolOrFunction(messages, lastIndex) {
+			return "continue_agent_tail"
+		}
+		return "no_active_working"
+	default:
+		return "no_active_working"
+	}
+}
+
+func assistantMessageHasPendingWork(msg map[string]any) bool {
+	if hasNonEmptyToolCalls(msg["tool_calls"]) {
+		return true
+	}
+	content := strings.ToLower(transcriptMessageContent(msg))
+	return strings.Contains(content, "<|dsml|tool_calls>")
+}
+
+func latestTurnHasToolOrFunction(messages []map[string]any, lastIndex int) bool {
+	for i := lastIndex; i >= 0; i-- {
+		role := strings.ToLower(strings.TrimSpace(asString(messages[i]["role"])))
+		switch role {
+		case "user":
+			return false
+		case "tool", "function":
+			return true
+		}
+	}
+	return false
+}
+
+func hasNonEmptyToolCalls(raw any) bool {
+	switch v := raw.(type) {
+	case nil:
+		return false
+	case []any:
+		return len(v) > 0
+	case []map[string]any:
+		return len(v) > 0
+	default:
+		return strings.TrimSpace(fmt.Sprint(v)) != ""
+	}
+}
+
+func workingStateLatestObservation(messages []map[string]any, mode string) string {
+	if mode == "no_active_working" {
+		return "No tool observation yet."
+	}
+	return latestObservation(messages)
 }
 
 func inferWorkingStatus(messages []map[string]any) string {

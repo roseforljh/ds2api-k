@@ -158,12 +158,18 @@ func TestBuildOpenAICurrentInputContextTranscriptUsesLatestUserInWorkingState(t 
 	}
 }
 
-func TestBuildOpenAICurrentInputContextTranscriptUsesAssistantTailWhenLatestIsNotUser(t *testing.T) {
+func TestBuildOpenAICurrentInputContextTranscriptUsesAssistantTailWhenLatestAssistantHasToolCalls(t *testing.T) {
 	messages := []any{
 		map[string]any{"role": "user", "content": "分析项目"},
 		map[string]any{"role": "assistant", "content": "我先读取项目结构"},
 		map[string]any{"role": "tool", "content": "listed directories"},
-		map[string]any{"role": "assistant", "content": "接下来检查配置"},
+		map[string]any{
+			"role":    "assistant",
+			"content": "接下来检查配置",
+			"tool_calls": []any{
+				map[string]any{"id": "call_2", "type": "function", "function": map[string]any{"name": "read_file", "arguments": "{}"}},
+			},
+		},
 	}
 	transcript := buildOpenAICurrentInputContextTranscript(messages)
 
@@ -209,6 +215,38 @@ func TestBuildOpenAICurrentInputContextTranscriptDoesNotReviveFinalAssistantAnsw
 	}
 	if !strings.Contains(transcript[fullStart:], "这是 A 的最终回答。") {
 		t.Fatalf("completed answer may remain in reference-only chronological context, got %q", transcript)
+	}
+}
+
+func TestBuildOpenAICurrentInputContextTranscriptDoesNotReviveFinalAssistantAnswerAfterToolCall(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "检查问题"},
+		map[string]any{
+			"role":    "assistant",
+			"content": "我先调用工具。",
+			"tool_calls": []any{
+				map[string]any{"id": "call_1", "type": "function", "function": map[string]any{"name": "read_file", "arguments": "{}"}},
+			},
+		},
+		map[string]any{"role": "tool", "content": "工具结果", "tool_call_id": "call_1"},
+		map[string]any{"role": "assistant", "content": "这是工具后的最终回答。"},
+	}
+	transcript := buildOpenAICurrentInputContextTranscript(messages)
+
+	if !strings.Contains(transcript, "Mode:\n- no_active_working") {
+		t.Fatalf("expected final assistant answer after tool call to be inactive, got %q", transcript)
+	}
+	workingStart := strings.Index(transcript, "=== WORKING STATE, READ FIRST ===")
+	fullStart := strings.Index(transcript, "=== FULL CHRONOLOGICAL CONTEXT, REFERENCE ONLY ===")
+	if workingStart < 0 || fullStart < 0 || fullStart <= workingStart {
+		t.Fatalf("expected working and full context sections, got %q", transcript)
+	}
+	working := transcript[workingStart:fullStart]
+	if strings.Contains(working, "这是工具后的最终回答。") {
+		t.Fatalf("final assistant answer must not be injected as working state, got %q", working)
+	}
+	if !strings.Contains(transcript[fullStart:], "这是工具后的最终回答。") {
+		t.Fatalf("final assistant answer may remain in reference-only chronological context, got %q", transcript)
 	}
 }
 

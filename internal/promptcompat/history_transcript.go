@@ -208,7 +208,7 @@ func determineWorkingMode(messages []map[string]any, lastIndex int) string {
 	case "tool", "function":
 		return "continue_agent_tail"
 	case "assistant":
-		if assistantMessageHasPendingWork(last) || latestTurnHasToolOrFunction(messages, lastIndex) {
+		if assistantMessageHasPendingWork(last) {
 			return "continue_agent_tail"
 		}
 		return "no_active_working"
@@ -223,19 +223,6 @@ func assistantMessageHasPendingWork(msg map[string]any) bool {
 	}
 	content := strings.ToLower(transcriptMessageContent(msg))
 	return strings.Contains(content, "<|dsml|tool_calls>")
-}
-
-func latestTurnHasToolOrFunction(messages []map[string]any, lastIndex int) bool {
-	for i := lastIndex; i >= 0; i-- {
-		role := strings.ToLower(strings.TrimSpace(asString(messages[i]["role"])))
-		switch role {
-		case "user":
-			return false
-		case "tool", "function":
-			return true
-		}
-	}
-	return false
 }
 
 func hasNonEmptyToolCalls(raw any) bool {

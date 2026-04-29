@@ -68,8 +68,11 @@ func TestBuildOpenAICurrentInputContextTranscriptUsesNormalFileContent(t *testin
 	if strings.Contains(transcript, "[file content end]") || strings.Contains(transcript, "[file content begin]") || strings.Contains(transcript, "[file name]:") {
 		t.Fatalf("expected normal file content without DeepSeek file-boundary tags, got %q", transcript)
 	}
-	if !strings.Contains(transcript, "<｜begin▁of▁sentence｜>") {
-		t.Fatalf("expected serialized conversation markers, got %q", transcript)
+	if !strings.Contains(transcript, "Conversation context for the current request.") {
+		t.Fatalf("expected readable conversation header, got %q", transcript)
+	}
+	if !strings.Contains(transcript, "[User]") || !strings.Contains(transcript, "[Tool]") {
+		t.Fatalf("expected readable role labels, got %q", transcript)
 	}
 	if !strings.Contains(transcript, "first user turn") || !strings.Contains(transcript, "tool result") {
 		t.Fatalf("expected historical turns preserved, got %q", transcript)
@@ -85,9 +88,10 @@ func TestBuildOpenAICurrentInputContextTranscriptUsesNormalFileContent(t *testin
 func TestBuildOpenAIToolPromptFileTranscriptUsesNormalSystemContent(t *testing.T) {
 	transcript := promptcompat.BuildOpenAIToolPromptFileTranscript("You have access to these tools:\n\nTool: search")
 	for _, want := range []string{
-		"<｜begin▁of▁sentence｜><｜System｜>",
+		"Tool instructions for the current request.",
+		"Treat the instructions below as active system-level tool instructions.",
+		"[System]",
 		"You have access to these tools:",
-		"<｜end▁of▁instructions｜>",
 	} {
 		if !strings.Contains(transcript, want) {
 			t.Fatalf("expected tool prompt transcript to contain %q, got %q", want, transcript)
@@ -298,8 +302,8 @@ func TestApplyCurrentInputFileUploadsFirstTurnWithInjectedWrapper(t *testing.T) 
 	if strings.Contains(uploadedText, "[file content end]") || strings.Contains(uploadedText, "[file content begin]") || strings.Contains(uploadedText, "[file name]:") {
 		t.Fatalf("expected normal current input file content without file-boundary tags, got %q", uploadedText)
 	}
-	if !strings.Contains(uploadedText, "<｜begin▁of▁sentence｜><｜User｜>first turn content that is long enough") {
-		t.Fatalf("expected serialized current user turn markers, got %q", uploadedText)
+	if !strings.Contains(uploadedText, "[User]\nfirst turn content that is long enough") {
+		t.Fatalf("expected readable current user turn, got %q", uploadedText)
 	}
 	if !strings.Contains(uploadedText, promptcompat.ThinkingInjectionMarker) {
 		t.Fatalf("expected thinking injection in current input file, got %q", uploadedText)
@@ -310,7 +314,7 @@ func TestApplyCurrentInputFileUploadsFirstTurnWithInjectedWrapper(t *testing.T) 
 	if strings.Contains(out.FinalPrompt, "CURRENT_USER_INPUT.txt") || strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
 		t.Fatalf("expected live prompt not to instruct file reads, got %s", out.FinalPrompt)
 	}
-	if !strings.Contains(out.FinalPrompt, "Answer the latest user request directly.") {
+	if !strings.Contains(out.FinalPrompt, "treat the last user message in it as the latest request") {
 		t.Fatalf("expected neutral continuation instruction in live prompt, got %s", out.FinalPrompt)
 	}
 	if len(out.RefFileIDs) != 1 || out.RefFileIDs[0] != "file-inline-1" {
@@ -361,7 +365,7 @@ func TestApplyCurrentInputFileUploadsFullContextFile(t *testing.T) {
 	if strings.Contains(out.FinalPrompt, "first user turn") || strings.Contains(out.FinalPrompt, "latest user turn") || strings.Contains(out.FinalPrompt, "CURRENT_USER_INPUT.txt") || strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
 		t.Fatalf("expected live prompt to use only a neutral continuation instruction, got %s", out.FinalPrompt)
 	}
-	if !strings.Contains(out.FinalPrompt, "Answer the latest user request directly.") {
+	if !strings.Contains(out.FinalPrompt, "treat the last user message in it as the latest request") {
 		t.Fatalf("expected neutral continuation instruction in live prompt, got %s", out.FinalPrompt)
 	}
 }
@@ -427,7 +431,7 @@ func TestApplyCurrentInputFileUploadsToolPromptFileWhenEnabled(t *testing.T) {
 	if strings.Contains(out.FinalPrompt, "00_AGENT_TOOLS") || strings.Contains(out.FinalPrompt, "TOOL_PROMPT") || strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
 		t.Fatalf("expected final prompt not to reference concrete tool/context files, got %s", out.FinalPrompt)
 	}
-	if !strings.Contains(out.FinalPrompt, "tool instructions have already been provided") {
+	if !strings.Contains(out.FinalPrompt, "tool instructions have already been provided as attached context") {
 		t.Fatalf("expected final prompt to activate attached tool instructions, got %s", out.FinalPrompt)
 	}
 	if len(out.RefFileIDs) < 2 || out.RefFileIDs[0] != "file-inline-2" || out.RefFileIDs[1] != "file-inline-1" {
@@ -514,7 +518,7 @@ func TestChatCompletionsCurrentInputFileUploadsContextAndKeepsNeutralPrompt(t *t
 		t.Fatal("expected completion payload to be captured")
 	}
 	promptText, _ := ds.completionReq["prompt"].(string)
-	if !strings.Contains(promptText, "Answer the latest user request directly.") {
+	if !strings.Contains(promptText, "treat the last user message in it as the latest request") {
 		t.Fatalf("expected neutral completion prompt, got %s", promptText)
 	}
 	if strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
@@ -560,7 +564,7 @@ func TestResponsesCurrentInputFileUploadsContextAndKeepsNeutralPrompt(t *testing
 		t.Fatal("expected completion payload to be captured")
 	}
 	promptText, _ := ds.completionReq["prompt"].(string)
-	if !strings.Contains(promptText, "Answer the latest user request directly.") {
+	if !strings.Contains(promptText, "treat the last user message in it as the latest request") {
 		t.Fatalf("expected neutral completion prompt, got %s", promptText)
 	}
 	if strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
@@ -696,7 +700,7 @@ func TestCurrentInputFileWorksAcrossAutoDeleteModes(t *testing.T) {
 				t.Fatalf("expected completion payload for mode=%s", mode)
 			}
 			promptText, _ := ds.completionReq["prompt"].(string)
-			if !strings.Contains(promptText, "Answer the latest user request directly.") || strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
+			if !strings.Contains(promptText, "treat the last user message in it as the latest request") || strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
 				t.Fatalf("unexpected prompt for mode=%s: %s", mode, promptText)
 			}
 		})

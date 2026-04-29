@@ -319,7 +319,7 @@ func TestChatCompletionsCurrentInputFilePersistsNeutralPrompt(t *testing.T) {
 	if len(full.Messages) != 1 {
 		t.Fatalf("expected neutral prompt to be the only persisted message, got %#v", full.Messages)
 	}
-	if !strings.Contains(full.Messages[0].Content, "Answer the latest user request directly.") {
+	if !strings.Contains(full.Messages[0].Content, "treat the last user message in it as the latest request") {
 		t.Fatalf("expected neutral prompt to be persisted, got %#v", full.Messages[0])
 	}
 }

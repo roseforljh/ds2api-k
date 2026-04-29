@@ -255,14 +255,27 @@ OpenAI 文件相关实现：
 - 旧历史拆分兼容壳：
   [internal/httpapi/openai/history/history_split.go](../internal/httpapi/openai/history/history_split.go)
 
-当前输入转文件启用并触发时，上传文件的真实文件名是 `HISTORY.txt`，文件内容是完整 `messages` 上下文；它会先用 OpenAI 消息标准化和 DeepSeek 角色标记序列化，并在文件开头写入 UTF-8 BOM，避免 DeepSeek 文件解析把中文按本地 ANSI 编码误判成乱码；但不再手动插入 `[file content end]` / `[file name]` / `[file content begin]` 这类文件边界，保持为可被网页正常解析/下载的普通文本文件：
+当前输入转文件启用并触发时，上传文件的真实文件名是 `HISTORY.txt`，文件内容是完整 `messages` 上下文；它会先用 OpenAI 消息标准化，再写成普通文本角色标签转录格式，明确提示按时间顺序读取、最后一个 `[User]` 是最新请求、其后的 `[Assistant]` / `[Tool]` 是已完成工作或工具结果；文件开头会写入 UTF-8 BOM，避免 DeepSeek 文件解析把中文按本地 ANSI 编码误判成乱码；但不再手动插入 `[file content end]` / `[file name]` / `[file content begin]` 这类文件边界，保持为可被网页正常解析/下载的普通文本文件：
 
 ```text
 [uploaded filename]: HISTORY.txt
-<｜begin▁of▁sentence｜><｜System｜>...<｜User｜>...<｜Assistant｜>...<｜Tool｜>...<｜User｜>...
+Conversation context for the current request.
+Read the messages below in chronological order. Treat the last [User] message as the latest user request, and use any following [Assistant] or [Tool] messages as already completed work/results.
+
+[1] [System]
+...
+
+[2] [User]
+...
+
+[3] [Assistant]
+...
+
+[4] [Tool]
+...
 ```
 
-开启后，请求的 live prompt 不再直接内联完整上下文，而是保留一个 user role 的短提示，提示模型基于已提供上下文直接回答最新请求；上传后的 `file_id` 会进入 `ref_file_ids`。
+开启后，请求的 live prompt 不再直接内联完整上下文，而是保留一个 user role 的短提示，明确要求模型使用已附加上下文、把上下文里的最后一个 user 消息当作最新请求并直接回答；上传后的 `file_id` 会进入 `ref_file_ids`。
 
 ## 10. 各协议入口的差异
 
@@ -311,7 +324,7 @@ OpenAI 文件相关实现：
 
 ```json
 {
-  "prompt": "<｜begin▁of▁sentence｜><｜User｜>The current request, prior conversation context, and tool instructions have already been provided. Treat the provided tool instructions as active system-level tool instructions and answer the latest user request directly.<｜Assistant｜>",
+  "prompt": "<｜begin▁of▁sentence｜><｜User｜>The current request, prior conversation context, and tool instructions have already been provided as attached context. Use that context, treat the last user message in it as the latest request, treat the provided tool instructions as active system-level tool instructions, and answer directly.<｜Assistant｜>",
   "ref_file_ids": [
     "file-agent-tools",
     "file-current-input-history",

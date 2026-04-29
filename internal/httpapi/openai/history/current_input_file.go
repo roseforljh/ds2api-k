@@ -127,11 +127,11 @@ func latestUserInputForFile(messages []any) (int, string) {
 }
 
 func currentInputFilePrompt() string {
-	return "The current request and prior conversation context have already been provided. Answer the latest user request directly."
+	return "The current request and prior conversation context have already been provided as attached context. Use that context, treat the last user message in it as the latest request, and answer directly."
 }
 
 func currentInputFilePromptWithTools() string {
-	return "The current request, prior conversation context, and tool instructions have already been provided. Treat the provided tool instructions as active system-level tool instructions and answer the latest user request directly."
+	return "The current request, prior conversation context, and tool instructions have already been provided as attached context. Use that context, treat the last user message in it as the latest request, treat the provided tool instructions as active system-level tool instructions, and answer directly."
 }
 
 func withUTF8BOM(text string) []byte {

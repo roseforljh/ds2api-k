@@ -118,6 +118,40 @@ func TestBuildOpenAICurrentInputContextTranscriptBuildsActiveAgentResumePackage(
 	}
 }
 
+func TestBuildOpenAICurrentInputContextTranscriptDoesNotTruncateMessages(t *testing.T) {
+	longContent := strings.Repeat("A", 7000) + "TAIL_MARKER"
+	messages := []any{
+		map[string]any{"role": "user", "content": "保留完整历史"},
+		map[string]any{"role": "assistant", "content": longContent},
+	}
+	transcript := buildOpenAICurrentInputContextTranscript(messages)
+
+	if !strings.Contains(transcript, longContent) {
+		t.Fatalf("expected full message content to be preserved")
+	}
+	fullContextIndex := strings.Index(transcript, "=== FULL CHRONOLOGICAL CONTEXT, REFERENCE ONLY ===")
+	if fullContextIndex < 0 {
+		t.Fatalf("expected full chronological context section, got %q", transcript)
+	}
+	fullContext := transcript[fullContextIndex:]
+	if !strings.Contains(fullContext, longContent) || strings.Contains(fullContext, "...[truncated]...") {
+		t.Fatalf("expected full chronological messages not to be truncated")
+	}
+}
+
+func TestBuildOpenAICurrentInputContextTranscriptSummarizesLatestObservation(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "继续修复"},
+		map[string]any{"role": "tool", "content": "line1\nline2\nline3\nline4\nline5\nline6"},
+	}
+	transcript := buildOpenAICurrentInputContextTranscript(messages)
+	latest := latestObservationSection(t, transcript)
+
+	if latest != "line1 | line2 | line3 | line4 | ..." {
+		t.Fatalf("expected concise latest observation, got %q", latest)
+	}
+}
+
 func TestBuildOpenAICurrentInputContextTranscriptUsesLastUserWhenNoLaterProgress(t *testing.T) {
 	messages := []any{
 		map[string]any{"role": "user", "content": "旧问题"},
@@ -132,6 +166,20 @@ func TestBuildOpenAICurrentInputContextTranscriptUsesLastUserWhenNoLaterProgress
 	if !strings.Contains(transcript, "=== RECENT PROGRESS, CONTINUE FROM HERE ===\n[User]\n新问题") {
 		t.Fatalf("expected recent progress to include latest user when no later progress, got %q", transcript)
 	}
+}
+
+func latestObservationSection(t *testing.T, transcript string) string {
+	t.Helper()
+	start := strings.Index(transcript, "Latest observation:\n- ")
+	if start < 0 {
+		t.Fatalf("expected latest observation section, got %q", transcript)
+	}
+	start += len("Latest observation:\n- ")
+	end := strings.Index(transcript[start:], "\n\nNext action:")
+	if end < 0 {
+		t.Fatalf("expected next action section after latest observation, got %q", transcript)
+	}
+	return transcript[start : start+end]
 }
 
 func TestBuildOpenAICurrentInputContextTranscriptExtractsChangedFiles(t *testing.T) {
@@ -375,7 +423,7 @@ func TestApplyCurrentInputFileUploadsFirstTurnWithInjectedWrapper(t *testing.T) 
 	if strings.Contains(out.FinalPrompt, "CURRENT_USER_INPUT.txt") || strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
 		t.Fatalf("expected live prompt not to instruct file reads, got %s", out.FinalPrompt)
 	}
-	if !strings.Contains(out.FinalPrompt, "Read WORKING STATE first") {
+	if !strings.Contains(out.FinalPrompt, "Read WORKING STATE") {
 		t.Fatalf("expected neutral continuation instruction in live prompt, got %s", out.FinalPrompt)
 	}
 	if len(out.RefFileIDs) != 1 || out.RefFileIDs[0] != "file-inline-1" {
@@ -426,7 +474,7 @@ func TestApplyCurrentInputFileUploadsFullContextFile(t *testing.T) {
 	if strings.Contains(out.FinalPrompt, "first user turn") || strings.Contains(out.FinalPrompt, "latest user turn") || strings.Contains(out.FinalPrompt, "CURRENT_USER_INPUT.txt") || strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
 		t.Fatalf("expected live prompt to use only a neutral continuation instruction, got %s", out.FinalPrompt)
 	}
-	if !strings.Contains(out.FinalPrompt, "Read WORKING STATE first") {
+	if !strings.Contains(out.FinalPrompt, "Read WORKING STATE") {
 		t.Fatalf("expected neutral continuation instruction in live prompt, got %s", out.FinalPrompt)
 	}
 }
@@ -579,7 +627,7 @@ func TestChatCompletionsCurrentInputFileUploadsContextAndKeepsNeutralPrompt(t *t
 		t.Fatal("expected completion payload to be captured")
 	}
 	promptText, _ := ds.completionReq["prompt"].(string)
-	if !strings.Contains(promptText, "Read WORKING STATE first") {
+	if !strings.Contains(promptText, "Read WORKING STATE") {
 		t.Fatalf("expected neutral completion prompt, got %s", promptText)
 	}
 	if strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
@@ -625,7 +673,7 @@ func TestResponsesCurrentInputFileUploadsContextAndKeepsNeutralPrompt(t *testing
 		t.Fatal("expected completion payload to be captured")
 	}
 	promptText, _ := ds.completionReq["prompt"].(string)
-	if !strings.Contains(promptText, "Read WORKING STATE first") {
+	if !strings.Contains(promptText, "Read WORKING STATE") {
 		t.Fatalf("expected neutral completion prompt, got %s", promptText)
 	}
 	if strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
@@ -761,7 +809,7 @@ func TestCurrentInputFileWorksAcrossAutoDeleteModes(t *testing.T) {
 				t.Fatalf("expected completion payload for mode=%s", mode)
 			}
 			promptText, _ := ds.completionReq["prompt"].(string)
-			if !strings.Contains(promptText, "Read WORKING STATE first") || strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
+			if !strings.Contains(promptText, "Read WORKING STATE") || strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
 				t.Fatalf("unexpected prompt for mode=%s: %s", mode, promptText)
 			}
 		})

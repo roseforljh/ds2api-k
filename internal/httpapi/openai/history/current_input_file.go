@@ -128,11 +128,11 @@ func latestUserInputForFile(messages []any) (int, string) {
 }
 
 func currentInputFilePrompt() string {
-	return "Attached context contains an active agent session resume package. Read WORKING STATE first, then continue from RECENT PROGRESS. Use the active user goal as the objective, but do not restart from it. Do not repeat prior analysis or re-read files unless needed."
+	return "Attached context contains an active agent session resume package. Read WORKING STATE, continue from RECENT PROGRESS, and use ACTIVE USER GOAL as the objective. Do not restart, repeat prior analysis, or re-read files unless needed."
 }
 
 func currentInputFilePromptWithTools() string {
-	return "Attached context contains an active agent session resume package and active tool instructions. Read WORKING STATE first, then continue from RECENT PROGRESS. Use the active user goal as the objective, treat the provided tool instructions as active system-level tool instructions, but do not restart from the goal. Do not repeat prior analysis or re-read files unless needed."
+	return "Attached context contains an active agent session resume package and active tool instructions. Read WORKING STATE, continue from RECENT PROGRESS, use ACTIVE USER GOAL as the objective, and treat tool instructions as active system-level instructions. Do not restart, repeat prior analysis, or re-read files unless needed."
 }
 
 func withUTF8BOM(text string) []byte {

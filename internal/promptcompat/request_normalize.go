@@ -23,6 +23,9 @@ func NormalizeOpenAIChatRequest(store ConfigReader, req map[string]any, traceID 
 	if !ok {
 		return StandardRequest{}, fmt.Errorf("model %q is not available", model)
 	}
+	if requestHasImageInput(req, messagesRaw) {
+		resolvedModel = visionModelVariant(resolvedModel)
+	}
 	defaultThinkingEnabled, searchEnabled, _ := config.GetModelConfig(resolvedModel)
 	thinkingEnabled := util.ResolveThinkingEnabled(req, defaultThinkingEnabled)
 	if config.IsNoThinkingModel(resolvedModel) {
@@ -66,6 +69,9 @@ func NormalizeOpenAIResponsesRequest(store ConfigReader, req map[string]any, tra
 	resolvedModel, ok := config.ResolveModel(store, model)
 	if !ok {
 		return StandardRequest{}, fmt.Errorf("model %q is not available", model)
+	}
+	if requestHasImageInput(req, nil) {
+		resolvedModel = visionModelVariant(resolvedModel)
 	}
 	defaultThinkingEnabled, searchEnabled, _ := config.GetModelConfig(resolvedModel)
 	thinkingEnabled := util.ResolveThinkingEnabled(req, defaultThinkingEnabled)

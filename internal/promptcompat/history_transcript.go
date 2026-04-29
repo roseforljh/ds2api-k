@@ -9,8 +9,8 @@ import (
 const (
 	recentProgressMaxMessages  = 12
 	workingStateMaxFiles       = 20
-	latestObservationMaxRunes  = 1200
-	transcriptMessageMaxRunes  = 6000
+	latestObservationMaxRunes  = 480
+	latestObservationMaxLines  = 4
 	transcriptFilePathMaxRunes = 260
 )
 
@@ -218,7 +218,7 @@ func latestObservation(messages []map[string]any) string {
 			continue
 		}
 		if content := strings.TrimSpace(transcriptMessageContent(messages[i])); content != "" {
-			return truncateMiddle(content, latestObservationMaxRunes)
+			return summarizeLatestObservation(content)
 		}
 	}
 	for i := len(messages) - 1; i >= 0; i-- {
@@ -227,10 +227,47 @@ func latestObservation(messages []map[string]any) string {
 			continue
 		}
 		if content := strings.TrimSpace(transcriptMessageContent(messages[i])); content != "" {
-			return truncateMiddle(content, latestObservationMaxRunes)
+			return summarizeLatestObservation(content)
 		}
 	}
 	return "No tool observation yet."
+}
+
+func summarizeLatestObservation(content string) string {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return ""
+	}
+	lines := strings.Split(content, "\n")
+	out := make([]string, 0, latestObservationMaxLines)
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		out = append(out, line)
+		if len(out) >= latestObservationMaxLines {
+			break
+		}
+	}
+	if len(out) == 0 {
+		return truncateMiddle(content, latestObservationMaxRunes)
+	}
+	summary := strings.Join(out, " | ")
+	if len(out) < countNonEmptyLines(lines) {
+		summary += " | ..."
+	}
+	return truncateMiddle(summary, latestObservationMaxRunes)
+}
+
+func countNonEmptyLines(lines []string) int {
+	count := 0
+	for _, line := range lines {
+		if strings.TrimSpace(line) != "" {
+			count++
+		}
+	}
+	return count
 }
 
 func formatTranscriptMessage(index int, msg map[string]any, numbered bool) string {
@@ -239,7 +276,6 @@ func formatTranscriptMessage(index int, msg map[string]any, numbered bool) strin
 	if content == "" {
 		return ""
 	}
-	content = truncateMiddle(content, transcriptMessageMaxRunes)
 	if numbered {
 		return fmt.Sprintf("[%d] [%s]\n%s\n", index, role, content)
 	}

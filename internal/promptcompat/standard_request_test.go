@@ -56,3 +56,84 @@ func TestStandardRequestCompletionPayloadSetsModelTypeFromResolvedModel(t *testi
 		})
 	}
 }
+
+func TestNormalizeOpenAIChatRequestPromotesImageInputToVisionModel(t *testing.T) {
+	req := map[string]any{
+		"model": "gpt-4o",
+		"messages": []any{
+			map[string]any{
+				"role": "user",
+				"content": []any{
+					map[string]any{"type": "text", "text": "describe this image"},
+					map[string]any{"type": "image_url", "image_url": map[string]any{"url": "data:image/png;base64,abc"}},
+				},
+			},
+		},
+	}
+
+	stdReq, err := NormalizeOpenAIChatRequest(nil, req, "")
+	if err != nil {
+		t.Fatalf("normalize failed: %v", err)
+	}
+	if stdReq.ResolvedModel != "deepseek-v4-vision" {
+		t.Fatalf("expected image input to promote model to vision, got %q", stdReq.ResolvedModel)
+	}
+	payload := stdReq.CompletionPayload("session-123")
+	if payload["model_type"] != "vision" {
+		t.Fatalf("expected vision model_type, got %#v", payload["model_type"])
+	}
+}
+
+func TestNormalizeOpenAIChatRequestPromotesImageAttachmentToVisionSearchModel(t *testing.T) {
+	req := map[string]any{
+		"model": "deepseek-v4-flash-search-nothinking",
+		"messages": []any{
+			map[string]any{"role": "user", "content": "describe attached image"},
+		},
+		"attachments": []any{
+			map[string]any{"file_id": "file-image", "is_image": true},
+		},
+	}
+
+	stdReq, err := NormalizeOpenAIChatRequest(nil, req, "")
+	if err != nil {
+		t.Fatalf("normalize failed: %v", err)
+	}
+	if stdReq.ResolvedModel != "deepseek-v4-vision-search-nothinking" {
+		t.Fatalf("expected image attachment to preserve search/nothinking while promoting to vision, got %q", stdReq.ResolvedModel)
+	}
+	if stdReq.Thinking {
+		t.Fatalf("expected nothinking variant to keep thinking disabled")
+	}
+	if !stdReq.Search {
+		t.Fatalf("expected search flag preserved")
+	}
+	payload := stdReq.CompletionPayload("session-123")
+	if payload["model_type"] != "vision" {
+		t.Fatalf("expected vision model_type, got %#v", payload["model_type"])
+	}
+}
+
+func TestNormalizeOpenAIResponsesRequestPromotesInputImageToVisionModel(t *testing.T) {
+	req := map[string]any{
+		"model": "gpt-4.1",
+		"input": []any{
+			map[string]any{
+				"type": "message",
+				"role": "user",
+				"content": []any{
+					map[string]any{"type": "input_text", "text": "what is in this image?"},
+					map[string]any{"type": "input_image", "image_url": "data:image/jpeg;base64,abc"},
+				},
+			},
+		},
+	}
+
+	stdReq, err := NormalizeOpenAIResponsesRequest(nil, req, "")
+	if err != nil {
+		t.Fatalf("normalize failed: %v", err)
+	}
+	if stdReq.ResolvedModel != "deepseek-v4-vision" {
+		t.Fatalf("expected responses image input to promote model to vision, got %q", stdReq.ResolvedModel)
+	}
+}

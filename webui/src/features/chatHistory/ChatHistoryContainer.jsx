@@ -321,27 +321,21 @@ function buildListModeMessages(item, t) {
         ? item.messages
         : [{ role: 'user', content: item?.user_input || t('chatHistory.emptyUserInput') }]
     const historyMessages = parseStrictHistoryMessages(item?.history_text) || parseActiveResumeHistoryMessages(item?.history_text)
+    const historyAvailable = Boolean(String(item?.history_text || '').trim())
 
     if (!historyMessages?.length) {
-        return { messages: liveMessages, historyMerged: false }
+        return { messages: liveMessages, historyMerged: false, historyAvailable }
     }
 
-    const placeholderOnly = liveMessages.length === 1
-        && String(liveMessages[0]?.role || '').trim().toLowerCase() === 'user'
-        && String(liveMessages[0]?.content || '').includes(CURRENT_INPUT_FILE_PROMPT)
+    const hasCurrentInputPrompt = liveMessages.some(message => String(message?.role || '').trim().toLowerCase() === 'user'
+        && String(message?.content || '').includes(CURRENT_INPUT_FILE_PROMPT)
+    )
 
-    if (placeholderOnly) {
-        return { messages: historyMessages, historyMerged: true }
+    if (hasCurrentInputPrompt) {
+        return { messages: historyMessages, historyMerged: true, historyAvailable: true }
     }
 
-    const insertAt = liveMessages.findIndex(message => {
-        const role = String(message?.role || '').trim().toLowerCase()
-        return role !== 'system' && role !== 'developer'
-    })
-    const mergedMessages = [...liveMessages]
-    mergedMessages.splice(insertAt < 0 ? mergedMessages.length : insertAt, 0, ...historyMessages)
-
-    return { messages: mergedMessages, historyMerged: true }
+    return { messages: liveMessages, historyMerged: false, historyAvailable: true }
 }
 
 function RequestMessages({ item, t, messages }) {
@@ -524,7 +518,7 @@ function HistoryTextView({ item, t, onMessage }) {
 function DetailConversation({ selectedItem, t, viewMode, detailScrollRef, assistantStartRef, bottomButtonClassName, onMessage }) {
     if (!selectedItem) return null
     const listModeState = viewMode === 'list' ? buildListModeMessages(selectedItem, t) : null
-    const showHistoryAtTop = viewMode !== 'list' || !listModeState?.historyMerged
+    const showHistoryAtTop = viewMode !== 'list' || !listModeState?.historyAvailable
 
     return (
         <>

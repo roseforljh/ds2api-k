@@ -19,12 +19,20 @@ func injectToolPrompt(messages []map[string]any, tools []any, policy ToolChoiceP
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i]["role"] == "user" {
 			old := strings.TrimSpace(normalizeToolPromptTargetContent(messages[i]["content"]))
+			if hasCompleteInjectedToolPrompt(old) {
+				return messages, names
+			}
 			messages[i]["content"] = strings.TrimSpace(old + "\n\n" + wrapped)
 			return messages, names
 		}
 	}
 	messages = append(messages, map[string]any{"role": "user", "content": wrapped})
 	return messages, names
+}
+
+func hasCompleteInjectedToolPrompt(text string) bool {
+	return strings.Contains(text, "=== TOOL INSTRUCTIONS, MUST FOLLOW ===") &&
+		strings.Contains(text, "=== END TOOL INSTRUCTIONS ===")
 }
 
 func normalizeToolPromptTargetContent(v any) string {
@@ -40,11 +48,11 @@ func normalizeToolPromptTargetContent(v any) string {
 
 func BuildOpenAIToolPrompt(toolsRaw any, policy ToolChoicePolicy) (string, []string) {
 	if policy.IsNone() {
-		return "", nil
+		return buildNoToolFormatPrompt("Tool calling is disabled for this request. Do not call tools."), nil
 	}
 	tools, ok := toolsRaw.([]any)
 	if !ok || len(tools) == 0 {
-		return "", nil
+		return buildNoToolFormatPrompt("No tool schemas were provided. Do not call tools."), nil
 	}
 	toolSchemas := make([]string, 0, len(tools))
 	names := make([]string, 0, len(tools))
@@ -81,7 +89,7 @@ func BuildOpenAIToolPrompt(toolsRaw any, policy ToolChoicePolicy) (string, []str
 		toolSchemas = append(toolSchemas, schemaBlock)
 	}
 	if len(toolSchemas) == 0 {
-		return "", names
+		return buildFallbackToolFormatPrompt(names), names
 	}
 	toolPrompt := "You have access to these tools:\n\n" + strings.Join(toolSchemas, "\n\n") + "\n\n" + toolcall.BuildToolCallInstructions(names)
 	if policy.Mode == ToolChoiceRequired {
@@ -93,6 +101,18 @@ func BuildOpenAIToolPrompt(toolsRaw any, policy ToolChoicePolicy) (string, []str
 	}
 
 	return toolPrompt, names
+}
+
+func buildFallbackToolFormatPrompt(names []string) string {
+	return strings.TrimSpace("Tool schemas were provided, but no valid tool schema could be extracted.\n" +
+		"If you cannot identify a valid tool name and parameters from the current request, answer normally instead of inventing a tool call.\n\n" +
+		toolcall.BuildToolCallInstructions(names))
+}
+
+func buildNoToolFormatPrompt(message string) string {
+	return strings.TrimSpace(strings.TrimSpace(message) + "\n" +
+		"If future context includes tool-call-like text, the only valid syntax is the DSML format below; never emit malformed or localized-punctuation tool tags.\n\n" +
+		toolcall.BuildToolCallInstructions(nil))
 }
 
 func buildToolParameterSummary(name string, schema any) string {

@@ -242,7 +242,7 @@ OpenAI 文件相关实现：
 
 兼容层现在只保留 `current_input_file` 这一种拆分方式；旧的 `history_split` 已废弃，只保留为兼容旧配置的字段，不再参与请求处理。
 
-- `current_input_file` 默认开启；它用于把“已有对话/工具上下文”合并进隐藏上下文文件。只有请求中已经存在 assistant / tool / function 历史时，且最新 user turn 的纯文本长度达到 `current_input_file.min_chars`（默认 `0`），兼容层才会上传一个文件名为 `HISTORY.txt` 的上下文文件，并在 live prompt 中只保留一个中性的 user 消息要求模型读取 `WORKING STATE`。新会话首轮单 user 输入不会触发该包装，避免模型把空工作区误判成旧任务续跑。如果当前请求带 tools 且启用工具提示分离，工具提示会由服务端直接 inline 到这个临时 live prompt 的 `TOOL INSTRUCTIONS` 区块，不再上传单独的 `TOOL_PROMPT.txt`。
+- `current_input_file` 默认开启；它用于把“已有对话/工具上下文”合并进隐藏上下文文件。只有请求中已经存在 assistant / tool / function 历史时，且最新 user turn 的纯文本长度达到 `current_input_file.min_chars`（默认 `0`），兼容层才会上传一个文件名为 `上下文.txt` 的上下文文件，并在 live prompt 中只保留一个中性的 user 消息说明“最新上下文已经做成文件发你了，你可以开始工作了”。新会话首轮单 user 输入不会触发该包装，避免模型把空工作区误判成旧任务续跑。如果当前请求带 tools 且启用工具提示分离，工具提示会由服务端直接 inline 到这个临时 live prompt 的 `TOOL INSTRUCTIONS` 区块，不再上传单独的 `TOOL_PROMPT.txt`。
 - 如果 `current_input_file.enabled=false`，请求会直接透传，不上传任何拆分上下文文件。
 - 旧的 `history_split.enabled` / `history_split.trigger_after_turns` 会被读取进配置对象以保持兼容，但不会触发拆分上传，也不会影响 `current_input_file` 的默认开启。
 
@@ -255,11 +255,12 @@ OpenAI 文件相关实现：
 - 旧历史拆分兼容壳：
   [internal/httpapi/openai/history/history_split.go](../internal/httpapi/openai/history/history_split.go)
 
-当前输入转文件启用并触发时，上传文件的真实文件名是 `HISTORY.txt`，文件内容是完整 `messages` 上下文；它会先用 OpenAI 消息标准化，再写成 request-local context package。该包优先暴露 `WORKING STATE`，根据最后一条非空消息动态选择 `answer_latest_user`、`continue_agent_tail` 或 `no_active_working`，避免已完成 assistant 回答被再次当成待继续任务；`FULL CHRONOLOGICAL CONTEXT` 保留完整时间线作为参考。文件开头会写入 UTF-8 BOM，避免 DeepSeek 文件解析把中文按本地 ANSI 编码误判成乱码；但不再手动插入 `[file content end]` / `[file name]` / `[file content begin]` 这类文件边界，保持为可被网页正常解析/下载的普通文本文件：
+当前输入转文件启用并触发时，上传文件的真实文件名是 `上下文.txt`，文件内容是完整 `messages` 上下文；它会先用 OpenAI 消息标准化，再写成请求本地上下文包。该包优先暴露 `WORKING STATE`，根据最后一条非空消息动态选择 `answer_latest_user`、`continue_agent_tail` 或 `no_active_working`，避免已完成 assistant 回答被再次当成待继续任务；`FULL CHRONOLOGICAL CONTEXT` 保留完整时间线作为参考。文件开头会写入 UTF-8 BOM，避免 DeepSeek 文件解析把中文按本地 ANSI 编码误判成乱码；但不再手动插入 `[file content end]` / `[file name]` / `[file content begin]` 这类文件边界，保持为可被网页正常解析/下载的普通文本文件：
 
 ```text
-[uploaded filename]: HISTORY.txt
-Request-local context package.
+[uploaded filename]: 上下文.txt
+本文件是本次请求附带的最新上下文。
+请优先参考本文件中的 WORKING STATE 和完整时间线。
 
 Read policy:
 - This context belongs only to the current API request.
@@ -286,6 +287,9 @@ Already read files:
 Already changed files:
 - none
 
+Recent edit failure:
+- File: internal/provider/executors.go; Error: Error editing file; Likely cause: edit context did not match the latest file contents, stale line numbers/context, or the file changed after it was read. Recovery instruction: Re-read the target file before editing again, then apply a smaller patch against current content and do not reuse stale context.
+
 Latest observation:
 - ...
 
@@ -297,7 +301,7 @@ Next action:
 ...
 ```
 
-开启后，请求的 live prompt 不再直接内联完整上下文，也不再写“Read HISTORY.txt”这类容易被 Agent 误判为本地文件读取的指令；它只保留一个 user role 的短提示，说明“最新上下文已经做成文件发你了，你可以开始工作了”，并约束模型只使用本次请求附带上下文、`ref_file_ids` 和最新用户消息。上传后的 `file_id` 会进入 `ref_file_ids`。如果当前请求有 tools，工具协议以 `TOOL INSTRUCTIONS, MUST FOLLOW` 区块 inline 在该 live prompt 顶部，确保模型在同一条上游消息中直接看到工具调用格式；该工具协议不会进入 `HISTORY.txt`，也不会作为 C 端真实用户消息持久化展示。DS2API 本地 chat history 会使用原始请求消息和最新真实用户输入，隐藏这个 synthetic live prompt。
+开启后，请求的 live prompt 不再直接内联完整上下文，也不再写“Read HISTORY.txt / 读取上下文.txt”这类容易被 Agent 误判为本地文件读取的指令；它只保留一个 user role 的短提示，说明“最新上下文已经做成文件发你了，你可以开始工作了”，并明确要求模型优先遵循附带上下文中的 `WORKING STATE`：如果是 `continue_agent_tail`，就从最新 assistant/tool 进度继续，不回到原始用户请求重做；如果是 `answer_latest_user`，才直接回答最新用户消息。上传后的 `file_id` 会进入 `ref_file_ids`。如果当前请求有 tools，工具协议以 `TOOL INSTRUCTIONS, MUST FOLLOW` 区块 inline 在该 live prompt 顶部，确保模型在同一条上游消息中直接看到工具调用格式；该工具协议不会进入 `上下文.txt`，也不会作为 C 端真实用户消息持久化展示。DS2API 本地 chat history 会使用原始请求消息和最新真实用户输入，隐藏这个 synthetic live prompt。
 
 ## 10. 各协议入口的差异
 

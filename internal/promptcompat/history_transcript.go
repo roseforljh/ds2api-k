@@ -17,6 +17,7 @@ const (
 var (
 	transcriptPathPattern = regexp.MustCompile(`(?i)([A-Z]:\\[^\s"'<>|]+|(?:\.{1,2}/)?(?:[\w.-]+[/\\])+[\w.-]+\.(?:go|js|jsx|ts|tsx|json|md|yml|yaml|sh|css|html|txt))`)
 	patchFileLinePattern  = regexp.MustCompile(`(?m)^\*\*\* (?:Update|Add) File:\s*(.+?)\s*$`)
+	editCallLinePattern   = regexp.MustCompile(`(?m)^\s*(?:Update|Edit)\(([^)\r\n]+)\)\s*$`)
 )
 
 type agentWorkingState struct {
@@ -25,6 +26,7 @@ type agentWorkingState struct {
 	Status            string
 	ReadFiles         []string
 	ChangedFiles      []string
+	RecentEditFailure string
 	LatestObservation string
 	NextAction        string
 }
@@ -66,7 +68,8 @@ func buildOpenAIFileTranscript(messages []any) string {
 
 func buildActiveAgentResumeTranscript(messages []map[string]any, state agentWorkingState) string {
 	var b strings.Builder
-	b.WriteString("Request-local context package.\n\n")
+	b.WriteString("本文件是本次请求附带的最新上下文。\n")
+	b.WriteString("请优先参考本文件中的 WORKING STATE 和完整时间线。\n\n")
 	b.WriteString("Read policy:\n")
 	b.WriteString("- This context belongs only to the current API request.\n")
 	b.WriteString("- Use WORKING STATE as the only active driver for this request.\n")
@@ -103,6 +106,10 @@ func buildActiveAgentResumeTranscript(messages []map[string]any, state agentWork
 	b.WriteString("\n")
 	writeStringList(&b, "Already changed files:", state.ChangedFiles)
 	b.WriteString("\n")
+	if strings.TrimSpace(state.RecentEditFailure) != "" {
+		b.WriteString("Recent edit failure:\n")
+		fmt.Fprintf(&b, "- %s\n\n", state.RecentEditFailure)
+	}
 	b.WriteString("Latest observation:\n")
 	fmt.Fprintf(&b, "- %s\n\n", nonEmptyOr(state.LatestObservation, "No tool observation yet."))
 	b.WriteString("Next action:\n")
@@ -127,6 +134,7 @@ func buildAgentWorkingState(messages []map[string]any) agentWorkingState {
 		WorkingMessages:   workingStateMessages(messages, userIndex, lastIndex, mode),
 		ReadFiles:         extractFilePaths(messages),
 		ChangedFiles:      extractChangedFilePaths(messages),
+		RecentEditFailure: extractRecentEditFailure(messages),
 		LatestObservation: workingStateLatestObservation(messages, mode),
 		NextAction:        workingStateNextAction(mode),
 	}
@@ -146,6 +154,9 @@ func workingStateNextAction(mode string) string {
 
 func lastNonEmptyMessageIndex(messages []map[string]any) int {
 	for i := len(messages) - 1; i >= 0; i-- {
+		if !isWorkingStateRole(messages[i]) {
+			continue
+		}
 		if strings.TrimSpace(transcriptMessageContent(messages[i])) != "" {
 			return i
 		}
@@ -174,7 +185,7 @@ func workingStateMessages(messages []map[string]any, userIndex, lastIndex int, m
 	out := make([]map[string]any, 0, len(tail))
 	for _, msg := range tail {
 		role := strings.ToLower(strings.TrimSpace(asString(msg["role"])))
-		if role == "user" {
+		if role == "user" || !isWorkingStateRole(msg) {
 			continue
 		}
 		if strings.TrimSpace(transcriptMessageContent(msg)) != "" {
@@ -185,6 +196,15 @@ func workingStateMessages(messages []map[string]any, userIndex, lastIndex int, m
 		out = out[len(out)-recentProgressMaxMessages:]
 	}
 	return out
+}
+
+func isWorkingStateRole(msg map[string]any) bool {
+	switch strings.ToLower(strings.TrimSpace(asString(msg["role"]))) {
+	case "user", "assistant", "tool", "function":
+		return true
+	default:
+		return false
+	}
 }
 
 func lastUserMessageIndex(messages []map[string]any) int {
@@ -221,7 +241,7 @@ func assistantMessageHasPendingWork(msg map[string]any) bool {
 	if hasNonEmptyToolCalls(msg["tool_calls"]) {
 		return true
 	}
-	content := strings.ToLower(transcriptMessageContent(msg))
+	content := strings.ToLower(NormalizeOpenAIContentForPrompt(msg["content"]))
 	return strings.Contains(content, "<|dsml|tool_calls>")
 }
 
@@ -249,9 +269,13 @@ func inferWorkingStatus(messages []map[string]any) string {
 	if len(messages) == 0 {
 		return "In progress"
 	}
-	last := messages[len(messages)-1]
+	lastIndex := lastNonEmptyMessageIndex(messages)
+	if lastIndex < 0 {
+		return "In progress"
+	}
+	last := messages[lastIndex]
 	lastRole := strings.ToLower(strings.TrimSpace(asString(last["role"])))
-	lastContent := strings.ToLower(transcriptMessageContent(last))
+	lastContent := strings.ToLower(NormalizeOpenAIContentForPrompt(last["content"]))
 	switch {
 	case lastRole == "tool":
 		return "Reviewing latest tool result"
@@ -290,6 +314,48 @@ func extractChangedFilePaths(messages []map[string]any) []string {
 		}
 	}
 	return limitStrings(changed, workingStateMaxFiles)
+}
+
+func extractRecentEditFailure(messages []map[string]any) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		role := strings.ToLower(strings.TrimSpace(asString(messages[i]["role"])))
+		switch role {
+		case "assistant", "tool", "function":
+		default:
+			continue
+		}
+		content := NormalizeOpenAIContentForPrompt(messages[i]["content"])
+		if !containsAnyFold(content, []string{"Error editing file", "String to replace not found in file."}) {
+			continue
+		}
+		file := latestEditFailureFile(content)
+		if file == "" {
+			file = "unknown"
+		}
+		errText := "Error editing file"
+		if containsAnyFold(content, []string{"String to replace not found in file."}) {
+			errText = "String to replace not found in file."
+		}
+		return fmt.Sprintf("File: %s; Error: %s; Likely cause: edit context did not match the latest file contents, stale line numbers/context, or the file changed after it was read. Recovery instruction: Re-read the target file before editing again, then apply a smaller patch against current content and do not reuse stale context.", file, errText)
+	}
+	return ""
+}
+
+func latestEditFailureFile(content string) string {
+	matches := editCallLinePattern.FindAllStringSubmatch(content, -1)
+	for i := len(matches) - 1; i >= 0; i-- {
+		if len(matches[i]) < 2 {
+			continue
+		}
+		if path := cleanTranscriptPath(matches[i][1]); path != "" {
+			return path
+		}
+	}
+	paths := extractPathsFromText(content)
+	if len(paths) == 0 {
+		return ""
+	}
+	return paths[len(paths)-1]
 }
 
 func latestObservation(messages []map[string]any) string {

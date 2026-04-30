@@ -165,6 +165,15 @@ func LooksLikeMalformedRequiredToolCall(text string) bool {
 	if trimmed == "" {
 		return false
 	}
+	if looksLikeSentenceInvokeRequiredToolCall(trimmed) {
+		return true
+	}
+	if looksLikeLocalizedPunctuationRequiredToolCall(trimmed) {
+		return true
+	}
+	if looksLikeMalformedSkillCallProtocol(trimmed) {
+		return true
+	}
 	hasDSML, hasCanonical := ContainsToolCallWrapperSyntaxOutsideIgnored(trimmed)
 	if !hasDSML && !hasCanonical {
 		return looksLikeBareRequiredToolInvoke(trimmed)
@@ -200,6 +209,118 @@ func LooksLikeMalformedRequiredToolCall(text string) bool {
 		toolName := strings.ToLower(strings.TrimSpace(attrs["name"]))
 		if len(requiredPairs[toolName]) > 0 {
 			return true
+		}
+	}
+	return false
+}
+
+func looksLikeMalformedSkillCallProtocol(text string) bool {
+	lower := strings.ToLower(text)
+	if !strings.Contains(lower, "skill") {
+		return false
+	}
+	if strings.Contains(lower, "<skill>") && strings.Contains(lower, "</skill>") {
+		return true
+	}
+	if strings.Contains(lower, "skill_calls") {
+		return true
+	}
+	return false
+}
+
+func looksLikeSentenceInvokeRequiredToolCall(text string) bool {
+	lower := strings.ToLower(text)
+	hasBeginInvoke := strings.Contains(lower, "begin▁of▁invoke")
+	hasBeginSentence := strings.Contains(lower, "begin▁of▁sentence")
+	if !hasBeginInvoke && !hasBeginSentence {
+		return false
+	}
+	requiredPairs := map[string][]string{
+		"read":            {"file_path"},
+		"bash":            {"command"},
+		"execute":         {"command"},
+		"execute_command": {"command"},
+		"exec_command":    {"cmd"},
+	}
+	if hasBeginSentence {
+		sentencePayload := textAfterSentenceStartMarker(lower)
+		for toolName := range requiredPairs {
+			if startsWithToolName(sentencePayload, toolName) {
+				return true
+			}
+		}
+	}
+	if !hasBeginInvoke {
+		return false
+	}
+	for toolName, params := range requiredPairs {
+		if !strings.Contains(lower, `name="`+toolName+`"`) &&
+			!strings.Contains(lower, `name='`+toolName+`'`) &&
+			!strings.Contains(lower, `name=“`+toolName+`”`) &&
+			!strings.Contains(lower, `name=`+toolName) {
+			continue
+		}
+		for _, param := range params {
+			if strings.Contains(lower, param) {
+				return true
+			}
+		}
+		return true
+	}
+	return false
+}
+
+func textAfterSentenceStartMarker(lower string) string {
+	idx := strings.Index(lower, "begin▁of▁sentence")
+	if idx < 0 {
+		return ""
+	}
+	tail := lower[idx+len("begin▁of▁sentence"):]
+	if markerEnd := strings.Index(tail, "｜>"); markerEnd >= 0 {
+		tail = tail[markerEnd+len("｜>"):]
+	}
+	return strings.TrimLeft(tail, " \t\r\n")
+}
+
+func startsWithToolName(text string, toolName string) bool {
+	if !strings.HasPrefix(text, toolName) {
+		return false
+	}
+	if len(text) == len(toolName) {
+		return true
+	}
+	next := text[len(toolName)]
+	return (next < 'a' || next > 'z') && (next < '0' || next > '9') && next != '_'
+}
+
+func looksLikeLocalizedPunctuationRequiredToolCall(text string) bool {
+	lower := strings.ToLower(text)
+	hasLocalizedToolTag := strings.Contains(lower, "<｜tool_calls＞") ||
+		strings.Contains(lower, "</｜tool_calls＞") ||
+		strings.Contains(lower, "<！invoke") ||
+		strings.Contains(lower, "</！invoke") ||
+		strings.Contains(lower, "<！parameter") ||
+		strings.Contains(lower, "</！parameter") ||
+		strings.Contains(lower, "</！tool_calls") ||
+		strings.Contains(lower, "<！[cdata[")
+	if !hasLocalizedToolTag {
+		return false
+	}
+	requiredPairs := map[string][]string{
+		"read":            {"file_path"},
+		"bash":            {"command"},
+		"execute":         {"command"},
+		"execute_command": {"command"},
+		"exec_command":    {"cmd"},
+	}
+	for toolName, params := range requiredPairs {
+		if !strings.Contains(lower, toolName) {
+			continue
+		}
+		for _, param := range params {
+			if strings.Contains(lower, param) {
+				return true
+			}
 		}
 	}
 	return false

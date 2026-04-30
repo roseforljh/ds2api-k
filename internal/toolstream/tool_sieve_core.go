@@ -74,6 +74,10 @@ func ProcessChunk(state *State, chunk string, toolNames []string) []Event {
 		start := findToolSegmentStart(state, pending)
 		if start >= 0 {
 			prefix := pending[:start]
+			if shouldAttachPrefixToLocalizedMalformedCapture(prefix, pending[start:]) {
+				start = 0
+				prefix = ""
+			}
 			if prefix != "" {
 				state.noteText(prefix)
 				events = append(events, Event{Content: prefix})
@@ -221,6 +225,24 @@ func splitSafeContentForToolDetection(state *State, s string) (safe, hold string
 	return s, ""
 }
 
+func shouldAttachPrefixToLocalizedMalformedCapture(prefix string, segment string) bool {
+	trimmedPrefix := strings.TrimSpace(prefix)
+	if trimmedPrefix == "" {
+		return false
+	}
+	if trimmedPrefix != "●" && trimmedPrefix != "•" && trimmedPrefix != "-" && !strings.EqualFold(trimmedPrefix, "Skill") {
+		return false
+	}
+	lowerSegment := strings.ToLower(segment)
+	return strings.Contains(lowerSegment, "<｜tool_calls＞") ||
+		strings.Contains(lowerSegment, "<！invoke") ||
+		strings.Contains(lowerSegment, "<！parameter") ||
+		strings.Contains(lowerSegment, "begin▁of▁sentence") ||
+		strings.Contains(lowerSegment, "begin▁of▁invoke") ||
+		strings.Contains(lowerSegment, "<skill>") ||
+		strings.Contains(lowerSegment, "skill_calls")
+}
+
 func findToolSegmentStart(state *State, s string) int {
 	if s == "" {
 		return -1
@@ -278,10 +300,35 @@ func consumeToolCapture(state *State, toolNames []string) (prefix string, calls 
 	if hasOpenXMLToolTag(captured) {
 		return "", nil, "", false
 	}
+	if hasOpenLocalizedToolTag(captured) {
+		return "", nil, "", false
+	}
+	if hasOpenSentenceInvokeToolTag(captured) {
+		return "", nil, "", false
+	}
 	if shouldKeepBareInvokeCapture(captured) {
 		return "", nil, "", false
 	}
 	return captured, nil, "", true
+}
+
+func hasOpenLocalizedToolTag(captured string) bool {
+	lower := strings.ToLower(captured)
+	if !strings.Contains(lower, "<｜tool_calls＞") && !strings.Contains(lower, "<！invoke") && !strings.Contains(lower, "<！parameter") {
+		return false
+	}
+	if strings.Contains(lower, "</！tool_calls＞") || strings.Contains(lower, "</｜tool_calls＞") {
+		return false
+	}
+	return true
+}
+
+func hasOpenSentenceInvokeToolTag(captured string) bool {
+	lower := strings.ToLower(captured)
+	if !strings.Contains(lower, "begin▁of▁sentence") && !strings.Contains(lower, "begin▁of▁invoke") {
+		return false
+	}
+	return !strings.Contains(lower, "end▁of▁sentence")
 }
 
 func findPartialSMLSentinelStart(s string) int {

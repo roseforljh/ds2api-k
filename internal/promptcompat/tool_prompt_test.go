@@ -20,10 +20,13 @@ func testToolRaw(name string) []any {
 	}
 }
 
-func TestBuildOpenAIToolPromptReturnsEmptyWithoutTools(t *testing.T) {
+func TestBuildOpenAIToolPromptReturnsFallbackFormatWithoutTools(t *testing.T) {
 	prompt, names := BuildOpenAIToolPrompt(nil, DefaultToolChoicePolicy())
-	if prompt != "" {
-		t.Fatalf("expected empty prompt, got %q", prompt)
+	if !strings.Contains(prompt, "TOOL CALL FORMAT") {
+		t.Fatalf("expected fallback format prompt, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "No tool schemas were provided") {
+		t.Fatalf("expected no-tools warning, got %q", prompt)
 	}
 	if names != nil {
 		t.Fatalf("expected nil names, got %#v", names)
@@ -86,8 +89,8 @@ func TestBuildOpenAIToolPromptAddsRequiredAndOptionalParameterSummary(t *testing
 
 func TestBuildOpenAIToolPromptRespectsToolChoiceNone(t *testing.T) {
 	prompt, names := BuildOpenAIToolPrompt(testToolRaw("search"), ToolChoicePolicy{Mode: ToolChoiceNone})
-	if prompt != "" {
-		t.Fatalf("expected empty prompt, got %q", prompt)
+	if !strings.Contains(prompt, "TOOL CALL FORMAT") {
+		t.Fatalf("expected fallback format prompt even for tool_choice none, got %q", prompt)
 	}
 	if names != nil {
 		t.Fatalf("expected nil names, got %#v", names)

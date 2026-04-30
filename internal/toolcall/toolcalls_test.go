@@ -171,6 +171,81 @@ func TestParseToolCallsMarksHashDSMLReadFilePathForHiddenRetry(t *testing.T) {
 	}
 }
 
+func TestParseToolCallsMarksLocalizedPunctuationReadCallForHiddenRetry(t *testing.T) {
+	text := `● <｜tool_calls＞
+<！invoke name=“Read”>
+<！parameter name=“file_path”><！[CDATA[C:\Users\me\repo\README.md]]><！/parameter>
+<！/invoke>
+</！tool_calls＞`
+	res := ParseToolCallsDetailed(text, []string{"Read"})
+	if !res.SawToolCallSyntax {
+		t.Fatalf("expected localized-punctuation Read call to be recognized as tool syntax")
+	}
+	if !res.RejectedInvalid {
+		t.Fatalf("expected localized-punctuation Read call to be marked invalid for retry, got %#v", res)
+	}
+	if len(res.Calls) != 0 {
+		t.Fatalf("expected localized-punctuation Read call not to be corrected/executed, got %#v", res.Calls)
+	}
+}
+
+func TestParseToolCallsMarksSentenceInvokeReadForHiddenRetry(t *testing.T) {
+	text := `● <｜begin▁of▁sentence｜>
+<｜begin▁of▁invoke name="Read">
+<｜begin▁of▁parameter name="file_path"></｜begin▁of▁parameter>
+<｜begin▁of▁parameter name="limit"></｜begin▁of▁parameter>
+<｜begin▁of▁parameter name="offset"></｜begin▁of▁parameter>
+</｜begin▁of▁invoke>
+<｜end▁of▁sentence｜>`
+	res := ParseToolCallsDetailed(text, []string{"Read"})
+	if !res.SawToolCallSyntax {
+		t.Fatalf("expected sentence/invoke Read call to be recognized as tool syntax")
+	}
+	if !res.RejectedInvalid {
+		t.Fatalf("expected sentence/invoke Read call to be marked invalid for retry, got %#v", res)
+	}
+	if len(res.Calls) != 0 {
+		t.Fatalf("expected sentence/invoke Read call not to be corrected/executed, got %#v", res.Calls)
+	}
+}
+
+func TestParseToolCallsMarksSentenceBareReadForHiddenRetry(t *testing.T) {
+	text := `● <｜begin▁of▁sentence｜>Read
+reasoningReading the file at the insertion point to get precise content for the Edit tool.
+I need to read the file around the insertion point to get exact content for matching.
+</|DSML|parameter>
+</|DSML|parameter>
+</|DSML|parameter>
+</|DSML|parameter>
+</|DSML|invoke>`
+	res := ParseToolCallsDetailed(text, []string{"Read"})
+	if !res.SawToolCallSyntax {
+		t.Fatalf("expected sentence/bare Read call to be recognized as tool syntax")
+	}
+	if !res.RejectedInvalid {
+		t.Fatalf("expected sentence/bare Read call to be marked invalid for retry, got %#v", res)
+	}
+	if len(res.Calls) != 0 {
+		t.Fatalf("expected sentence/bare Read call not to be corrected/executed, got %#v", res.Calls)
+	}
+}
+
+func TestParseToolCallsMarksMalformedSkillCallForHiddenRetry(t *testing.T) {
+	text := `Skill
+<skill>pua</skill>
+</|DSML|skill_calls>`
+	res := ParseToolCallsDetailed(text, []string{"Skill"})
+	if !res.SawToolCallSyntax {
+		t.Fatalf("expected malformed skill call to be recognized as tool syntax")
+	}
+	if !res.RejectedInvalid {
+		t.Fatalf("expected malformed skill call to be marked invalid for retry, got %#v", res)
+	}
+	if len(res.Calls) != 0 {
+		t.Fatalf("expected malformed skill call not to be corrected/executed, got %#v", res.Calls)
+	}
+}
+
 func TestParseToolCallsMarksUnparseableBashCommandForHiddenRetry(t *testing.T) {
 	text := `<⌜DSML⌝tool_calls><⌜DSML⌝invoke name="Bash"><⌜DSML⌝parameter name="command">pwd`
 	res := ParseToolCallsDetailed(text, []string{"Bash"})

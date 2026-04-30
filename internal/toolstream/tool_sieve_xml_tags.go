@@ -14,6 +14,8 @@ var xmlToolCallBlockPattern = regexp.MustCompile(`(?is)((?:<tool_calls\b|<\|dsml
 
 // xmlToolTagsToDetect is the set of XML tag prefixes used by findToolSegmentStart.
 var xmlToolTagsToDetect = []string{
+	"<｜begin▁of▁sentence｜>", "<｜begin▁of▁invoke ", "<｜begin▁of▁invoke\n", "<｜begin▁of▁invoke\t", "<｜begin▁of▁invoke\r",
+	"<skill>", "<skill ", "<skill\n", "<skill\t", "<skill\r", "<|dsml|skill_calls>", "</|dsml|skill_calls>",
 	"<#dsml#tool_calls>", "<#dsml#tool_calls\n", "<#dsml#tool_calls ",
 	"<#dsml#invoke ", "<#dsml#invoke\n", "<#dsml#invoke\t", "<#dsml#invoke\r",
 	"<#dsm#tool_calls>", "<#dsm#tool_calls\n", "<#dsm#tool_calls ",
@@ -46,6 +48,9 @@ var xmlToolTagsToDetect = []string{
 	"<dsml_dsep_invoke ", "<dsml_dsep_invoke\n", "<dsml_dsep_invoke\t", "<dsml_dsep_invoke\r",
 	"<｜tool_calls>", "<｜tool_calls\n", "<｜tool_calls ",
 	"<｜invoke ", "<｜invoke\n", "<｜invoke\t", "<｜invoke\r",
+	"<｜tool_calls＞",
+	"<！invoke ", "<！invoke\n", "<！invoke\t", "<！invoke\r",
+	"<！parameter ", "<！parameter\n", "<！parameter\t", "<！parameter\r",
 	"<|tool_calls>", "<|tool_calls\n", "<|tool_calls ",
 	"<|invoke ", "<|invoke\n", "<|invoke\t", "<|invoke\r",
 	"<tool_calls>", "<tool_calls\n", "<tool_calls ", "<invoke ", "<invoke\n", "<invoke\t", "<invoke\r",

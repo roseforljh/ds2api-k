@@ -289,6 +289,110 @@ func TestProcessToolSieveDropsHashDSMLReadFilePathWithoutLeak(t *testing.T) {
 	}
 }
 
+func TestProcessToolSieveDropsLocalizedPunctuationReadCallWithoutLeak(t *testing.T) {
+	var state State
+	chunk := `● <｜tool_calls＞
+<！invoke name=“Read”>
+<！parameter name=“file_path”><！[CDATA[C:\Users\me\repo\README.md]]><！/parameter>
+<！/invoke>
+</！tool_calls＞`
+	events := ProcessChunk(&state, chunk, []string{"Read"})
+	events = append(events, Flush(&state, []string{"Read"})...)
+	for _, evt := range events {
+		if evt.Content != "" || len(evt.ToolCalls) > 0 {
+			t.Fatalf("expected localized-punctuation Read call to be hidden from client and not emitted, got %#v", events)
+		}
+	}
+	if !strings.Contains(state.MalformedToolFeedback, "<｜tool_calls＞") {
+		t.Fatalf("expected localized-punctuation malformed feedback to be retained for retry, got %q", state.MalformedToolFeedback)
+	}
+}
+
+func TestProcessToolSieveDropsSentenceInvokeReadCallWithoutLeak(t *testing.T) {
+	var state State
+	chunk := `● <｜begin▁of▁sentence｜>
+<｜begin▁of▁invoke name="Read">
+<｜begin▁of▁parameter name="file_path"></｜begin▁of▁parameter>
+<｜begin▁of▁parameter name="limit"></｜begin▁of▁parameter>
+<｜begin▁of▁parameter name="offset"></｜begin▁of▁parameter>
+</｜begin▁of▁invoke>
+<｜end▁of▁sentence｜>`
+	events := ProcessChunk(&state, chunk, []string{"Read"})
+	events = append(events, Flush(&state, []string{"Read"})...)
+	for _, evt := range events {
+		if evt.Content != "" || len(evt.ToolCalls) > 0 {
+			t.Fatalf("expected sentence/invoke Read call to be hidden from client and not emitted, got %#v", events)
+		}
+	}
+	if !strings.Contains(state.MalformedToolFeedback, "begin▁of▁invoke") {
+		t.Fatalf("expected sentence/invoke malformed feedback to be retained for retry, got %q", state.MalformedToolFeedback)
+	}
+}
+
+func TestProcessToolSieveDropsSentenceBareReadCallWithoutLeak(t *testing.T) {
+	var state State
+	chunk := `● <｜begin▁of▁sentence｜>Read
+reasoningReading the file at the insertion point to get precise content for the Edit tool.
+I need to read the file around the insertion point to get exact content for matching.
+</|DSML|parameter>
+</|DSML|parameter>
+</|DSML|parameter>
+</|DSML|parameter>
+</|DSML|invoke>`
+	events := ProcessChunk(&state, chunk, []string{"Read"})
+	events = append(events, Flush(&state, []string{"Read"})...)
+	for _, evt := range events {
+		if evt.Content != "" || len(evt.ToolCalls) > 0 {
+			t.Fatalf("expected sentence/bare Read call to be hidden from client and not emitted, got %#v", events)
+		}
+	}
+	if !strings.Contains(state.MalformedToolFeedback, "begin▁of▁sentence") {
+		t.Fatalf("expected sentence/bare malformed feedback to be retained for retry, got %q", state.MalformedToolFeedback)
+	}
+}
+
+func TestProcessToolSieveDropsMalformedSkillCallWithoutLeak(t *testing.T) {
+	var state State
+	chunk := `Skill
+<skill>pua</skill>
+</|DSML|skill_calls>`
+	events := ProcessChunk(&state, chunk, []string{"Skill"})
+	events = append(events, Flush(&state, []string{"Skill"})...)
+	for _, evt := range events {
+		if evt.Content != "" || len(evt.ToolCalls) > 0 {
+			t.Fatalf("expected malformed skill call to be hidden from client and not emitted, got %#v", events)
+		}
+	}
+	if !strings.Contains(state.MalformedToolFeedback, "<skill>pua</skill>") {
+		t.Fatalf("expected malformed skill feedback to be retained for retry, got %q", state.MalformedToolFeedback)
+	}
+}
+
+func TestProcessToolSieveBuffersLocalizedPunctuationReadCallAcrossChunks(t *testing.T) {
+	var state State
+	chunks := []string{
+		`● <｜tool_calls＞` + "\n",
+		`<！invoke name=“Read”>` + "\n",
+		`<！parameter name=“file_path”><！[CDATA[C:\Users\me\repo\README.md]]><！/parameter>` + "\n",
+		`<！/invoke>` + "\n",
+		`</！tool_calls＞`,
+	}
+	var events []Event
+	for _, chunk := range chunks {
+		events = append(events, ProcessChunk(&state, chunk, []string{"Read"})...)
+	}
+	events = append(events, Flush(&state, []string{"Read"})...)
+	for _, evt := range events {
+		if evt.Content != "" || len(evt.ToolCalls) > 0 {
+			t.Fatalf("expected split localized-punctuation Read call to be buffered and hidden, got %#v", events)
+		}
+	}
+	if !strings.Contains(state.MalformedToolFeedback, "<｜tool_calls＞") ||
+		!strings.Contains(state.MalformedToolFeedback, "file_path") {
+		t.Fatalf("expected complete localized malformed feedback to be retained, got %q", state.MalformedToolFeedback)
+	}
+}
+
 func TestProcessToolSievePreservesMixedFullwidthDSMLMentionBeforeToolCall(t *testing.T) {
 	var state State
 	chunks := []string{

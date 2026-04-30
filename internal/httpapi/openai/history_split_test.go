@@ -68,7 +68,7 @@ func TestBuildOpenAICurrentInputContextTranscriptUsesNormalFileContent(t *testin
 	if strings.Contains(transcript, "[file content end]") || strings.Contains(transcript, "[file content begin]") || strings.Contains(transcript, "[file name]:") {
 		t.Fatalf("expected normal file content without DeepSeek file-boundary tags, got %q", transcript)
 	}
-	if !strings.Contains(transcript, "Request-local context package.") {
+	if !strings.Contains(transcript, "本文件是本次请求附带的最新上下文。") {
 		t.Fatalf("expected request-local context header, got %q", transcript)
 	}
 	for _, want := range []string{
@@ -113,7 +113,8 @@ func TestBuildOpenAICurrentInputContextTranscriptBuildsActiveAgentResumePackage(
 	transcript := buildOpenAICurrentInputContextTranscript(messages)
 
 	for _, want := range []string{
-		"Request-local context package.",
+		"本文件是本次请求附带的最新上下文。",
+		"请优先参考本文件中的 WORKING STATE 和完整时间线。",
 		"=== WORKING STATE, READ FIRST ===",
 		"Mode:\n- continue_agent_tail",
 		"Latest assistant/tool tail:",
@@ -288,6 +289,38 @@ func TestBuildOpenAICurrentInputContextTranscriptContinuesToolResult(t *testing.
 		if !strings.Contains(transcript, want) {
 			t.Fatalf("expected active tool-result transcript to contain %q, got %q", want, transcript)
 		}
+	}
+}
+
+func TestBuildOpenAICurrentInputContextTranscriptIgnoresTrailingSystemReminder(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "逐一修复"},
+		map[string]any{"role": "assistant", "content": "逐一修复。先读取需要修改的文件当前状态。"},
+		map[string]any{"role": "tool", "content": "internal/provider/protocol_streams.go 当前内容"},
+		map[string]any{"role": "system", "content": "<system-reminder>The task tools haven't been used recently.</system-reminder>"},
+	}
+
+	transcript := buildOpenAICurrentInputContextTranscript(messages)
+
+	for _, want := range []string{
+		"Mode:\n- continue_agent_tail",
+		"Latest assistant/tool tail:",
+		"[Assistant]\n逐一修复。先读取需要修改的文件当前状态。",
+		"[Tool]\ninternal/provider/protocol_streams.go 当前内容",
+		"Status:\n- Reviewing latest tool result",
+	} {
+		if !strings.Contains(transcript, want) {
+			t.Fatalf("expected trailing system reminder to be ignored for active working state %q, got %q", want, transcript)
+		}
+	}
+	workingStart := strings.Index(transcript, "=== WORKING STATE, READ FIRST ===")
+	fullStart := strings.Index(transcript, "=== FULL CHRONOLOGICAL CONTEXT, REFERENCE ONLY ===")
+	if workingStart < 0 || fullStart <= workingStart {
+		t.Fatalf("expected working section before full context, got %q", transcript)
+	}
+	working := transcript[workingStart:fullStart]
+	if strings.Contains(working, "task tools haven't been used recently") {
+		t.Fatalf("system reminder must not become active working state, got %q", working)
 	}
 }
 
@@ -717,8 +750,8 @@ func TestApplyCurrentInputFileUploadsFullContextFile(t *testing.T) {
 		t.Fatalf("expected one current input upload, got %d", len(ds.uploadCalls))
 	}
 	upload := ds.uploadCalls[0]
-	if upload.Filename != "HISTORY.txt" {
-		t.Fatalf("expected HISTORY.txt upload, got %q", upload.Filename)
+	if upload.Filename != "上下文.txt" {
+		t.Fatalf("expected 上下文.txt upload, got %q", upload.Filename)
 	}
 	uploadedText := string(upload.Data)
 	for _, want := range []string{"system instructions", "first user turn", "hidden reasoning", "tool result", "latest user turn", promptcompat.ThinkingInjectionMarker} {
@@ -726,7 +759,7 @@ func TestApplyCurrentInputFileUploadsFullContextFile(t *testing.T) {
 			t.Fatalf("expected full context file to contain %q, got %q", want, uploadedText)
 		}
 	}
-	if strings.Contains(out.FinalPrompt, "first user turn") || strings.Contains(out.FinalPrompt, "latest user turn") || strings.Contains(out.FinalPrompt, "CURRENT_USER_INPUT.txt") || strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "Read that file") || strings.Contains(out.FinalPrompt, "Read HISTORY") {
+	if strings.Contains(out.FinalPrompt, "first user turn") || strings.Contains(out.FinalPrompt, "latest user turn") || strings.Contains(out.FinalPrompt, "CURRENT_USER_INPUT.txt") || strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "上下文.txt") || strings.Contains(out.FinalPrompt, "Read that file") || strings.Contains(out.FinalPrompt, "Read HISTORY") || strings.Contains(out.FinalPrompt, "读取上下文") {
 		t.Fatalf("expected live prompt to use only a neutral continuation instruction, got %s", out.FinalPrompt)
 	}
 	if !strings.Contains(out.FinalPrompt, "最新上下文已经做成文件发你了，你可以开始工作了") {
@@ -844,13 +877,15 @@ func TestApplyCurrentInputFileUsesRequestLocalPrompt(t *testing.T) {
 	}
 	for _, want := range []string{
 		"最新上下文已经做成文件发你了，你可以开始工作了",
+		"优先遵循附带上下文中的 WORKING STATE",
+		"从最新 assistant/tool 进度继续",
 		"只有最新用户消息明确要求继续时才继续",
 	} {
 		if !strings.Contains(out.FinalPrompt, want) {
 			t.Fatalf("expected revised neutral prompt to contain %q, got %q", want, out.FinalPrompt)
 		}
 	}
-	if strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "Read HISTORY") {
+	if strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "上下文.txt") || strings.Contains(out.FinalPrompt, "Read HISTORY") || strings.Contains(out.FinalPrompt, "读取上下文") {
 		t.Fatalf("expected live prompt not to look like a local file-read instruction, got %q", out.FinalPrompt)
 	}
 	if strings.Contains(out.FinalPrompt, "standalone") || strings.Contains(out.FinalPrompt, "instead of continuing prior work") {
@@ -897,13 +932,13 @@ func TestApplyCurrentInputFileInlinesToolPromptWhenEnabled(t *testing.T) {
 	if len(ds.uploadCalls) != 1 {
 		t.Fatalf("expected only context upload, got %d", len(ds.uploadCalls))
 	}
-	if ds.uploadCalls[0].Filename != "HISTORY.txt" {
-		t.Fatalf("expected only upload to stay HISTORY.txt, got %q", ds.uploadCalls[0].Filename)
+	if ds.uploadCalls[0].Filename != "上下文.txt" {
+		t.Fatalf("expected only upload to stay 上下文.txt, got %q", ds.uploadCalls[0].Filename)
 	}
 	historyText := string(ds.uploadCalls[0].Data)
 	for _, forbidden := range []string{"=== TOOL INSTRUCTIONS, MUST FOLLOW ===", "You have access to these tools:", "Tool: search"} {
 		if strings.Contains(historyText, forbidden) {
-			t.Fatalf("expected HISTORY.txt to stay free of tool prompt content %q, got %q", forbidden, historyText)
+			t.Fatalf("expected context file to stay free of tool prompt content %q, got %q", forbidden, historyText)
 		}
 	}
 	if !strings.Contains(out.FinalPrompt, "You have access to these tools:") || !strings.Contains(out.FinalPrompt, "Tool: search") {
@@ -925,7 +960,7 @@ func TestApplyCurrentInputFileInlinesToolPromptWhenEnabled(t *testing.T) {
 			t.Fatalf("expected final prompt to contain tool prompt anchor %q, got %s", want, out.FinalPrompt)
 		}
 	}
-	for _, forbidden := range []string{"HISTORY.txt", "Read HISTORY"} {
+	for _, forbidden := range []string{"HISTORY.txt", "上下文.txt", "Read HISTORY", "读取上下文"} {
 		if strings.Contains(out.FinalPrompt, forbidden) {
 			t.Fatalf("expected live prompt not to look like a local file-read instruction %q, got %s", forbidden, out.FinalPrompt)
 		}
@@ -1008,7 +1043,7 @@ func TestChatCompletionsCurrentInputFileUploadsContextAndKeepsNeutralPrompt(t *t
 		t.Fatalf("expected 1 upload call, got %d", len(ds.uploadCalls))
 	}
 	upload := ds.uploadCalls[0]
-	if upload.Filename != "HISTORY.txt" {
+	if upload.Filename != "上下文.txt" {
 		t.Fatalf("unexpected upload filename: %q", upload.Filename)
 	}
 	if upload.Purpose != "assistants" {
@@ -1025,7 +1060,7 @@ func TestChatCompletionsCurrentInputFileUploadsContextAndKeepsNeutralPrompt(t *t
 		t.Fatal("expected completion payload to be captured")
 	}
 	promptText, _ := ds.completionReq["prompt"].(string)
-	if !strings.Contains(promptText, "最新上下文已经做成文件发你了，你可以开始工作了") || strings.Contains(promptText, "HISTORY.txt") || strings.Contains(promptText, "Read HISTORY") {
+	if !strings.Contains(promptText, "最新上下文已经做成文件发你了，你可以开始工作了") || strings.Contains(promptText, "HISTORY.txt") || strings.Contains(promptText, "上下文.txt") || strings.Contains(promptText, "Read HISTORY") || strings.Contains(promptText, "读取上下文") {
 		t.Fatalf("expected attached-context instruction without local file-read wording, got %s", promptText)
 	}
 	if strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
@@ -1071,7 +1106,7 @@ func TestResponsesCurrentInputFileUploadsContextAndKeepsNeutralPrompt(t *testing
 		t.Fatal("expected completion payload to be captured")
 	}
 	promptText, _ := ds.completionReq["prompt"].(string)
-	if !strings.Contains(promptText, "最新上下文已经做成文件发你了，你可以开始工作了") || strings.Contains(promptText, "HISTORY.txt") || strings.Contains(promptText, "Read HISTORY") {
+	if !strings.Contains(promptText, "最新上下文已经做成文件发你了，你可以开始工作了") || strings.Contains(promptText, "HISTORY.txt") || strings.Contains(promptText, "上下文.txt") || strings.Contains(promptText, "Read HISTORY") || strings.Contains(promptText, "读取上下文") {
 		t.Fatalf("expected attached-context instruction without local file-read wording, got %s", promptText)
 	}
 	if strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
@@ -1207,7 +1242,7 @@ func TestCurrentInputFileWorksAcrossAutoDeleteModes(t *testing.T) {
 				t.Fatalf("expected completion payload for mode=%s", mode)
 			}
 			promptText, _ := ds.completionReq["prompt"].(string)
-			if !strings.Contains(promptText, "最新上下文已经做成文件发你了，你可以开始工作了") || strings.Contains(promptText, "HISTORY.txt") || strings.Contains(promptText, "Read HISTORY") || strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
+			if !strings.Contains(promptText, "最新上下文已经做成文件发你了，你可以开始工作了") || strings.Contains(promptText, "HISTORY.txt") || strings.Contains(promptText, "上下文.txt") || strings.Contains(promptText, "Read HISTORY") || strings.Contains(promptText, "读取上下文") || strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
 				t.Fatalf("unexpected prompt for mode=%s: %s", mode, promptText)
 			}
 		})

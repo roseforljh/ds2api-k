@@ -259,6 +259,27 @@ func TestBuildOpenAICurrentInputContextTranscriptScrubsEditFailurePayload(t *tes
 	}
 }
 
+func TestBuildOpenAICurrentInputContextTranscriptSummarizesEditFailureRecovery(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "修改 executors.go"},
+		map[string]any{"role": "assistant", "content": "我准备修改 stop reason 归一化。\n\nUpdate(internal\\provider\\executors.go)\nError editing file"},
+		map[string]any{"role": "user", "content": "继续"},
+	}
+
+	transcript := BuildOpenAICurrentInputContextTranscript(messages)
+	for _, want := range []string{
+		"Recent edit failure:",
+		"File: internal\\provider\\executors.go",
+		"Error: Error editing file",
+		"Likely cause: edit context did not match the latest file contents",
+		"Recovery instruction: Re-read the target file before editing again",
+	} {
+		if !strings.Contains(transcript, want) {
+			t.Fatalf("expected edit failure recovery hint %q in transcript, got %q", want, transcript)
+		}
+	}
+}
+
 func TestBuildOpenAICurrentInputContextTranscriptScrubsRawToolCallMarkup(t *testing.T) {
 	messages := []any{
 		map[string]any{"role": "user", "content": "继续"},

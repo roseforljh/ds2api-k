@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	currentInputFilename    = "HISTORY.txt"
+	currentInputFilename    = "上下文.txt"
 	currentInputContentType = "text/plain; charset=utf-8"
 	currentInputPurpose     = "assistants"
 )
@@ -135,14 +135,14 @@ func latestUserInputForFile(messages []any) (int, string) {
 }
 
 func currentInputFilePrompt() string {
-	return "最新上下文已经做成文件发你了，你可以开始工作了。请只使用本次请求附带的上下文、ref_file_ids 和最新用户消息；不要使用账号记忆、最近聊天、其他会话或未列入 ref_file_ids 的文件。若上下文工作状态为 no_active_working，不要重复已完成回答。只有最新用户消息明确要求继续时才继续；否则直接回答最新用户消息。"
+	return "最新上下文已经做成文件发你了，你可以开始工作了。优先遵循附带上下文中的 WORKING STATE；若它要求 continue_agent_tail，就从最新 assistant/tool 进度继续，不要回到原始用户请求重做。请只使用本次请求附带的上下文、ref_file_ids 和最新用户消息；不要使用账号记忆、最近聊天、其他会话或未列入 ref_file_ids 的文件。若上下文工作状态为 no_active_working，不要重复已完成回答。只有最新用户消息明确要求继续时才继续；否则直接回答最新用户消息。"
 }
 
 func currentInputFilePromptWithInlineTools(toolPrompt string) string {
 	return strings.TrimSpace("=== TOOL INSTRUCTIONS, MUST FOLLOW ===\n" +
 		strings.TrimSpace(toolPrompt) +
 		"\n=== END TOOL INSTRUCTIONS ===\n" +
-		"最新上下文已经做成文件发你了，你可以开始工作了。请只使用本次请求附带的上下文、工具说明、ref_file_ids 和最新用户消息；不要使用账号记忆、最近聊天、其他会话或未列入 ref_file_ids 的文件。若上下文工作状态为 no_active_working，不要重复已完成回答。只有最新用户消息明确要求继续时才继续；否则直接回答最新用户消息。")
+		"最新上下文已经做成文件发你了，你可以开始工作了。优先遵循附带上下文中的 WORKING STATE；若它要求 continue_agent_tail，就从最新 assistant/tool 进度继续，不要回到原始用户请求重做。请只使用本次请求附带的上下文、工具说明、ref_file_ids 和最新用户消息；不要使用账号记忆、最近聊天、其他会话或未列入 ref_file_ids 的文件。若上下文工作状态为 no_active_working，不要重复已完成回答。只有最新用户消息明确要求继续时才继续；否则直接回答最新用户消息。")
 }
 
 func withUTF8BOM(text string) []byte {

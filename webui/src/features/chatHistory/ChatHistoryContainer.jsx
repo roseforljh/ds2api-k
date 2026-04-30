@@ -180,7 +180,7 @@ function HistoryTextView({ item, t, onMessage }) {
     if (!historyText) return null
     return (
         <TextFileCard
-            filename="HISTORY.txt"
+            filename="上下文.txt"
             text={historyText}
             t={t}
             onMessage={onMessage}

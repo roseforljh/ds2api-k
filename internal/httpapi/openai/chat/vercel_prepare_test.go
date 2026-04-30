@@ -130,7 +130,7 @@ func TestHandleVercelStreamPrepareAppliesCurrentInputFile(t *testing.T) {
 		t.Fatalf("expected payload object, got %#v", body["payload"])
 	}
 	promptText, _ := payload["prompt"].(string)
-	if !strings.Contains(promptText, "最新上下文已经做成文件发你了，你可以开始工作了") || strings.Contains(promptText, "HISTORY.txt") || strings.Contains(promptText, "Read HISTORY") {
+	if !strings.Contains(promptText, "最新上下文已经做成文件发你了，你可以开始工作了") || strings.Contains(promptText, "HISTORY.txt") || strings.Contains(promptText, "上下文.txt") || strings.Contains(promptText, "Read HISTORY") || strings.Contains(promptText, "读取上下文") {
 		t.Fatalf("expected attached-context prompt without local file-read wording, got %s", promptText)
 	}
 	if strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {

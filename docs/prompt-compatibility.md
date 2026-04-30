@@ -297,7 +297,7 @@ Next action:
 ...
 ```
 
-开启后，请求的 live prompt 不再直接内联完整上下文，而是保留一个 user role 的短提示，明确要求模型先读 `HISTORY.txt WORKING STATE`；上传后的 `file_id` 会进入 `ref_file_ids`。如果当前请求有 tools，工具协议以 `TOOL INSTRUCTIONS, MUST FOLLOW` 区块 inline 在该 live prompt 顶部，确保模型在同一条上游消息中直接看到工具调用格式；该工具协议不会进入 `HISTORY.txt`，也不会作为 C 端真实用户消息持久化展示。DS2API 本地 chat history 会使用原始请求消息和最新真实用户输入，隐藏这个 synthetic live prompt。
+开启后，请求的 live prompt 不再直接内联完整上下文，也不再写“Read HISTORY.txt”这类容易被 Agent 误判为本地文件读取的指令；它只保留一个 user role 的短提示，说明“最新上下文已经做成文件发你了，你可以开始工作了”，并约束模型只使用本次请求附带上下文、`ref_file_ids` 和最新用户消息。上传后的 `file_id` 会进入 `ref_file_ids`。如果当前请求有 tools，工具协议以 `TOOL INSTRUCTIONS, MUST FOLLOW` 区块 inline 在该 live prompt 顶部，确保模型在同一条上游消息中直接看到工具调用格式；该工具协议不会进入 `HISTORY.txt`，也不会作为 C 端真实用户消息持久化展示。DS2API 本地 chat history 会使用原始请求消息和最新真实用户输入，隐藏这个 synthetic live prompt。
 
 ## 10. 各协议入口的差异
 
@@ -346,7 +346,7 @@ Next action:
 
 ```json
 {
-  "prompt": "<｜begin▁of▁sentence｜><｜User｜>=== TOOL INSTRUCTIONS, MUST FOLLOW ===\n...tool prompt...\n=== END TOOL INSTRUCTIONS ===\nRead HISTORY.txt WORKING STATE. If it says no_active_working, do not repeat completed answers. Use only attached context, tool instructions, ref_file_ids, and latest user message; no account memories, recent chats, or other sessions.<｜Assistant｜>",
+  "prompt": "<｜begin▁of▁sentence｜><｜User｜>=== TOOL INSTRUCTIONS, MUST FOLLOW ===\n...tool prompt...\n=== END TOOL INSTRUCTIONS ===\n最新上下文已经做成文件发你了，你可以开始工作了。请只使用本次请求附带的上下文、工具说明、ref_file_ids 和最新用户消息；不要使用账号记忆、最近聊天、其他会话或未列入 ref_file_ids 的文件。若上下文工作状态为 no_active_working，不要重复已完成回答。只有最新用户消息明确要求继续时才继续；否则直接回答最新用户消息。<｜Assistant｜>",
   "ref_file_ids": [
     "file-current-input-history"
   ],

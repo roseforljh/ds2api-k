@@ -439,6 +439,12 @@ function scanToolMarkupTagAt(text, start) {
     while (i < raw.length && isToolMarkupSeparator(raw[i])) {
       i += 1;
     }
+    if (lower.startsWith('dsep', i)) {
+      i += 'dsep'.length;
+      while (i < raw.length && isToolMarkupSeparator(raw[i])) {
+        i += 1;
+      }
+    }
   }
   const { name, len } = matchToolMarkupName(lower, i);
   if (!name) {
@@ -533,6 +539,7 @@ function findPartialToolMarkupStart(text) {
     '<｜dsml|tool_calls', '<｜dsml|invoke', '<｜dsml|parameter',
     '<dsmltool_calls', '<dsmlinvoke', '<dsmlparameter',
     '<dsml tool_calls', '<dsml invoke', '<dsml parameter',
+    '<dsml_dsep_tool_calls', '<dsml_dsep_invoke', '<dsml_dsep_parameter',
     '<dsml|tool_calls', '<dsml|invoke', '<dsml|parameter',
     '<|dsmltool_calls', '<|dsmlinvoke', '<|dsmlparameter',
     '<|dsml tool_calls', '<|dsml invoke', '<|dsml parameter',
@@ -550,7 +557,7 @@ function isToolMarkupPipe(ch) {
 }
 
 function isToolMarkupSeparator(ch) {
-  return ch === ' ' || ch === '\t' || ch === '\r' || ch === '\n' || isToolMarkupPipe(ch);
+  return ch === '_' || ch === ' ' || ch === '\t' || ch === '\r' || ch === '\n' || isToolMarkupPipe(ch);
 }
 
 function matchToolMarkupName(lower, start) {

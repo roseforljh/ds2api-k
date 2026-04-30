@@ -57,6 +57,15 @@ test('parseToolCalls parses DSML shell as XML-compatible tool call', () => {
   assert.deepEqual(calls[0].input, { path: 'README.MD' });
 });
 
+test('parseToolCalls parses DSML_DSEP shell as XML-compatible tool call', () => {
+  const payload = '<DSML_DSEP_tool_calls><DSML_DSEP_invoke name="Read"><DSML_DSEP_parameter name="file_path"><![CDATA[C:\\Users\\me\\repo\\README.md]]></DSML_DSEP_parameter><DSML_DSEP_parameter name="limit"><![CDATA[55]]></DSML_DSEP_parameter></DSML_DSEP_invoke></DSML_DSEP_tool_calls>';
+  const calls = parseToolCalls(payload, ['Read']);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].name, 'Read');
+  assert.equal(calls[0].input.file_path, 'C:\\Users\\me\\repo\\README.md');
+  assert.equal(calls[0].input.limit, 55);
+});
+
 test('parseToolCalls tolerates DSML space-separator typo', () => {
   const payload = '<|DSML tool_calls><|DSML invoke name="Read"><|DSML parameter name="file_path"><![CDATA[/tmp/input.txt]]></|DSML parameter></|DSML invoke></|DSML tool_calls>';
   const calls = parseToolCalls(payload, ['Read']);
@@ -290,6 +299,24 @@ test('sieve emits tool_calls for DSML space-separator typo', () => {
   assert.equal(finalCalls[0].input.file_path, '/tmp/input.txt');
   assert.equal(text.includes('准备读取文件'), true);
   assert.equal(text.includes('<|DSML invoke'), false);
+});
+
+test('sieve emits tool_calls for DSML_DSEP wrapper without leaking text', () => {
+  const input = [
+    '<DSML_DSEP_tool_calls>\n',
+    '<DSML_DSEP_invoke name="Read">\n',
+    '<DSML_DSEP_parameter name="file_path"><![CDATA[C:\\Users\\me\\repo\\README.md]]></DSML_DSEP_parameter>\n',
+    '</DSML_DSEP_invoke>\n',
+    '</DSML_DSEP_tool_calls>',
+  ].join('');
+  const state = createToolSieveState();
+  const events = processToolSieveChunk(state, input, ['Read']).concat(flushToolSieve(state, ['Read']));
+  const finalCalls = events.filter((evt) => evt.type === 'tool_calls').flatMap((evt) => evt.calls || []);
+  const text = events.filter((evt) => evt.type === 'text').map((evt) => evt.text || '').join('');
+  assert.equal(finalCalls.length, 1);
+  assert.equal(finalCalls[0].name, 'Read');
+  assert.equal(text.includes('DSML_DSEP'), false);
+  assert.equal(text.includes('README.md'), false);
 });
 
 test('sieve keeps DSML space lookalike tag names as text', () => {

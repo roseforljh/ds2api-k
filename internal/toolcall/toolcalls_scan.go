@@ -152,6 +152,12 @@ func scanToolMarkupTagAt(text string, start int) (ToolMarkupTag, bool) {
 		for next, ok := consumeToolMarkupSeparator(text, i); ok; next, ok = consumeToolMarkupSeparator(text, i) {
 			i = next
 		}
+		if strings.HasPrefix(lower[i:], "dsep") {
+			i += len("dsep")
+			for next, ok := consumeToolMarkupSeparator(text, i); ok; next, ok = consumeToolMarkupSeparator(text, i) {
+				i = next
+			}
+		}
 	} else if strings.HasPrefix(lower[i:], "dsm") {
 		dsmlLike = true
 		i += len("dsm")
@@ -259,7 +265,7 @@ func consumeToolMarkupSeparator(text string, idx int) (int, bool) {
 	if idx >= len(text) {
 		return idx, false
 	}
-	if text[idx] == ' ' || text[idx] == '\t' || text[idx] == '\r' || text[idx] == '\n' {
+	if text[idx] == '_' || text[idx] == ' ' || text[idx] == '\t' || text[idx] == '\r' || text[idx] == '\n' {
 		return idx + 1, true
 	}
 	if next, ok := consumeToolMarkupPipe(text, idx); ok {

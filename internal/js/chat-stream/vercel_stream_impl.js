@@ -169,6 +169,12 @@ async function handleVercelStream(req, res, rawBody, payload) {
     if (typeof res.flushHeaders === 'function') {
       res.flushHeaders();
     }
+    if (!clientClosed && !res.writableEnded && !res.destroyed) {
+      res.write(': keep-alive\n\n');
+      if (typeof res.flush === 'function') {
+        res.flush();
+      }
+    }
 
     const created = Math.floor(Date.now() / 1000);
     let currentType = thinkingEnabled ? 'thinking' : 'text';
@@ -381,6 +387,15 @@ async function handleVercelStream(req, res, rawBody, payload) {
           if (clientClosed || isAbortError(err)) {
             await finish('stop');
             return { terminal: true, retryable: false };
+          }
+          if (
+            allowDeferEmpty
+            && outputText.trim() === ''
+            && thinkingText.trim() === ''
+            && !toolCallsEmitted
+            && !toolCallsDoneEmitted
+          ) {
+            return { terminal: false, retryable: true, responseMessageID: continueState.responseMessageID };
           }
           await finish('stop');
           return { terminal: true, retryable: false };

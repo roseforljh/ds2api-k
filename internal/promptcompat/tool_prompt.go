@@ -15,15 +15,27 @@ func injectToolPrompt(messages []map[string]any, tools []any, policy ToolChoiceP
 		return messages, names
 	}
 
-	for i := range messages {
-		if messages[i]["role"] == "system" {
-			old, _ := messages[i]["content"].(string)
-			messages[i]["content"] = strings.TrimSpace(old + "\n\n" + toolPrompt)
+	wrapped := "=== TOOL INSTRUCTIONS, MUST FOLLOW ===\n" + strings.TrimSpace(toolPrompt) + "\n=== END TOOL INSTRUCTIONS ==="
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i]["role"] == "user" {
+			old := strings.TrimSpace(normalizeToolPromptTargetContent(messages[i]["content"]))
+			messages[i]["content"] = strings.TrimSpace(old + "\n\n" + wrapped)
 			return messages, names
 		}
 	}
-	messages = append([]map[string]any{{"role": "system", "content": toolPrompt}}, messages...)
+	messages = append(messages, map[string]any{"role": "user", "content": wrapped})
 	return messages, names
+}
+
+func normalizeToolPromptTargetContent(v any) string {
+	if text, ok := v.(string); ok {
+		return text
+	}
+	encoded, err := json.Marshal(v)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
 }
 
 func BuildOpenAIToolPrompt(toolsRaw any, policy ToolChoicePolicy) (string, []string) {

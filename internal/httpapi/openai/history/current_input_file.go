@@ -135,14 +135,14 @@ func latestUserInputForFile(messages []any) (int, string) {
 }
 
 func currentInputFilePrompt() string {
-	return "Read HISTORY.txt WORKING STATE first. If it says no_active_working, do not repeat completed answers. Use only this request's attached context, ref_file_ids, and latest user message; no account memories, recent chats, or other sessions. Continue only if the latest user asks; otherwise answer the latest user directly."
+	return "最新上下文已经做成文件发你了，你可以开始工作了。请只使用本次请求附带的上下文、ref_file_ids 和最新用户消息；不要使用账号记忆、最近聊天、其他会话或未列入 ref_file_ids 的文件。若上下文工作状态为 no_active_working，不要重复已完成回答。只有最新用户消息明确要求继续时才继续；否则直接回答最新用户消息。"
 }
 
 func currentInputFilePromptWithInlineTools(toolPrompt string) string {
 	return strings.TrimSpace("=== TOOL INSTRUCTIONS, MUST FOLLOW ===\n" +
 		strings.TrimSpace(toolPrompt) +
 		"\n=== END TOOL INSTRUCTIONS ===\n" +
-		"Read HISTORY.txt WORKING STATE. If it says no_active_working, do not repeat completed answers. Use only attached context, tool instructions, ref_file_ids, and latest user message; no account memories, recent chats, or other sessions.")
+		"最新上下文已经做成文件发你了，你可以开始工作了。请只使用本次请求附带的上下文、工具说明、ref_file_ids 和最新用户消息；不要使用账号记忆、最近聊天、其他会话或未列入 ref_file_ids 的文件。若上下文工作状态为 no_active_working，不要重复已完成回答。只有最新用户消息明确要求继续时才继续；否则直接回答最新用户消息。")
 }
 
 func withUTF8BOM(text string) []byte {

@@ -426,7 +426,7 @@ func TestChatCompletionsCurrentInputFilePersistsNeutralMessagesAndHistoryText(t 
 			t.Fatalf("synthetic prompt leaked into persisted messages: %#v", full.Messages)
 		}
 	}
-	if !strings.Contains(full.FinalPrompt, "HISTORY.txt") || !strings.Contains(full.FinalPrompt, "WORKING STATE") {
+	if !strings.Contains(full.FinalPrompt, "最新上下文已经做成文件发你了，你可以开始工作了") || strings.Contains(full.FinalPrompt, "HISTORY.txt") || strings.Contains(full.FinalPrompt, "Read HISTORY") {
 		t.Fatalf("expected live prompt to be persisted for official-web style history, got %q", full.FinalPrompt)
 	}
 }
@@ -471,7 +471,7 @@ func TestChatCompletionsHistoryHidesInlineToolPromptFromWebUI(t *testing.T) {
 	if strings.Contains(full.FinalPrompt, "=== TOOL INSTRUCTIONS, MUST FOLLOW ===") || strings.Contains(full.FinalPrompt, "Tool: search") || strings.Contains(full.FinalPrompt, "You have access to these tools:") {
 		t.Fatalf("expected WebUI final prompt to hide injected tool instructions, got %q", full.FinalPrompt)
 	}
-	if !strings.Contains(full.FinalPrompt, "HISTORY.txt") || !strings.Contains(full.FinalPrompt, "WORKING STATE") {
+	if !strings.Contains(full.FinalPrompt, "最新上下文已经做成文件发你了，你可以开始工作了") || strings.Contains(full.FinalPrompt, "HISTORY.txt") || strings.Contains(full.FinalPrompt, "Read HISTORY") {
 		t.Fatalf("expected WebUI final prompt to keep live prompt context instruction, got %q", full.FinalPrompt)
 	}
 	if full.ToolPromptText != "" {

@@ -726,10 +726,10 @@ func TestApplyCurrentInputFileUploadsFullContextFile(t *testing.T) {
 			t.Fatalf("expected full context file to contain %q, got %q", want, uploadedText)
 		}
 	}
-	if strings.Contains(out.FinalPrompt, "first user turn") || strings.Contains(out.FinalPrompt, "latest user turn") || strings.Contains(out.FinalPrompt, "CURRENT_USER_INPUT.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
+	if strings.Contains(out.FinalPrompt, "first user turn") || strings.Contains(out.FinalPrompt, "latest user turn") || strings.Contains(out.FinalPrompt, "CURRENT_USER_INPUT.txt") || strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "Read that file") || strings.Contains(out.FinalPrompt, "Read HISTORY") {
 		t.Fatalf("expected live prompt to use only a neutral continuation instruction, got %s", out.FinalPrompt)
 	}
-	if !strings.Contains(out.FinalPrompt, "latest user") {
+	if !strings.Contains(out.FinalPrompt, "最新上下文已经做成文件发你了，你可以开始工作了") {
 		t.Fatalf("expected neutral continuation instruction in live prompt, got %s", out.FinalPrompt)
 	}
 }
@@ -837,18 +837,21 @@ func TestApplyCurrentInputFileUsesRequestLocalPrompt(t *testing.T) {
 		strings.Contains(strings.ToLower(out.FinalPrompt), "do not restart") {
 		t.Fatalf("expected request-local neutral prompt, got %q", out.FinalPrompt)
 	}
-	for _, want := range []string{"latest user message", "other sessions", "no_active_working"} {
+	for _, want := range []string{"最新用户消息", "其他会话", "no_active_working"} {
 		if !strings.Contains(out.FinalPrompt, want) {
 			t.Fatalf("expected final prompt to contain %q, got %q", want, out.FinalPrompt)
 		}
 	}
 	for _, want := range []string{
-		"Continue only if the latest user asks",
-		"otherwise answer the latest user directly",
+		"最新上下文已经做成文件发你了，你可以开始工作了",
+		"只有最新用户消息明确要求继续时才继续",
 	} {
 		if !strings.Contains(out.FinalPrompt, want) {
 			t.Fatalf("expected revised neutral prompt to contain %q, got %q", want, out.FinalPrompt)
 		}
+	}
+	if strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "Read HISTORY") {
+		t.Fatalf("expected live prompt not to look like a local file-read instruction, got %q", out.FinalPrompt)
 	}
 	if strings.Contains(out.FinalPrompt, "standalone") || strings.Contains(out.FinalPrompt, "instead of continuing prior work") {
 		t.Fatalf("expected old standalone continuation wording to be removed, got %q", out.FinalPrompt)
@@ -916,12 +919,15 @@ func TestApplyCurrentInputFileInlinesToolPromptWhenEnabled(t *testing.T) {
 		"Tool-call tags must use ASCII punctuation only",
 		"Never use fullwidth or localized punctuation in tool-call tags",
 		"Forbidden in tool-call tags: ｜ 〈 〉 ！ ／ “ ”",
-		"HISTORY.txt",
-		"WORKING STATE",
 		"no_active_working",
 	} {
 		if !strings.Contains(out.FinalPrompt, want) {
 			t.Fatalf("expected final prompt to contain tool prompt anchor %q, got %s", want, out.FinalPrompt)
+		}
+	}
+	for _, forbidden := range []string{"HISTORY.txt", "Read HISTORY"} {
+		if strings.Contains(out.FinalPrompt, forbidden) {
+			t.Fatalf("expected live prompt not to look like a local file-read instruction %q, got %s", forbidden, out.FinalPrompt)
 		}
 	}
 	for _, old := range []string{"TOOL_PROMPT.txt", "If the latest user message is standalone"} {
@@ -929,7 +935,7 @@ func TestApplyCurrentInputFileInlinesToolPromptWhenEnabled(t *testing.T) {
 			t.Fatalf("expected old tool prompt wording %q to be removed, got %s", old, out.FinalPrompt)
 		}
 	}
-	if !strings.Contains(out.FinalPrompt, "latest user message") || !strings.Contains(out.FinalPrompt, "tool instructions") {
+	if !strings.Contains(out.FinalPrompt, "最新用户消息") || !strings.Contains(out.FinalPrompt, "工具说明") {
 		t.Fatalf("expected final prompt to activate attached tool instructions, got %s", out.FinalPrompt)
 	}
 	if len(out.RefFileIDs) != 1 || out.RefFileIDs[0] != "file-inline-1" {
@@ -1019,8 +1025,8 @@ func TestChatCompletionsCurrentInputFileUploadsContextAndKeepsNeutralPrompt(t *t
 		t.Fatal("expected completion payload to be captured")
 	}
 	promptText, _ := ds.completionReq["prompt"].(string)
-	if !strings.Contains(promptText, "HISTORY.txt WORKING STATE") {
-		t.Fatalf("expected neutral completion prompt, got %s", promptText)
+	if !strings.Contains(promptText, "最新上下文已经做成文件发你了，你可以开始工作了") || strings.Contains(promptText, "HISTORY.txt") || strings.Contains(promptText, "Read HISTORY") {
+		t.Fatalf("expected attached-context instruction without local file-read wording, got %s", promptText)
 	}
 	if strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
 		t.Fatalf("expected prompt to hide original turns, got %s", promptText)
@@ -1065,8 +1071,8 @@ func TestResponsesCurrentInputFileUploadsContextAndKeepsNeutralPrompt(t *testing
 		t.Fatal("expected completion payload to be captured")
 	}
 	promptText, _ := ds.completionReq["prompt"].(string)
-	if !strings.Contains(promptText, "HISTORY.txt WORKING STATE") {
-		t.Fatalf("expected neutral completion prompt, got %s", promptText)
+	if !strings.Contains(promptText, "最新上下文已经做成文件发你了，你可以开始工作了") || strings.Contains(promptText, "HISTORY.txt") || strings.Contains(promptText, "Read HISTORY") {
+		t.Fatalf("expected attached-context instruction without local file-read wording, got %s", promptText)
 	}
 	if strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
 		t.Fatalf("expected prompt to hide original turns, got %s", promptText)
@@ -1201,7 +1207,7 @@ func TestCurrentInputFileWorksAcrossAutoDeleteModes(t *testing.T) {
 				t.Fatalf("expected completion payload for mode=%s", mode)
 			}
 			promptText, _ := ds.completionReq["prompt"].(string)
-			if !strings.Contains(promptText, "HISTORY.txt WORKING STATE") || strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
+			if !strings.Contains(promptText, "最新上下文已经做成文件发你了，你可以开始工作了") || strings.Contains(promptText, "HISTORY.txt") || strings.Contains(promptText, "Read HISTORY") || strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
 				t.Fatalf("unexpected prompt for mode=%s: %s", mode, promptText)
 			}
 		})

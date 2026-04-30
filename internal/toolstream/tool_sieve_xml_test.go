@@ -1,6 +1,7 @@
 package toolstream
 
 import (
+	"ds2api/internal/toolcall"
 	"strings"
 	"testing"
 )
@@ -69,6 +70,36 @@ func TestProcessToolSieveInterceptsDSMLToolCallWithoutLeak(t *testing.T) {
 	}
 	if toolCalls != 1 {
 		t.Fatalf("expected one DSML tool call, got %d events=%#v", toolCalls, events)
+	}
+}
+
+func TestProcessToolSieveInterceptsDSMLDSEPToolCallWithoutLeak(t *testing.T) {
+	state := State{}
+	chunks := []string{
+		"<DSML_DSEP_tool_calls>\n",
+		`<DSML_DSEP_invoke name="Read">` + "\n",
+		`<DSML_DSEP_parameter name="file_path"><![CDATA[C:\Users\me\repo\README.md]]></DSML_DSEP_parameter>` + "\n",
+		`<DSML_DSEP_parameter name="limit"><![CDATA[55]]></DSML_DSEP_parameter>` + "\n",
+		"</DSML_DSEP_invoke>\n",
+		"</DSML_DSEP_tool_calls>",
+	}
+	var events []Event
+	for _, chunk := range chunks {
+		events = append(events, ProcessChunk(&state, chunk, []string{"Read"})...)
+	}
+	events = append(events, Flush(&state, []string{"Read"})...)
+
+	var textContent strings.Builder
+	var calls []toolcall.ParsedToolCall
+	for _, evt := range events {
+		textContent.WriteString(evt.Content)
+		calls = append(calls, evt.ToolCalls...)
+	}
+	if strings.Contains(textContent.String(), "DSML_DSEP") || strings.Contains(textContent.String(), "README.md") {
+		t.Fatalf("DSML_DSEP tool call content leaked to text: %q", textContent.String())
+	}
+	if len(calls) != 1 || calls[0].Name != "Read" || calls[0].Input["file_path"] == "" {
+		t.Fatalf("expected one DSML_DSEP Read tool call, got events=%#v calls=%#v", events, calls)
 	}
 }
 

@@ -88,6 +88,40 @@ func TestBuildOpenAIFinalPrompt_VercelPreparePathKeepsFinalAnswerInstruction(t *
 	}
 }
 
+func TestBuildOpenAIFinalPromptInjectsToolPromptIntoLatestUserMessage(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "system", "content": "You are helpful"},
+		map[string]any{"role": "user", "content": "请调用工具"},
+	}
+	tools := []any{
+		map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "search",
+				"description": "search docs",
+				"parameters": map[string]any{
+					"type": "object",
+				},
+			},
+		},
+	}
+
+	finalPrompt, _ := buildOpenAIFinalPrompt(messages, tools, "", false)
+	if strings.Contains(finalPrompt, "<｜System｜>You are helpful\n\nYou have access to these tools") {
+		t.Fatalf("tool prompt should not be injected into system block: %q", finalPrompt)
+	}
+	for _, want := range []string{
+		"<｜User｜>请调用工具",
+		"=== TOOL INSTRUCTIONS, MUST FOLLOW ===",
+		"You have access to these tools:",
+		"=== END TOOL INSTRUCTIONS ===",
+	} {
+		if !strings.Contains(finalPrompt, want) {
+			t.Fatalf("finalPrompt missing %q: %q", want, finalPrompt)
+		}
+	}
+}
+
 func TestBuildOpenAIFinalPromptWithThinkingKeepsPromptUnchanged(t *testing.T) {
 	messages := []any{
 		map[string]any{"role": "user", "content": "继续回答上一个问题"},

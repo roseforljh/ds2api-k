@@ -261,7 +261,7 @@
         "loading": "Loading conversation history...",
         "loadFailed": "Failed to load conversation history.",
         "retentionTitle": "Debug session retention",
-        "retentionDesc": "Locked: keep only the latest 1 session for 10 minutes, then delete it permanently.",
+        "retentionDesc": "Debug session retention follows the per-account concurrency limit. Automatic cleanup deletes only old successful sessions; running, failed, stopped, or unknown sessions are preserved.",
         "refresh": "Refresh",
         "clearAll": "Clear all",
         "clearSuccess": "Conversation history cleared.",

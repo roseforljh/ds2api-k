@@ -34,6 +34,7 @@ func (s Service) ApplyCurrentInputFile(ctx context.Context, a *auth.RequestAuth,
 	if len([]rune(text)) < threshold {
 		return stdReq, nil
 	}
+	currentRequestRefFileIDs := currentInputRefFileIDs(stdReq.Messages, index)
 	fileText := promptcompat.BuildOpenAICurrentInputContextTranscript(stdReq.Messages)
 	if strings.TrimSpace(fileText) == "" {
 		return stdReq, errors.New("current user input file produced empty transcript")
@@ -80,7 +81,7 @@ func (s Service) ApplyCurrentInputFile(ctx context.Context, a *auth.RequestAuth,
 
 	stdReq.Messages = messages
 	stdReq.CurrentInputFileApplied = true
-	stdReq.RefFileIDs = prependUniqueRefFileID(nil, fileID)
+	stdReq.RefFileIDs = prependUniqueRefFileID(currentRequestRefFileIDs, fileID)
 	finalPrompt, builtToolNames := promptcompat.BuildOpenAIPrompt(messages, toolsRawForPrompt, "", stdReq.ToolChoice, stdReq.Thinking)
 	stdReq.FinalPrompt = finalPrompt
 	if toolPromptText != "" {
@@ -89,6 +90,15 @@ func (s Service) ApplyCurrentInputFile(ctx context.Context, a *auth.RequestAuth,
 		stdReq.ToolNames = builtToolNames
 	}
 	return stdReq, nil
+}
+
+func currentInputRefFileIDs(messages []any, index int) []string {
+	if index < 0 || index >= len(messages) {
+		return nil
+	}
+	return promptcompat.CollectOpenAIRefFileIDs(map[string]any{
+		"messages": []any{messages[index]},
+	})
 }
 
 func hasPriorAssistantOrToolMessage(messages []any) bool {

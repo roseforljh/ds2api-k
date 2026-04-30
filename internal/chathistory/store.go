@@ -20,13 +20,9 @@ const (
 	FileVersion      = 2
 	DisabledLimit    = 0
 	DefaultLimit     = 1
-	MaxLimit         = 1
+	MaxLimit         = 32
 	defaultPreviewAt = 160
 )
-
-var allowedLimits = map[int]struct{}{
-	DefaultLimit: {},
-}
 
 const debugRetentionTTL = 10 * time.Minute
 
@@ -400,8 +396,7 @@ func (s *Store) SetLimit(limit int) (File, error) {
 	if s.err != nil {
 		return File{}, s.err
 	}
-	_ = limit
-	s.state.Limit = DefaultLimit
+	s.state.Limit = normalizeLimit(limit)
 	s.nextRevisionLocked()
 	s.rebuildIndexLocked()
 	if err := s.saveLocked(); err != nil {
@@ -552,9 +547,7 @@ func (s *Store) saveLocked() error {
 
 func (s *Store) rebuildIndexLocked() {
 	s.enforceRetentionLocked()
-	if s.state.Limit < DisabledLimit || !isAllowedLimit(s.state.Limit) {
-		s.state.Limit = DefaultLimit
-	}
+	s.state.Limit = normalizeLimit(s.state.Limit)
 	summaries := make([]SummaryEntry, 0, len(s.details))
 	for _, item := range s.details {
 		summaries = append(summaries, summaryFromEntry(item))
@@ -565,19 +558,6 @@ func (s *Store) rebuildIndexLocked() {
 		}
 		return summaries[i].UpdatedAt > summaries[j].UpdatedAt
 	})
-	if len(summaries) > s.state.Limit {
-		keep := make(map[string]struct{}, s.state.Limit)
-		for _, item := range summaries[:s.state.Limit] {
-			keep[item.ID] = struct{}{}
-		}
-		for id := range s.details {
-			if _, ok := keep[id]; !ok {
-				s.markDetailDeletedLocked(id)
-				delete(s.details, id)
-			}
-		}
-		summaries = summaries[:s.state.Limit]
-	}
 	s.state.Items = summaries
 }
 
@@ -591,13 +571,17 @@ func (s *Store) persistRetentionLocked() error {
 
 func (s *Store) enforceRetentionLocked() bool {
 	changed := false
-	if s.state.Limit != DefaultLimit {
-		s.state.Limit = DefaultLimit
+	normalizedLimit := normalizeLimit(s.state.Limit)
+	if s.state.Limit != normalizedLimit {
+		s.state.Limit = normalizedLimit
 		changed = true
 	}
 
 	cutoff := time.Now().Add(-debugRetentionTTL).UnixMilli()
 	for id, item := range s.details {
+		if !isPrunableSuccessStatus(item.Status) {
+			continue
+		}
 		ts := item.CompletedAt
 		if ts == 0 {
 			ts = item.UpdatedAt
@@ -612,13 +596,18 @@ func (s *Store) enforceRetentionLocked() bool {
 		}
 	}
 
-	if len(s.details) <= DefaultLimit {
+	if s.state.Limit == DisabledLimit {
 		return changed
 	}
 
 	summaries := make([]SummaryEntry, 0, len(s.details))
 	for _, item := range s.details {
-		summaries = append(summaries, summaryFromEntry(item))
+		if isPrunableSuccessStatus(item.Status) {
+			summaries = append(summaries, summaryFromEntry(item))
+		}
+	}
+	if len(summaries) <= s.state.Limit {
+		return changed
 	}
 	sort.Slice(summaries, func(i, j int) bool {
 		if summaries[i].UpdatedAt == summaries[j].UpdatedAt {
@@ -626,10 +615,12 @@ func (s *Store) enforceRetentionLocked() bool {
 		}
 		return summaries[i].UpdatedAt > summaries[j].UpdatedAt
 	})
-	keep := map[string]struct{}{
-		summaries[0].ID: {},
+	keep := make(map[string]struct{}, s.state.Limit)
+	for _, item := range summaries[:s.state.Limit] {
+		keep[item.ID] = struct{}{}
 	}
-	for id := range s.details {
+	for _, item := range summaries[s.state.Limit:] {
+		id := item.ID
 		if _, ok := keep[id]; ok {
 			continue
 		}
@@ -779,8 +770,21 @@ func DetailETag(id string, revision int64) string {
 }
 
 func isAllowedLimit(limit int) bool {
-	_, ok := allowedLimits[limit]
-	return ok
+	return limit == normalizeLimit(limit)
+}
+
+func normalizeLimit(limit int) int {
+	if limit < DefaultLimit {
+		return DefaultLimit
+	}
+	if limit > MaxLimit {
+		return MaxLimit
+	}
+	return limit
+}
+
+func isPrunableSuccessStatus(status string) bool {
+	return strings.TrimSpace(strings.ToLower(status)) == "success"
 }
 
 func (s *Store) markDetailDirtyLocked(id string) {

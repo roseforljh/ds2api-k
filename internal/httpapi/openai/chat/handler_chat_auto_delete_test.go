@@ -107,7 +107,7 @@ func TestChatCompletionsAutoDeleteModes(t *testing.T) {
 	}
 }
 
-func TestChatCompletionsDefaultRetentionDeletesOldSessionsBeforeCreateOnly(t *testing.T) {
+func TestChatCompletionsDefaultRetentionDoesNotDeleteAllBeforeCreate(t *testing.T) {
 	originalDelay := remoteSessionRetentionDelay
 	remoteSessionRetentionDelay = time.Hour
 	t.Cleanup(func() { remoteSessionRetentionDelay = originalDelay })
@@ -137,8 +137,8 @@ func TestChatCompletionsDefaultRetentionDeletesOldSessionsBeforeCreateOnly(t *te
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if ds.allCalls != 1 {
-		t.Fatalf("old remote sessions should be cleared before creating the new one, all delete calls=%d want=1", ds.allCalls)
+	if ds.allCalls != 0 {
+		t.Fatalf("retention must not delete all sessions before creating the new one, all delete calls=%d want=0", ds.allCalls)
 	}
 	if ds.singleCalls != 0 {
 		t.Fatalf("current remote session should not be deleted immediately, single delete calls=%d want=0", ds.singleCalls)

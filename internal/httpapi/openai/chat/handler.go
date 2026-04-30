@@ -28,6 +28,9 @@ type Handler struct {
 
 	leaseMu      sync.Mutex
 	streamLeases map[string]streamLease
+
+	remoteSessionsOnce sync.Once
+	remoteSessions     *remoteSessionRegistry
 }
 
 type streamLease struct {

@@ -48,6 +48,42 @@ func TestBuildOpenAIToolPromptBuildsToolInstructions(t *testing.T) {
 	}
 }
 
+func TestBuildOpenAIToolPromptAddsRequiredAndOptionalParameterSummary(t *testing.T) {
+	tools := []any{
+		map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "Read",
+				"description": "Read a file",
+				"parameters": map[string]any{
+					"type":     "object",
+					"required": []any{"file_path"},
+					"properties": map[string]any{
+						"file_path": map[string]any{"type": "string", "description": "Absolute path"},
+						"offset":    map[string]any{"type": "integer"},
+						"limit":     map[string]any{"type": "integer"},
+					},
+				},
+			},
+		},
+	}
+
+	prompt, _ := BuildOpenAIToolPrompt(tools, DefaultToolChoicePolicy())
+	for _, want := range []string{
+		"Parameter summary for Read:",
+		"Required parameters:",
+		"- file_path",
+		"Optional parameters:",
+		"- limit",
+		"- offset",
+		"Never call Read without: file_path.",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("expected prompt to contain %q, got %q", want, prompt)
+		}
+	}
+}
+
 func TestBuildOpenAIToolPromptRespectsToolChoiceNone(t *testing.T) {
 	prompt, names := BuildOpenAIToolPrompt(testToolRaw("search"), ToolChoicePolicy{Mode: ToolChoiceNone})
 	if prompt != "" {

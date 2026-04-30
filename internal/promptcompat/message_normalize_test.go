@@ -259,6 +259,148 @@ func TestBuildOpenAICurrentInputContextTranscriptScrubsEditFailurePayload(t *tes
 	}
 }
 
+func TestBuildOpenAICurrentInputContextTranscriptScrubsRawToolCallMarkup(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "继续"},
+		map[string]any{"role": "assistant", "content": "准备读取\n<invoke name=\"Read\"><parameter name=\"limit\"><![CDATA[30]]></parameter>"},
+	}
+
+	transcript := BuildOpenAICurrentInputContextTranscript(messages)
+	for _, leaked := range []string{"<invoke", "<parameter", "<tool_calls", "CDATA[30]"} {
+		if strings.Contains(transcript, leaked) {
+			t.Fatalf("expected raw tool-call markup %q to be scrubbed, got %q", leaked, transcript)
+		}
+	}
+	if !strings.Contains(transcript, "[historical tool-call-like markup omitted; do not imitate]") {
+		t.Fatalf("expected anti-imitation placeholder, got %q", transcript)
+	}
+}
+
+func TestBuildOpenAICurrentInputContextTranscriptScrubsMultilineRawToolCallMarkup(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "继续"},
+		map[string]any{"role": "assistant", "content": strings.Join([]string{
+			"准备执行",
+			"<|DSML|tool_calls>",
+			"<|DSML|invoke name=\"Bash\">",
+			"<|DSML|parameter name=\"command\"><![CDATA[",
+			"rm -rf /tmp/should-not-leak",
+			"]]></|DSML|parameter>",
+			"</|DSML|invoke>",
+			"</|DSML|tool_calls>",
+			"执行完毕",
+		}, "\n")},
+	}
+
+	transcript := BuildOpenAICurrentInputContextTranscript(messages)
+	for _, leaked := range []string{"<|DSML|tool_calls", "<|DSML|invoke", "rm -rf /tmp/should-not-leak", "</|DSML|tool_calls>"} {
+		if strings.Contains(transcript, leaked) {
+			t.Fatalf("expected multiline raw tool-call payload %q to be scrubbed, got %q", leaked, transcript)
+		}
+	}
+	if !strings.Contains(transcript, "准备执行") || !strings.Contains(transcript, "执行完毕") {
+		t.Fatalf("expected surrounding assistant prose preserved, got %q", transcript)
+	}
+}
+
+func TestBuildOpenAICurrentInputContextTranscriptScrubsMultilineBareInvokeMarkup(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "继续"},
+		map[string]any{"role": "assistant", "content": strings.Join([]string{
+			"准备读取",
+			"<invoke name=\"Read\">",
+			"<parameter name=\"limit\"><![CDATA[",
+			"30",
+			"]]></parameter>",
+			"</invoke>",
+			"读取结束",
+		}, "\n")},
+	}
+
+	transcript := BuildOpenAICurrentInputContextTranscript(messages)
+	for _, leaked := range []string{"<invoke", "<parameter", "30", "</invoke>"} {
+		if strings.Contains(transcript, leaked) {
+			t.Fatalf("expected multiline bare invoke payload %q to be scrubbed, got %q", leaked, transcript)
+		}
+	}
+	if !strings.Contains(transcript, "准备读取") || !strings.Contains(transcript, "读取结束") {
+		t.Fatalf("expected surrounding assistant prose preserved, got %q", transcript)
+	}
+}
+
+func TestBuildOpenAICurrentInputContextTranscriptScrubsDSMLSpaceVariantToolMarkup(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "继续"},
+		map[string]any{"role": "assistant", "content": strings.Join([]string{
+			"准备读取",
+			"<|DSML invoke name=\"Read\">",
+			"<|DSML parameter name=\"file_path\"><![CDATA[",
+			"/tmp/should-not-leak.txt",
+			"]]></|DSML parameter>",
+			"</|DSML invoke>",
+			"读取结束",
+		}, "\n")},
+	}
+
+	transcript := BuildOpenAICurrentInputContextTranscript(messages)
+	for _, leaked := range []string{"<|DSML invoke", "<|DSML parameter", "/tmp/should-not-leak.txt", "</|DSML invoke>"} {
+		if strings.Contains(transcript, leaked) {
+			t.Fatalf("expected DSML space-variant tool payload %q to be scrubbed, got %q", leaked, transcript)
+		}
+	}
+	if !strings.Contains(transcript, "准备读取") || !strings.Contains(transcript, "读取结束") {
+		t.Fatalf("expected surrounding assistant prose preserved, got %q", transcript)
+	}
+}
+
+func TestBuildOpenAICurrentInputContextTranscriptScrubsMultilineParameterFragment(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "继续"},
+		map[string]any{"role": "assistant", "content": strings.Join([]string{
+			"残留参数",
+			"<|DSML parameter name=\"file_path\"><![CDATA[",
+			"/tmp/parameter-fragment-should-not-leak.txt",
+			"]]></|DSML parameter>",
+			"参数结束",
+		}, "\n")},
+	}
+
+	transcript := BuildOpenAICurrentInputContextTranscript(messages)
+	for _, leaked := range []string{"<|DSML parameter", "/tmp/parameter-fragment-should-not-leak.txt", "</|DSML parameter>"} {
+		if strings.Contains(transcript, leaked) {
+			t.Fatalf("expected multiline parameter fragment %q to be scrubbed, got %q", leaked, transcript)
+		}
+	}
+	if !strings.Contains(transcript, "残留参数") || !strings.Contains(transcript, "参数结束") {
+		t.Fatalf("expected surrounding assistant prose preserved, got %q", transcript)
+	}
+}
+
+func TestBuildOpenAICurrentInputContextTranscriptPreservesPlainParameterProse(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "继续"},
+		map[string]any{"role": "assistant", "content": strings.Join([]string{
+			"XML 示例说明",
+			"The <parameter> tag is used for examples.",
+			"后续说明必须保留",
+		}, "\n")},
+	}
+
+	transcript := BuildOpenAICurrentInputContextTranscript(messages)
+	for _, expected := range []string{
+		"XML 示例说明",
+		"The <parameter> tag is used for examples.",
+		"后续说明必须保留",
+	} {
+		if !strings.Contains(transcript, expected) {
+			t.Fatalf("expected plain prose %q to be preserved, got %q", expected, transcript)
+		}
+	}
+	if strings.Contains(transcript, "[historical tool-call-like markup omitted; do not imitate]") {
+		t.Fatalf("expected no tool markup omission placeholder for plain prose, got %q", transcript)
+	}
+}
+
 func TestNormalizeOpenAIMessagesForPrompt_AssistantMultipleToolCallsRemainSeparated(t *testing.T) {
 	raw := []any{
 		map[string]any{

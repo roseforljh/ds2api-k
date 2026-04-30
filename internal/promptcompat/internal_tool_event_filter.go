@@ -33,11 +33,20 @@ func sanitizePromptVisibleInternalToolEvents(role, content string) string {
 	lines := strings.Split(content, "\n")
 	out := make([]string, 0, len(lines))
 	skipToolBlock := false
+	skipRawToolCallBlock := false
+	omittedToolMarkup := false
 	for _, line := range lines {
 		if text, ok := assistantTranscriptText(line); ok {
 			skipToolBlock = false
+			skipRawToolCallBlock = false
 			if strings.TrimSpace(text) != "" {
 				out = append(out, text)
+			}
+			continue
+		}
+		if skipRawToolCallBlock {
+			if isRawToolCallBlockCloseLine(line) {
+				skipRawToolCallBlock = false
 			}
 			continue
 		}
@@ -48,6 +57,16 @@ func sanitizePromptVisibleInternalToolEvents(role, content string) string {
 			continue
 		}
 		if skipToolBlock {
+			continue
+		}
+		if isRawToolCallMarkupLine(line) {
+			if !omittedToolMarkup {
+				out = append(out, "[historical tool-call-like markup omitted; do not imitate]")
+				omittedToolMarkup = true
+			}
+			if isRawToolCallBlockOpenLine(line) && !isRawToolCallBlockCloseLine(line) {
+				skipRawToolCallBlock = true
+			}
 			continue
 		}
 		out = append(out, line)
@@ -79,4 +98,136 @@ func isInternalToolEventLeakLine(line string) bool {
 		internalToolResultUILinePattern.MatchString(trimmed) ||
 		internalToolErrorLinePattern.MatchString(trimmed) ||
 		internalProgressUILinePattern.MatchString(trimmed)
+}
+
+func isRawToolCallMarkupLine(line string) bool {
+	lower := strings.ToLower(strings.TrimSpace(line))
+	if lower == "" || !strings.Contains(lower, "<") {
+		return false
+	}
+	if isCanonicalParameterToolLine(lower) {
+		return true
+	}
+	for _, marker := range []string{
+		"<tool_calls", "</tool_calls",
+		"<invoke", "</invoke",
+		"<|dsml|tool_calls", "</|dsml|tool_calls",
+		"<|dsml|invoke", "</|dsml|invoke",
+		"<|dsml|parameter", "</|dsml|parameter",
+		"<|dsml tool_calls", "</|dsml tool_calls",
+		"<|dsml invoke", "</|dsml invoke",
+		"<|dsml parameter", "</|dsml parameter",
+		"<|dsmltool_calls", "</|dsmltool_calls",
+		"<|dsmlinvoke", "</|dsmlinvoke",
+		"<|dsmlparameter", "</|dsmlparameter",
+		"<dsml|tool_calls", "</dsml|tool_calls",
+		"<dsml|invoke", "</dsml|invoke",
+		"<dsml|parameter", "</dsml|parameter",
+		"<dsml tool_calls", "</dsml tool_calls",
+		"<dsml invoke", "</dsml invoke",
+		"<dsml parameter", "</dsml parameter",
+		"<dsmltool_calls", "</dsmltool_calls",
+		"<dsmlinvoke", "</dsmlinvoke",
+		"<dsmlparameter", "</dsmlparameter",
+		"<|tool_calls", "</|tool_calls",
+		"<|invoke", "</|invoke",
+		"<|parameter", "</|parameter",
+		"<#dsml#tool_calls", "</#dsml#tool_calls",
+		"<#dsml#invoke", "</#dsml#invoke",
+		"<#dsml#parameter", "</#dsml#parameter",
+		"<⌜dsml⌝tool_calls", "<⌜/dsml⌝tool_calls",
+		"<⌜dsml⌝invoke", "<⌜/dsml⌝invoke",
+		"<⌜dsml⌝parameter", "<⌜/dsml⌝parameter",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func isRawToolCallBlockOpenLine(line string) bool {
+	lower := strings.ToLower(strings.TrimSpace(line))
+	return strings.Contains(lower, "<tool_calls") ||
+		strings.Contains(lower, "<invoke") ||
+		isCanonicalParameterToolOpenLine(lower) ||
+		strings.Contains(lower, "<|dsml|tool_calls") ||
+		strings.Contains(lower, "<|dsml|invoke") ||
+		strings.Contains(lower, "<|dsml|parameter") ||
+		strings.Contains(lower, "<|dsml tool_calls") ||
+		strings.Contains(lower, "<|dsml invoke") ||
+		strings.Contains(lower, "<|dsml parameter") ||
+		strings.Contains(lower, "<|dsmltool_calls") ||
+		strings.Contains(lower, "<|dsmlinvoke") ||
+		strings.Contains(lower, "<|dsmlparameter") ||
+		strings.Contains(lower, "<dsml|tool_calls") ||
+		strings.Contains(lower, "<dsml|invoke") ||
+		strings.Contains(lower, "<dsml|parameter") ||
+		strings.Contains(lower, "<dsml tool_calls") ||
+		strings.Contains(lower, "<dsml invoke") ||
+		strings.Contains(lower, "<dsml parameter") ||
+		strings.Contains(lower, "<dsmltool_calls") ||
+		strings.Contains(lower, "<dsmlinvoke") ||
+		strings.Contains(lower, "<dsmlparameter") ||
+		strings.Contains(lower, "<|tool_calls") ||
+		strings.Contains(lower, "<|invoke") ||
+		strings.Contains(lower, "<|parameter") ||
+		strings.Contains(lower, "<#dsml#tool_calls") ||
+		strings.Contains(lower, "<#dsml#invoke") ||
+		strings.Contains(lower, "<#dsml#parameter") ||
+		strings.Contains(lower, "<⌜dsml⌝tool_calls") ||
+		strings.Contains(lower, "<⌜dsml⌝invoke") ||
+		strings.Contains(lower, "<⌜dsml⌝parameter")
+}
+
+func isRawToolCallBlockCloseLine(line string) bool {
+	lower := strings.ToLower(strings.TrimSpace(line))
+	return strings.Contains(lower, "</tool_calls") ||
+		strings.Contains(lower, "</invoke") ||
+		isCanonicalParameterToolCloseLine(lower) ||
+		strings.Contains(lower, "</|dsml|tool_calls") ||
+		strings.Contains(lower, "</|dsml|invoke") ||
+		strings.Contains(lower, "</|dsml|parameter") ||
+		strings.Contains(lower, "</|dsml tool_calls") ||
+		strings.Contains(lower, "</|dsml invoke") ||
+		strings.Contains(lower, "</|dsml parameter") ||
+		strings.Contains(lower, "</|dsmltool_calls") ||
+		strings.Contains(lower, "</|dsmlinvoke") ||
+		strings.Contains(lower, "</|dsmlparameter") ||
+		strings.Contains(lower, "</dsml|tool_calls") ||
+		strings.Contains(lower, "</dsml|invoke") ||
+		strings.Contains(lower, "</dsml|parameter") ||
+		strings.Contains(lower, "</dsml tool_calls") ||
+		strings.Contains(lower, "</dsml invoke") ||
+		strings.Contains(lower, "</dsml parameter") ||
+		strings.Contains(lower, "</dsmltool_calls") ||
+		strings.Contains(lower, "</dsmlinvoke") ||
+		strings.Contains(lower, "</dsmlparameter") ||
+		strings.Contains(lower, "</|tool_calls") ||
+		strings.Contains(lower, "</|invoke") ||
+		strings.Contains(lower, "</|parameter") ||
+		strings.Contains(lower, "</#dsml#tool_calls") ||
+		strings.Contains(lower, "</#dsml#invoke") ||
+		strings.Contains(lower, "</#dsml#parameter") ||
+		strings.Contains(lower, "<⌜/dsml⌝tool_calls") ||
+		strings.Contains(lower, "<⌜/dsml⌝invoke") ||
+		strings.Contains(lower, "<⌜/dsml⌝parameter")
+}
+
+func isCanonicalParameterToolLine(lowerTrimmedLine string) bool {
+	return isCanonicalParameterToolOpenLine(lowerTrimmedLine) ||
+		isCanonicalParameterToolCloseLine(lowerTrimmedLine)
+}
+
+func isCanonicalParameterToolOpenLine(lowerTrimmedLine string) bool {
+	return strings.Contains(lowerTrimmedLine, "<parameter") &&
+		!strings.Contains(lowerTrimmedLine, "</parameter") &&
+		(strings.Contains(lowerTrimmedLine, "name=") ||
+			strings.Contains(lowerTrimmedLine, "cdata["))
+}
+
+func isCanonicalParameterToolCloseLine(lowerTrimmedLine string) bool {
+	return strings.Contains(lowerTrimmedLine, "</parameter") &&
+		(strings.Contains(lowerTrimmedLine, "cdata[") ||
+			strings.Contains(lowerTrimmedLine, "]]>"))
 }

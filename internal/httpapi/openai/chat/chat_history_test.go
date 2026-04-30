@@ -102,6 +102,39 @@ func TestChatCompletionsNonStreamPersistsHistory(t *testing.T) {
 	}
 }
 
+func TestChatCompletionsHistoryRetentionFollowsAccountConcurrency(t *testing.T) {
+	historyStore := newTestChatHistoryStore(t)
+	h := &Handler{
+		Store:       mockOpenAIConfig{wideInput: true, accountMaxInflight: 2, autoDeleteMode: "none"},
+		Auth:        streamStatusAuthStub{},
+		DS:          &inlineUploadDSStub{},
+		ChatHistory: historyStore,
+	}
+
+	reqBody := `{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"hi there"}],"stream":false}`
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
+		req.Header.Set("Authorization", "Bearer direct-token")
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		h.ChatCompletions(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("request %d expected 200, got %d body=%s", i, rec.Code, rec.Body.String())
+		}
+	}
+
+	snapshot, err := historyStore.Snapshot()
+	if err != nil {
+		t.Fatalf("snapshot failed: %v", err)
+	}
+	if snapshot.Limit != 2 {
+		t.Fatalf("expected history limit to follow account concurrency=2, got %d", snapshot.Limit)
+	}
+	if len(snapshot.Items) != 2 {
+		t.Fatalf("expected two successful history items, got %#v", snapshot.Items)
+	}
+}
+
 func TestStartChatHistoryRecoversFromTransientWriteFailure(t *testing.T) {
 	historyStore := newTestChatHistoryStore(t)
 	restore := blockChatHistoryDetailDir(t, historyStore.DetailDir())

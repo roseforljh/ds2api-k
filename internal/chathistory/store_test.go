@@ -158,8 +158,26 @@ func TestStoreDeleteClearAndLimitValidation(t *testing.T) {
 	if len(snapshot.Items) != 0 {
 		t.Fatalf("expected empty items after delete, got %d", len(snapshot.Items))
 	}
-	if _, err := store.SetLimit(999); err == nil {
-		t.Fatalf("expected invalid limit error")
+	snapshot, err = store.SetLimit(999)
+	if err != nil {
+		t.Fatalf("set oversized limit failed: %v", err)
+	}
+	if snapshot.Limit != MaxLimit {
+		t.Fatalf("expected oversized limit to clamp to %d, got %d", MaxLimit, snapshot.Limit)
+	}
+	snapshot, err = store.SetLimit(-1)
+	if err != nil {
+		t.Fatalf("set negative limit failed: %v", err)
+	}
+	if snapshot.Limit != DefaultLimit {
+		t.Fatalf("expected negative limit to normalize to %d, got %d", DefaultLimit, snapshot.Limit)
+	}
+	snapshot, err = store.SetLimit(DisabledLimit)
+	if err != nil {
+		t.Fatalf("set zero limit failed: %v", err)
+	}
+	if snapshot.Limit != DefaultLimit {
+		t.Fatalf("expected zero limit to normalize to %d, got %d", DefaultLimit, snapshot.Limit)
 	}
 	if err := store.Clear(); err != nil {
 		t.Fatalf("clear failed: %v", err)
@@ -203,9 +221,188 @@ func TestStoreExpiresDebugEntryAfterTenMinutes(t *testing.T) {
 	}
 }
 
+func TestStoreRetentionKeepsProtectedEntriesBeyondSuccessLimit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "chat_history.json")
+	store := New(path)
+
+	successEntry, err := store.Start(StartParams{UserInput: "success"})
+	if err != nil {
+		t.Fatalf("start success failed: %v", err)
+	}
+	if _, err := store.Update(successEntry.ID, UpdateParams{Status: "success", Content: "ok", Completed: true}); err != nil {
+		t.Fatalf("update success failed: %v", err)
+	}
+	streamingEntry, err := store.Start(StartParams{UserInput: "streaming"})
+	if err != nil {
+		t.Fatalf("start streaming failed: %v", err)
+	}
+
+	snapshot, err := store.Snapshot()
+	if err != nil {
+		t.Fatalf("snapshot failed: %v", err)
+	}
+	if len(snapshot.Items) != 2 {
+		t.Fatalf("expected success plus protected streaming entry, got %#v", snapshot.Items)
+	}
+	if _, err := store.Get(successEntry.ID); err != nil {
+		t.Fatalf("expected success entry to remain: %v", err)
+	}
+	if _, err := store.Get(streamingEntry.ID); err != nil {
+		t.Fatalf("expected streaming entry to remain: %v", err)
+	}
+}
+
+func TestStoreRetentionPrunesOnlyOldSuccessEntries(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "chat_history.json")
+	store := New(path)
+	if _, err := store.SetLimit(2); err != nil {
+		t.Fatalf("set limit failed: %v", err)
+	}
+
+	var ids []string
+	for i := 0; i < 3; i++ {
+		entry, err := store.Start(StartParams{UserInput: "success"})
+		if err != nil {
+			t.Fatalf("start %d failed: %v", i, err)
+		}
+		if _, err := store.Update(entry.ID, UpdateParams{Status: "success", Content: "ok", Completed: true}); err != nil {
+			t.Fatalf("update %d failed: %v", i, err)
+		}
+		ids = append(ids, entry.ID)
+		time.Sleep(time.Millisecond)
+	}
+
+	snapshot, err := store.Snapshot()
+	if err != nil {
+		t.Fatalf("snapshot failed: %v", err)
+	}
+	if len(snapshot.Items) != 2 {
+		t.Fatalf("expected newest two success entries, got %#v", snapshot.Items)
+	}
+	if _, err := store.Get(ids[0]); err == nil {
+		t.Fatalf("expected oldest success entry to be pruned")
+	}
+	for _, id := range ids[1:] {
+		if _, err := store.Get(id); err != nil {
+			t.Fatalf("expected newer success entry %s to remain: %v", id, err)
+		}
+	}
+}
+
+func TestStoreRetentionProtectsErrorAndStoppedEntries(t *testing.T) {
+	tests := []struct {
+		name   string
+		status string
+	}{
+		{name: "error", status: "error"},
+		{name: "stopped", status: "stopped"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "chat_history.json")
+			store := New(path)
+
+			oldSuccess, err := store.Start(StartParams{UserInput: "old"})
+			if err != nil {
+				t.Fatalf("start old success failed: %v", err)
+			}
+			if _, err := store.Update(oldSuccess.ID, UpdateParams{Status: "success", Content: "old", Completed: true}); err != nil {
+				t.Fatalf("update old success failed: %v", err)
+			}
+			protected, err := store.Start(StartParams{UserInput: tc.status})
+			if err != nil {
+				t.Fatalf("start protected failed: %v", err)
+			}
+			if _, err := store.Update(protected.ID, UpdateParams{Status: tc.status, Content: tc.status, Completed: true}); err != nil {
+				t.Fatalf("update protected failed: %v", err)
+			}
+			newSuccess, err := store.Start(StartParams{UserInput: "new"})
+			if err != nil {
+				t.Fatalf("start new success failed: %v", err)
+			}
+			if _, err := store.Update(newSuccess.ID, UpdateParams{Status: "success", Content: "new", Completed: true}); err != nil {
+				t.Fatalf("update new success failed: %v", err)
+			}
+
+			snapshot, err := store.Snapshot()
+			if err != nil {
+				t.Fatalf("snapshot failed: %v", err)
+			}
+			if len(snapshot.Items) != 2 {
+				t.Fatalf("expected newest success plus protected entry, got %#v", snapshot.Items)
+			}
+			if _, err := store.Get(oldSuccess.ID); err == nil {
+				t.Fatalf("expected older success to be pruned")
+			}
+			if _, err := store.Get(protected.ID); err != nil {
+				t.Fatalf("expected protected %s entry to remain: %v", tc.status, err)
+			}
+			if _, err := store.Get(newSuccess.ID); err != nil {
+				t.Fatalf("expected newest success entry to remain: %v", err)
+			}
+		})
+	}
+}
+
+func TestStoreRetentionTTLExpiresOnlySuccessEntries(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "chat_history.json")
+	store := New(path)
+
+	successEntry, err := store.Start(StartParams{UserInput: "success"})
+	if err != nil {
+		t.Fatalf("start success failed: %v", err)
+	}
+	if _, err := store.Update(successEntry.ID, UpdateParams{Status: "success", Content: "success", Completed: true}); err != nil {
+		t.Fatalf("update success failed: %v", err)
+	}
+	protectedStatuses := []string{"streaming", "error", "stopped"}
+	protectedIDs := make(map[string]string, len(protectedStatuses))
+	for _, status := range protectedStatuses {
+		entry, err := store.Start(StartParams{UserInput: status})
+		if err != nil {
+			t.Fatalf("start %s failed: %v", status, err)
+		}
+		if status != "streaming" {
+			if _, err := store.Update(entry.ID, UpdateParams{Status: status, Content: status, Completed: true}); err != nil {
+				t.Fatalf("update %s failed: %v", status, err)
+			}
+		}
+		protectedIDs[status] = entry.ID
+	}
+
+	store.mu.Lock()
+	stale := time.Now().Add(-debugRetentionTTL - time.Minute).UnixMilli()
+	for id, item := range store.details {
+		item.CreatedAt = stale
+		item.UpdatedAt = stale
+		item.CompletedAt = stale
+		store.details[id] = item
+	}
+	store.mu.Unlock()
+
+	snapshot, err := store.Snapshot()
+	if err != nil {
+		t.Fatalf("snapshot failed: %v", err)
+	}
+	if len(snapshot.Items) != len(protectedStatuses) {
+		t.Fatalf("expected only protected stale entries to remain, got %#v", snapshot.Items)
+	}
+	if _, err := store.Get(successEntry.ID); err == nil {
+		t.Fatalf("expected stale success entry to expire")
+	}
+	for status, id := range protectedIDs {
+		if _, err := store.Get(id); err != nil {
+			t.Fatalf("expected stale %s entry to remain: %v", status, err)
+		}
+	}
+}
+
 func TestStoreConcurrentUpdatesKeepSplitFilesValid(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "chat_history.json")
 	store := New(path)
+	if _, err := store.SetLimit(8); err != nil {
+		t.Fatalf("set limit failed: %v", err)
+	}
 
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
@@ -265,13 +462,14 @@ func TestStoreConcurrentUpdatesKeepSplitFilesValid(t *testing.T) {
 
 func TestStoreAutoMigratesLegacyMonolith(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "chat_history.json")
+	now := time.Now().UnixMilli()
 	legacy := legacyFile{
 		Version: 1,
 		Limit:   20,
 		Items: []Entry{{
 			ID:               "chat_legacy",
-			CreatedAt:        1,
-			UpdatedAt:        2,
+			CreatedAt:        now,
+			UpdatedAt:        now,
 			Status:           "success",
 			UserInput:        "hello",
 			Content:          "world",
@@ -356,13 +554,14 @@ func TestStoreAutoMigratesMetadataOnlyLegacyMonolith(t *testing.T) {
 func TestStoreLegacyMigrationBestEffortWhenRewriteFails(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "chat_history.json")
 	longID := "chat_" + strings.Repeat("x", 320)
+	now := time.Now().UnixMilli()
 	legacy := legacyFile{
 		Version: 1,
 		Limit:   20,
 		Items: []Entry{{
 			ID:        longID,
-			CreatedAt: 1,
-			UpdatedAt: 2,
+			CreatedAt: now,
+			UpdatedAt: now,
 			Status:    "success",
 			UserInput: "hello",
 			Content:   "world",
@@ -451,6 +650,9 @@ func TestStoreTransientPersistenceFailureDoesNotLatch(t *testing.T) {
 func TestStoreWritesOnlyChangedDetailFiles(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "chat_history.json")
 	store := New(path)
+	if _, err := store.SetLimit(2); err != nil {
+		t.Fatalf("set limit failed: %v", err)
+	}
 
 	first, err := store.Start(StartParams{UserInput: "one"})
 	if err != nil {

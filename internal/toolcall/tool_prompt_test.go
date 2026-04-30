@@ -119,6 +119,19 @@ func TestBuildToolCallInstructions_AnchorsMissingOpeningWrapperFailureMode(t *te
 	}
 }
 
+func TestBuildToolCallInstructions_DoesNotAdvertiseLegacyXMLCompatibility(t *testing.T) {
+	out := BuildToolCallInstructions([]string{"Read"})
+	for _, forbidden := range []string{
+		"runtime also accepts the legacy XML tags",
+		"<tool_calls> / <invoke> / <parameter>",
+		"prefer the DSML-prefixed form",
+	} {
+		if strings.Contains(out, forbidden) {
+			t.Fatalf("expected legacy compatibility hint %q to be removed, got: %s", forbidden, out)
+		}
+	}
+}
+
 func TestBuildToolCallInstructions_ForbidsFullwidthDSMLPunctuation(t *testing.T) {
 	out := BuildToolCallInstructions([]string{"Skill"})
 	for _, want := range []string{

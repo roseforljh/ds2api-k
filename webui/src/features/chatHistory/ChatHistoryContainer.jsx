@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Bot, Download, Eye, FileText, Loader2, MessageSquareText, RefreshCcw, Trash2, UserRound, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Bot, Download, Eye, FileText, Loader2, MessageSquareText, RefreshCcw, Trash2, UserRound, X, Zap } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 
@@ -208,6 +208,7 @@ function UpstreamRequestView({ item, t, onMessage }) {
 
 function DetailConversation({ selectedItem, t, detailScrollRef, assistantStartRef, bottomButtonClassName, onMessage }) {
     if (!selectedItem) return null
+    const reasoningText = String(selectedItem.reasoning_content || '').trim()
 
     return (
         <>
@@ -224,6 +225,17 @@ function DetailConversation({ selectedItem, t, detailScrollRef, assistantStartRe
                     <div className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground mb-2 px-1">
                         {t('chatHistory.role.assistant')}
                     </div>
+                    {reasoningText && (
+                        <div className="text-xs bg-secondary/50 border border-border rounded-lg p-3 space-y-1.5">
+                            <div className="flex items-center gap-1.5 text-muted-foreground">
+                                <Zap className="w-3.5 h-3.5" />
+                                <span className="font-medium">{t('chatHistory.reasoningTrace')}</span>
+                            </div>
+                            <div className="max-h-64 overflow-y-auto whitespace-pre-wrap leading-relaxed text-muted-foreground font-mono text-[11px] pl-5 border-l-2 border-border/50 pr-2">
+                                {reasoningText}
+                            </div>
+                        </div>
+                    )}
                     <div className="rounded-2xl px-5 py-3 text-sm leading-7 text-foreground shadow-sm border bg-secondary/60 rounded-tl-sm border-border whitespace-pre-wrap break-words">
                         {selectedItem.status === 'error'
                             ? <span className="text-destructive font-medium">{selectedItem.error || t('chatHistory.failedOutput')}</span>

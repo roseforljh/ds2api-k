@@ -33,7 +33,6 @@ RULES:
 13) Tool-call tags must use ASCII punctuation only: < > | / ! " '.
 14) Never use fullwidth or localized punctuation in tool-call tags.
 15) Forbidden in tool-call tags: ｜ 〈 〉 ！ ／ “ ”.
-16) Compatibility note: the runtime also accepts the legacy XML tags <tool_calls> / <invoke> / <parameter>, but prefer the DSML-prefixed form above.
 
 PARAMETER SHAPES:
 - string => <|DSML|parameter name="x"><![CDATA[value]]></|DSML|parameter>

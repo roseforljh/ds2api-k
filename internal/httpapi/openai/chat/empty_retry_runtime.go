@@ -47,7 +47,7 @@ func retryFeedbackForChatResult(attempt int, result chatNonStreamResult) shared.
 	}
 }
 
-func (h *Handler) handleNonStreamWithRetry(w http.ResponseWriter, ctx context.Context, a *auth.RequestAuth, resp *http.Response, payload map[string]any, pow, completionID, model, finalPrompt string, thinkingEnabled, searchEnabled bool, toolNames []string, toolsRaw any, historySession *chatHistorySession) {
+func (h *Handler) handleNonStreamWithRetry(w http.ResponseWriter, ctx context.Context, a *auth.RequestAuth, resp *http.Response, payload map[string]any, pow, completionID, model, finalPrompt string, thinkingEnabled, searchEnabled bool, toolNames []string, toolsRaw any, historySession *chatHistorySession) remoteSessionTerminalState {
 	attempts := 0
 	currentResp := resp
 	usagePrompt := finalPrompt
@@ -58,7 +58,7 @@ func (h *Handler) handleNonStreamWithRetry(w http.ResponseWriter, ctx context.Co
 	for {
 		result, ok := h.collectChatNonStreamAttempt(w, currentResp, completionID, model, usagePrompt, thinkingEnabled, searchEnabled, toolNames, toolsRaw)
 		if !ok {
-			return
+			return remoteTerminalFailed
 		}
 		accumulatedThinking += sse.TrimContinuationOverlap(accumulatedThinking, result.thinking)
 		accumulatedToolDetectionThinking += sse.TrimContinuationOverlap(accumulatedToolDetectionThinking, result.toolDetectionThinking)
@@ -73,8 +73,7 @@ func (h *Handler) handleNonStreamWithRetry(w http.ResponseWriter, ctx context.Co
 		result.body = openaifmt.BuildChatCompletionWithToolCalls(completionID, model, usagePrompt, result.thinking, result.text, detected.Calls, toolsRaw)
 		result.finishReason = chatFinishReason(result.body)
 		if !shouldRetryChatNonStream(result, attempts, retryStartedAt, time.Now()) {
-			h.finishChatNonStreamResult(w, result, attempts, usagePrompt, historySession)
-			return
+			return h.finishChatNonStreamResult(w, result, attempts, usagePrompt, historySession)
 		}
 
 		attempts++
@@ -93,7 +92,7 @@ func (h *Handler) handleNonStreamWithRetry(w http.ResponseWriter, ctx context.Co
 			}
 			writeOpenAIError(w, http.StatusInternalServerError, "Failed to get completion.")
 			config.Logger.Warn("[openai_empty_retry] retry request failed", "surface", "chat.completions", "stream", false, "retry_attempt", attempts, "error", err)
-			return
+			return remoteTerminalFailed
 		}
 		usagePrompt = usagePromptWithEmptyOutputRetry(finalPrompt, attempts)
 		currentResp = nextResp
@@ -129,7 +128,7 @@ func (h *Handler) collectChatNonStreamAttempt(w http.ResponseWriter, resp *http.
 	}, true
 }
 
-func (h *Handler) finishChatNonStreamResult(w http.ResponseWriter, result chatNonStreamResult, attempts int, usagePrompt string, historySession *chatHistorySession) {
+func (h *Handler) finishChatNonStreamResult(w http.ResponseWriter, result chatNonStreamResult, attempts int, usagePrompt string, historySession *chatHistorySession) remoteSessionTerminalState {
 	if result.detectedCalls == 0 && shouldWriteUpstreamEmptyOutputError(result.text) {
 		status, message, code := upstreamEmptyOutputDetail(result.contentFilter, result.text, result.thinking)
 		if historySession != nil {
@@ -137,7 +136,7 @@ func (h *Handler) finishChatNonStreamResult(w http.ResponseWriter, result chatNo
 		}
 		writeUpstreamEmptyOutputError(w, result.text, result.thinking, result.contentFilter)
 		config.Logger.Info("[openai_empty_retry] terminal empty output", "surface", "chat.completions", "stream", false, "retry_attempts", attempts, "success_source", "none", "content_filter", result.contentFilter)
-		return
+		return remoteTerminalFailed
 	}
 	if historySession != nil {
 		historySession.success(http.StatusOK, result.thinking, result.text, result.finishReason, openaifmt.BuildChatUsage(usagePrompt, result.thinking, result.text))
@@ -148,6 +147,7 @@ func (h *Handler) finishChatNonStreamResult(w http.ResponseWriter, result chatNo
 		source = "synthetic_retry"
 	}
 	config.Logger.Info("[openai_empty_retry] completed", "surface", "chat.completions", "stream", false, "retry_attempts", attempts, "success_source", source)
+	return remoteTerminalSuccess
 }
 
 func chatFinishReason(respBody map[string]any) string {
@@ -205,6 +205,7 @@ func appendMalformedToolCallRetrySuffix(prompt string, malformedToolFeedback str
 		parts = append(parts, historyText)
 	}
 	parts = append(parts,
+		"Use the tool instructions in the current request, including the current request tool schema and parameter summary.",
 		"Regenerate your reply using the exact required tool-call structure below.",
 		"Tool-call skeleton:",
 		"<|DSML|tool_calls>",
@@ -239,6 +240,8 @@ func appendToolEmptyOutputRetrySuffix(prompt string, retryHistory []shared.Retry
 		parts = append(parts, historyText)
 	}
 	parts = append(parts,
+		"Use the tool instructions in the current request, including the current request tool schema and parameter summary.",
+		"The previous attempt ended without natural-language content or a valid tool call. Do not return an empty response.",
 		"Regenerate your reply using exactly one of these forms:",
 		"A) Normal answer: plain natural-language answer only.",
 		"B) Tool call skeleton:",
@@ -264,10 +267,10 @@ func appendToolEmptyOutputRetrySuffix(prompt string, retryHistory []shared.Retry
 	return prompt + "\n\n" + suffix
 }
 
-func (h *Handler) handleStreamWithRetry(w http.ResponseWriter, r *http.Request, a *auth.RequestAuth, resp *http.Response, payload map[string]any, pow, completionID, model, finalPrompt string, thinkingEnabled, searchEnabled bool, toolNames []string, toolsRaw any, historySession *chatHistorySession) {
+func (h *Handler) handleStreamWithRetry(w http.ResponseWriter, r *http.Request, a *auth.RequestAuth, resp *http.Response, payload map[string]any, pow, completionID, model, finalPrompt string, thinkingEnabled, searchEnabled bool, toolNames []string, toolsRaw any, historySession *chatHistorySession) remoteSessionTerminalState {
 	streamRuntime, initialType, ok := h.prepareChatStreamRuntime(w, resp, completionID, model, finalPrompt, thinkingEnabled, searchEnabled, toolNames, toolsRaw, historySession)
 	if !ok {
-		return
+		return remoteTerminalFailed
 	}
 	attempts := 0
 	retryStartedAt := time.Now()
@@ -275,16 +278,16 @@ func (h *Handler) handleStreamWithRetry(w http.ResponseWriter, r *http.Request, 
 	currentResp := resp
 	for {
 		withinWindow := emptyOutputRetryWithinWindow(retryStartedAt, time.Now())
-		terminalWritten, retryable := h.consumeChatStreamAttempt(r, currentResp, streamRuntime, initialType, thinkingEnabled, historySession, withinWindow && attempts < emptyOutputRetryMaxAttempts())
+		terminal, terminalWritten, retryable := h.consumeChatStreamAttempt(r, currentResp, streamRuntime, initialType, thinkingEnabled, historySession, withinWindow && attempts < emptyOutputRetryMaxAttempts())
 		if terminalWritten {
 			logChatStreamTerminal(streamRuntime, attempts)
-			return
+			return terminal
 		}
 		if !retryable || !emptyOutputRetryEnabled() || !withinWindow || attempts >= emptyOutputRetryMaxAttempts() {
 			streamRuntime.finalize("stop", false)
 			recordChatStreamHistory(streamRuntime, historySession)
 			config.Logger.Info("[openai_empty_retry] terminal empty output", "surface", "chat.completions", "stream", true, "retry_attempts", attempts, "success_source", "none")
-			return
+			return remoteTerminalFailed
 		}
 		attempts++
 		feedback := shared.RetryFeedback{Attempt: attempts, Kind: "empty_output", Summary: "empty output or no valid tool call", Raw: streamRuntime.text.String()}
@@ -305,13 +308,13 @@ func (h *Handler) handleStreamWithRetry(w http.ResponseWriter, r *http.Request, 
 		if err != nil {
 			failChatStreamRetry(streamRuntime, historySession, http.StatusInternalServerError, "Failed to get completion.", "error")
 			config.Logger.Warn("[openai_empty_retry] retry request failed", "surface", "chat.completions", "stream", true, "retry_attempt", attempts, "error", err)
-			return
+			return remoteTerminalFailed
 		}
 		if nextResp.StatusCode != http.StatusOK {
 			defer func() { _ = nextResp.Body.Close() }()
 			body, _ := io.ReadAll(nextResp.Body)
 			failChatStreamRetry(streamRuntime, historySession, nextResp.StatusCode, string(body), "error")
-			return
+			return remoteTerminalFailed
 		}
 		if strings.TrimSpace(malformedFeedback) != "" {
 			streamRuntime.text.Reset()
@@ -354,7 +357,7 @@ func (h *Handler) prepareChatStreamRuntime(w http.ResponseWriter, resp *http.Res
 	return streamRuntime, initialType, true
 }
 
-func (h *Handler) consumeChatStreamAttempt(r *http.Request, resp *http.Response, streamRuntime *chatStreamRuntime, initialType string, thinkingEnabled bool, historySession *chatHistorySession, allowDeferEmpty bool) (bool, bool) {
+func (h *Handler) consumeChatStreamAttempt(r *http.Request, resp *http.Response, streamRuntime *chatStreamRuntime, initialType string, thinkingEnabled bool, historySession *chatHistorySession, allowDeferEmpty bool) (remoteSessionTerminalState, bool, bool) {
 	defer func() { _ = resp.Body.Close() }()
 	finalReason := "stop"
 	contextCancelled := false
@@ -388,14 +391,17 @@ func (h *Handler) consumeChatStreamAttempt(r *http.Request, resp *http.Response,
 		},
 	})
 	if contextCancelled {
-		return true, false
+		return remoteTerminalStopped, true, false
 	}
 	terminalWritten := streamRuntime.finalize(finalReason, allowDeferEmpty && finalReason != "content_filter")
 	if terminalWritten {
 		recordChatStreamHistory(streamRuntime, historySession)
-		return true, false
+		if streamRuntime.finalErrorMessage != "" {
+			return remoteTerminalFailed, true, false
+		}
+		return remoteTerminalSuccess, true, false
 	}
-	return false, true
+	return remoteTerminalFailed, false, true
 }
 
 func recordChatStreamHistory(streamRuntime *chatStreamRuntime, historySession *chatHistorySession) {

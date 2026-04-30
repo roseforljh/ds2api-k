@@ -261,7 +261,7 @@
         "loading": "正在加载对话记录...",
         "loadFailed": "加载对话记录失败",
         "retentionTitle": "调试会话保留",
-        "retentionDesc": "已写死：仅保留最新 1 条会话，且只保留 10 分钟，之后彻底删除。",
+        "retentionDesc": "调试会话保留会跟随每账号并发上限；自动清理只会删除旧的成功会话，运行中、失败、中止或状态未知的会话不会被自动删除。",
         "refresh": "刷新",
         "clearAll": "清空全部",
         "clearSuccess": "对话记录已清空",

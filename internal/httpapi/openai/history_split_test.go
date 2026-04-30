@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -764,6 +765,43 @@ func TestApplyCurrentInputFileDropsStaleRefFileIDs(t *testing.T) {
 	}
 	if len(out.RefFileIDs) != 1 || out.RefFileIDs[0] != "file-inline-1" {
 		t.Fatalf("expected only current HISTORY file id, got %#v", out.RefFileIDs)
+	}
+}
+
+func TestApplyCurrentInputFileKeepsCurrentMessageFileRefs(t *testing.T) {
+	ds := &inlineUploadDSStub{}
+	h := &openAITestSurface{
+		Store: mockOpenAIConfig{
+			wideInput:           true,
+			currentInputEnabled: true,
+			currentInputMin:     0,
+		},
+		DS: ds,
+	}
+	req := map[string]any{
+		"model":        "deepseek-v4-flash",
+		"ref_file_ids": []any{"stale-history-file"},
+		"messages": []any{
+			map[string]any{"role": "user", "content": "first user turn"},
+			map[string]any{"role": "assistant", "content": "assistant reply"},
+			map[string]any{"role": "user", "content": []any{
+				map[string]any{"type": "input_text", "text": "latest user turn"},
+				map[string]any{"type": "input_file", "file_id": "file-current-request"},
+			}},
+		},
+	}
+	stdReq, err := promptcompat.NormalizeOpenAIChatRequest(h.Store, req, "")
+	if err != nil {
+		t.Fatalf("normalize failed: %v", err)
+	}
+
+	out, err := h.applyCurrentInputFile(context.Background(), &auth.RequestAuth{DeepSeekToken: "token"}, stdReq)
+	if err != nil {
+		t.Fatalf("apply current input file failed: %v", err)
+	}
+	want := []string{"file-inline-1", "file-current-request"}
+	if !reflect.DeepEqual(out.RefFileIDs, want) {
+		t.Fatalf("expected HISTORY file plus current request file refs, got %#v", out.RefFileIDs)
 	}
 }
 

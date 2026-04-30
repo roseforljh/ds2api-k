@@ -125,6 +125,34 @@ func TestParseToolCallsMarksUnparseableReadFilePathForHiddenRetry(t *testing.T) 
 	}
 }
 
+func TestParseToolCallsMarksBareReadMissingFilePathForHiddenRetry(t *testing.T) {
+	text := `<invoke name="Read"><parameter name="limit"><![CDATA[30]]>`
+	res := ParseToolCallsDetailed(text, []string{"Read"})
+	if !res.SawToolCallSyntax {
+		t.Fatalf("expected malformed bare Read call to be recognized as tool syntax")
+	}
+	if !res.RejectedInvalid {
+		t.Fatalf("expected bare Read call missing file_path to be marked invalid for retry, got %#v", res)
+	}
+	if len(res.Calls) != 0 {
+		t.Fatalf("expected bare Read call missing file_path to be hidden, got %#v", res.Calls)
+	}
+}
+
+func TestParseToolCallsDoesNotMarkBareInvokeMentionAsHiddenRetry(t *testing.T) {
+	text := `<invoke name="Read"> as documentation only`
+	res := ParseToolCallsDetailed(text, []string{"Read"})
+	if res.RejectedInvalid {
+		t.Fatalf("expected bare invoke prose mention to remain text, got %#v", res)
+	}
+	if res.SawToolCallSyntax {
+		t.Fatalf("expected bare invoke prose mention not to count as tool syntax, got %#v", res)
+	}
+	if len(res.Calls) != 0 {
+		t.Fatalf("expected no calls from bare invoke prose mention, got %#v", res.Calls)
+	}
+}
+
 func TestParseToolCallsMarksHashDSMLReadFilePathForHiddenRetry(t *testing.T) {
 	text := `<#DSML#tool_calls>
 <#DSML#invoke name="Read">

@@ -76,6 +76,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		writeOpenAIError(w, status, message)
 		return
 	}
+	h.configureChatHistoryRetention()
 	historySession := startChatHistory(h.ChatHistory, r, a, stdReq)
 
 	h.deletePreviousRemoteSessionsForRetention(r.Context(), a)
@@ -95,8 +96,10 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	h.registerRemoteSession(a, sessionID)
 	pow, err := h.DS.GetPow(r.Context(), a, 3)
 	if err != nil {
+		h.markRemoteSessionTerminal(r.Context(), a, sessionID, remoteTerminalFailed)
 		if historySession != nil {
 			historySession.error(http.StatusUnauthorized, "Failed to get PoW (invalid token or unknown error).", "error", "", "")
 		}
@@ -106,6 +109,11 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	payload := stdReq.CompletionPayload(sessionID)
 	resp, err := h.DS.CallCompletion(r.Context(), a, payload, pow, 3)
 	if err != nil {
+		terminal := remoteTerminalFailed
+		if r.Context().Err() != nil {
+			terminal = remoteTerminalStopped
+		}
+		h.markRemoteSessionTerminal(r.Context(), a, sessionID, terminal)
 		if historySession != nil {
 			historySession.error(http.StatusInternalServerError, "Failed to get completion.", "error", "", "")
 		}
@@ -113,10 +121,12 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if stdReq.Stream {
-		h.handleStreamWithRetry(w, r, a, resp, payload, pow, sessionID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, stdReq.ToolsRaw, historySession)
+		terminal := h.handleStreamWithRetry(w, r, a, resp, payload, pow, sessionID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, stdReq.ToolsRaw, historySession)
+		h.markRemoteSessionTerminal(r.Context(), a, sessionID, terminal)
 		return
 	}
-	h.handleNonStreamWithRetry(w, r.Context(), a, resp, payload, pow, sessionID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, stdReq.ToolsRaw, historySession)
+	terminal := h.handleNonStreamWithRetry(w, r.Context(), a, resp, payload, pow, sessionID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, stdReq.ToolsRaw, historySession)
+	h.markRemoteSessionTerminal(r.Context(), a, sessionID, terminal)
 }
 
 func (h *Handler) autoDeleteRemoteSession(ctx context.Context, a *auth.RequestAuth, sessionID string) {
@@ -131,7 +141,6 @@ func (h *Handler) autoDeleteRemoteSession(ctx context.Context, a *auth.RequestAu
 		return
 	}
 	if mode == "retention" {
-		h.scheduleRemoteSessionRetentionDeletion(a, sessionID)
 		return
 	}
 
@@ -164,14 +173,7 @@ func (h *Handler) deletePreviousRemoteSessionsForRetention(ctx context.Context, 
 	if mode != "retention" {
 		return
 	}
-	deleteBaseCtx := context.WithoutCancel(ctx)
-	deleteCtx, cancel := context.WithTimeout(deleteBaseCtx, 10*time.Second)
-	defer cancel()
-	if err := h.DS.DeleteAllSessionsForToken(deleteCtx, a.DeepSeekToken); err != nil {
-		config.Logger.Warn("[remote_session_retention] clear previous sessions failed", "account", a.AccountID, "error", err)
-		return
-	}
-	config.Logger.Debug("[remote_session_retention] previous sessions cleared", "account", a.AccountID)
+	config.Logger.Debug("[remote_session_retention] pre-create delete-all skipped for success-only retention", "account", a.AccountID)
 }
 
 func (h *Handler) scheduleRemoteSessionRetentionDeletion(a *auth.RequestAuth, sessionID string) {
@@ -187,10 +189,14 @@ func (h *Handler) scheduleRemoteSessionRetentionDeletion(a *auth.RequestAuth, se
 
 		deleteCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+		if !h.remoteSessionRegistry().successRecordOlderThan(token, sessionID, remoteSessionRetentionDelay) {
+			return
+		}
 		if _, err := h.DS.DeleteSessionForToken(deleteCtx, token, sessionID); err != nil {
 			config.Logger.Warn("[remote_session_retention] delayed delete failed", "account", accountID, "session_id", sessionID, "error", err)
 			return
 		}
+		h.remoteSessionRegistry().remove(token, sessionID)
 		config.Logger.Debug("[remote_session_retention] delayed delete success", "account", accountID, "session_id", sessionID)
 	}()
 }

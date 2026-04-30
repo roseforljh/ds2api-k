@@ -3,6 +3,7 @@ package promptcompat
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"ds2api/internal/toolcall"
@@ -61,7 +62,11 @@ func BuildOpenAIToolPrompt(toolsRaw any, policy ToolChoicePolicy) (string, []str
 			desc = "No description available"
 		}
 		b, _ := json.Marshal(schema)
-		toolSchemas = append(toolSchemas, fmt.Sprintf("Tool: %s\nDescription: %s\nParameters: %s", name, desc, string(b)))
+		schemaBlock := fmt.Sprintf("Tool: %s\nDescription: %s\nParameters: %s", name, desc, string(b))
+		if summary := buildToolParameterSummary(name, schema); summary != "" {
+			schemaBlock += "\n" + summary
+		}
+		toolSchemas = append(toolSchemas, schemaBlock)
 	}
 	if len(toolSchemas) == 0 {
 		return "", names
@@ -76,4 +81,73 @@ func BuildOpenAIToolPrompt(toolsRaw any, policy ToolChoicePolicy) (string, []str
 	}
 
 	return toolPrompt, names
+}
+
+func buildToolParameterSummary(name string, schema any) string {
+	schemaMap, ok := schema.(map[string]any)
+	if !ok || len(schemaMap) == 0 {
+		return ""
+	}
+	properties, _ := schemaMap["properties"].(map[string]any)
+	if len(properties) == 0 {
+		return ""
+	}
+	required := schemaRequiredNames(schemaMap["required"])
+	requiredSet := map[string]struct{}{}
+	for _, name := range required {
+		requiredSet[name] = struct{}{}
+	}
+	optional := make([]string, 0, len(properties))
+	for param := range properties {
+		if _, ok := requiredSet[param]; ok {
+			continue
+		}
+		optional = append(optional, param)
+	}
+	sort.Strings(required)
+	sort.Strings(optional)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "Parameter summary for %s:\n", name)
+	if len(required) > 0 {
+		b.WriteString("Required parameters:\n")
+		for _, param := range required {
+			fmt.Fprintf(&b, "- %s\n", param)
+		}
+	} else {
+		b.WriteString("Required parameters:\n- none\n")
+	}
+	if len(optional) > 0 {
+		b.WriteString("Optional parameters:\n")
+		for _, param := range optional {
+			fmt.Fprintf(&b, "- %s\n", param)
+		}
+	}
+	if len(required) > 0 {
+		fmt.Fprintf(&b, "Never call %s without: %s.", name, strings.Join(required, ", "))
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func schemaRequiredNames(raw any) []string {
+	switch values := raw.(type) {
+	case []any:
+		out := make([]string, 0, len(values))
+		for _, item := range values {
+			if s := strings.TrimSpace(asString(item)); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	case []string:
+		out := make([]string, 0, len(values))
+		for _, item := range values {
+			if s := strings.TrimSpace(item); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }

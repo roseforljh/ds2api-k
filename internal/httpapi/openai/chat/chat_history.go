@@ -10,6 +10,7 @@ import (
 	"ds2api/internal/chathistory"
 	"ds2api/internal/config"
 	openaifmt "ds2api/internal/format/openai"
+	"ds2api/internal/httpapi/openai/shared"
 	"ds2api/internal/prompt"
 	"ds2api/internal/promptcompat"
 )
@@ -25,6 +26,26 @@ type chatHistorySession struct {
 	finalPrompt string
 	startParams chathistory.StartParams
 	disabled    bool
+}
+
+type accountInflightLimitReader interface {
+	RuntimeAccountMaxInflight() int
+}
+
+func chatHistoryRetentionLimit(store shared.ConfigReader) int {
+	if s, ok := store.(accountInflightLimitReader); ok {
+		if n := s.RuntimeAccountMaxInflight(); n > 0 {
+			return n
+		}
+	}
+	return 2
+}
+
+func (h *Handler) configureChatHistoryRetention() {
+	if h == nil || h.ChatHistory == nil {
+		return
+	}
+	_, _ = h.ChatHistory.SetLimit(chatHistoryRetentionLimit(h.Store))
 }
 
 func startChatHistory(store *chathistory.Store, r *http.Request, a *auth.RequestAuth, stdReq promptcompat.StandardRequest) *chatHistorySession {

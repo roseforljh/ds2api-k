@@ -1,8 +1,54 @@
 import { Bot, Loader2, Send, Square, User, Zap, Paperclip, X, FileIcon } from 'lucide-react'
 import clsx from 'clsx'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { getAttachedFileAccountIds } from './fileAccountBinding'
+
+const AUTO_SCROLL_BOTTOM_THRESHOLD = 24
+
+function AutoScrollTextBlock({ children, className, contentKey, resetKey }) {
+    const scrollRef = useRef(null)
+    const [autoScroll, setAutoScroll] = useState(true)
+
+    const isNearBottom = () => {
+        const node = scrollRef.current
+        if (!node) return true
+        return node.scrollHeight - node.scrollTop - node.clientHeight <= AUTO_SCROLL_BOTTOM_THRESHOLD
+    }
+
+    const updateAutoScrollFromPosition = () => {
+        setAutoScroll(isNearBottom())
+    }
+
+    const pauseAutoScrollForUserAction = () => {
+        if (!isNearBottom()) {
+            setAutoScroll(false)
+        }
+    }
+
+    useEffect(() => {
+        const node = scrollRef.current
+        if (!node || !autoScroll) return
+        node.scrollTop = node.scrollHeight
+    }, [autoScroll, contentKey])
+
+    useEffect(() => {
+        setAutoScroll(true)
+    }, [resetKey])
+
+    return (
+        <div
+            ref={scrollRef}
+            onScroll={updateAutoScrollFromPosition}
+            onWheel={pauseAutoScrollForUserAction}
+            onTouchStart={pauseAutoScrollForUserAction}
+            onPointerDown={pauseAutoScrollForUserAction}
+            className={clsx('overflow-y-auto custom-scrollbar overscroll-contain', className)}
+        >
+            {children}
+        </div>
+    )
+}
 
 export default function ChatPanel({
     t,
@@ -86,6 +132,9 @@ export default function ChatPanel({
 
     const attachmentAccountIds = getAttachedFileAccountIds(attachedFiles)
     const attachmentAccountId = attachmentAccountIds.length === 1 ? attachmentAccountIds[0] : ''
+    const reasoningText = streamingThinking || response?.choices?.[0]?.message?.reasoning_content || ''
+    const assistantText = streamingContent || response?.choices?.[0]?.message?.content || ''
+    const responseResetKey = loading && isStreaming && !response ? 'active-stream' : 'settled'
     return (
         <div className="lg:col-span-9 flex flex-col bg-card border border-border rounded-xl shadow-sm overflow-hidden min-h-0 flex-1 relative">
             <div className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-8 custom-scrollbar scroll-smooth">
@@ -127,18 +176,26 @@ export default function ChatPanel({
                                         <Zap className="w-3.5 h-3.5" />
                                         <span className="font-medium">{t('apiTester.reasoningTrace')}</span>
                                     </div>
-                                    <div className="whitespace-pre-wrap leading-relaxed text-muted-foreground font-mono text-[11px] max-h-60 overflow-y-auto custom-scrollbar pl-5 border-l-2 border-border/50">
-                                        {streamingThinking || response?.choices?.[0]?.message?.reasoning_content}
-                                    </div>
+                                    <AutoScrollTextBlock
+                                        contentKey={reasoningText}
+                                        resetKey={responseResetKey}
+                                        className="h-40 whitespace-pre-wrap leading-relaxed text-muted-foreground font-mono text-[11px] pl-5 border-l-2 border-border/50 pr-2"
+                                    >
+                                        {reasoningText}
+                                    </AutoScrollTextBlock>
                                 </div>
                             )}
 
-                            <div className="text-sm leading-7 text-foreground whitespace-pre-wrap">
+                            <AutoScrollTextBlock
+                                contentKey={`${assistantText}|${response?.success === false ? response.error || '' : ''}|${loading}|${isStreaming}`}
+                                resetKey={responseResetKey}
+                                className="h-64 rounded-xl border border-border bg-background/45 px-4 py-3 text-sm leading-7 text-foreground whitespace-pre-wrap"
+                            >
                                 {response?.success === false
                                     ? <span className="text-destructive font-medium">{response.error || t('apiTester.requestFailed')}</span>
-                                    : (streamingContent || response?.choices?.[0]?.message?.content || (loading && <span className="text-muted-foreground italic">{t('apiTester.generating')}</span>))}
+                                    : (assistantText || (loading && <span className="text-muted-foreground italic">{t('apiTester.generating')}</span>))}
                                 {isStreaming && <span className="inline-block w-1.5 h-4 bg-primary ml-1 align-middle animate-pulse" />}
-                            </div>
+                            </AutoScrollTextBlock>
                         </div>
                     </div>
                 )}

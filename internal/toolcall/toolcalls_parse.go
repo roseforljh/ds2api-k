@@ -63,7 +63,8 @@ func parseToolCallsDetailedXMLOnly(text string) ToolCallParseResult {
 
 	normalized, ok := normalizeDSMLToolCallMarkup(trimmed)
 	if !ok {
-		if result.SawToolCallSyntax && LooksLikeMalformedRequiredToolCall(trimmed) {
+		if LooksLikeMalformedRequiredToolCall(trimmed) {
+			result.SawToolCallSyntax = true
 			result.RejectedInvalid = true
 		}
 		return result
@@ -80,7 +81,8 @@ func parseToolCallsDetailedXMLOnly(text string) ToolCallParseResult {
 		}
 	}
 	if len(parsed) == 0 {
-		if result.SawToolCallSyntax && LooksLikeMalformedRequiredToolCall(trimmed) {
+		if LooksLikeMalformedRequiredToolCall(trimmed) {
+			result.SawToolCallSyntax = true
 			result.RejectedInvalid = true
 		}
 		return result
@@ -165,7 +167,7 @@ func LooksLikeMalformedRequiredToolCall(text string) bool {
 	}
 	hasDSML, hasCanonical := ContainsToolCallWrapperSyntaxOutsideIgnored(trimmed)
 	if !hasDSML && !hasCanonical {
-		return false
+		return looksLikeBareRequiredToolInvoke(trimmed)
 	}
 	lower := strings.ToLower(trimmed)
 	requiredPairs := map[string][]string{
@@ -185,12 +187,45 @@ func LooksLikeMalformedRequiredToolCall(text string) bool {
 			}
 		}
 	}
+	for searchFrom := 0; searchFrom < len(trimmed); {
+		tag, ok := FindToolMarkupTagOutsideIgnored(trimmed, searchFrom)
+		if !ok {
+			break
+		}
+		searchFrom = tag.End + 1
+		if tag.Closing || tag.Name != "invoke" {
+			continue
+		}
+		attrs := parseXMLTagAttributes(trimmed[tag.NameEnd:tag.End])
+		toolName := strings.ToLower(strings.TrimSpace(attrs["name"]))
+		if len(requiredPairs[toolName]) > 0 {
+			return true
+		}
+	}
 	return false
 }
 
 func looksLikeToolCallSyntax(text string) bool {
 	hasDSML, hasCanonical := ContainsToolCallWrapperSyntaxOutsideIgnored(text)
 	return hasDSML || hasCanonical
+}
+
+func looksLikeBareRequiredToolInvoke(text string) bool {
+	if strings.Contains(strings.ToLower(text), "tool_calls") {
+		return false
+	}
+	tag, ok := FindToolMarkupTagOutsideIgnored(text, 0)
+	if !ok || tag.Closing || tag.Name != "invoke" {
+		return false
+	}
+	if strings.TrimSpace(text[:tag.Start]) != "" {
+		return false
+	}
+	if !strings.Contains(strings.ToLower(text[tag.End+1:]), "<parameter") {
+		return false
+	}
+	attrs := parseXMLTagAttributes(text[tag.NameEnd:tag.End])
+	return len(requiredToolParameters(attrs["name"])) > 0
 }
 
 func stripFencedCodeBlocks(text string) string {

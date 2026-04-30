@@ -25,6 +25,7 @@ type mockOpenAIConfig struct {
 	toolPromptFile      bool
 	thinkingInjection   *bool
 	thinkingPrompt      string
+	accountMaxInflight  int
 }
 
 func (m mockOpenAIConfig) ModelAliases() map[string]string { return m.aliases }
@@ -62,6 +63,7 @@ func (m mockOpenAIConfig) ThinkingInjectionEnabled() bool {
 	return *m.thinkingInjection
 }
 func (m mockOpenAIConfig) ThinkingInjectionPrompt() string { return m.thinkingPrompt }
+func (m mockOpenAIConfig) RuntimeAccountMaxInflight() int  { return m.accountMaxInflight }
 
 type streamStatusAuthStub struct{}
 

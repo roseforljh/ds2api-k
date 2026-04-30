@@ -224,6 +224,21 @@ func TestProcessToolSieveDropsUnparseableReadFilePathWithoutLeak(t *testing.T) {
 	}
 }
 
+func TestProcessToolSieveDropsBareReadMissingFilePathWithoutLeak(t *testing.T) {
+	var state State
+	chunk := `<invoke name="Read"><parameter name="limit"><![CDATA[30]]>`
+	events := ProcessChunk(&state, chunk, []string{"Read"})
+	events = append(events, Flush(&state, []string{"Read"})...)
+	for _, evt := range events {
+		if evt.Content != "" || len(evt.ToolCalls) > 0 {
+			t.Fatalf("expected bare Read call missing file_path to be hidden from client and not emitted, got %#v", events)
+		}
+	}
+	if !strings.Contains(state.MalformedToolFeedback, `<invoke name="Read">`) {
+		t.Fatalf("expected bare Read malformed feedback to be retained for retry, got %q", state.MalformedToolFeedback)
+	}
+}
+
 func TestProcessToolSieveDropsHashDSMLReadFilePathWithoutLeak(t *testing.T) {
 	var state State
 	chunk := `<#DSML#tool_calls>

@@ -63,17 +63,7 @@ func (s *Store) EmbeddingsProvider() string {
 }
 
 func (s *Store) AutoDeleteMode() string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	mode := strings.ToLower(strings.TrimSpace(s.cfg.AutoDelete.Mode))
-	switch mode {
-	case "none", "single", "all":
-		return mode
-	}
-	if s.cfg.AutoDelete.Sessions {
-		return "all"
-	}
-	return "none"
+	return "all"
 }
 
 func (s *Store) AdminPasswordHash() string {

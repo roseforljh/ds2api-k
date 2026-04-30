@@ -89,7 +89,6 @@ func TestAPIRoutesRemainRegistered(t *testing.T) {
 		"GET /admin/chat-history/{id}",
 		"DELETE /admin/chat-history",
 		"DELETE /admin/chat-history/{id}",
-		"PUT /admin/chat-history/settings",
 		"GET /admin/version",
 	} {
 		if !got[want] {

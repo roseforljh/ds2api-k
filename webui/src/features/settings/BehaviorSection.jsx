@@ -7,13 +7,9 @@ export default function BehaviorSection({ t, form, setForm }) {
                     <span className="text-muted-foreground">{t('settings.responsesTTL')}</span>
                     <input
                         type="number"
-                        min={30}
-                        value={form.responses.store_ttl_seconds}
-                        onChange={(e) => setForm((prev) => ({
-                            ...prev,
-                            responses: { ...prev.responses, store_ttl_seconds: Number(e.target.value || 30) },
-                        }))}
-                        className="w-full bg-background border border-border rounded-lg px-3 py-2"
+                        value={600}
+                        disabled
+                        className="w-full bg-background border border-border rounded-lg px-3 py-2 opacity-60 cursor-not-allowed"
                     />
                 </label>
                 <label className="text-sm space-y-2">

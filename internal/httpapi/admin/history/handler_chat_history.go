@@ -1,7 +1,6 @@
 package history
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -144,28 +143,3 @@ func (h *Handler) deleteChatHistoryItem(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"success": true})
 }
 
-func (h *Handler) updateChatHistorySettings(w http.ResponseWriter, r *http.Request) {
-	store := h.ChatHistory
-	if store == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"detail": "chat history store is not configured"})
-		return
-	}
-	var body struct {
-		Limit int `json:"limit"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "invalid json"})
-		return
-	}
-	snapshot, err := store.SetLimit(body.Limit)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"success":  true,
-		"limit":    snapshot.Limit,
-		"revision": snapshot.Revision,
-		"items":    snapshot.Items,
-	})
-}

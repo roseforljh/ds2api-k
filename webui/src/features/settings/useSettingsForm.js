@@ -16,7 +16,6 @@ const DEFAULT_FORM = {
     compat: { strip_reference_markers: true },
     responses: { store_ttl_seconds: 900 },
     embeddings: { provider: '' },
-    auto_delete: { mode: 'none' },
     current_input_file: { enabled: true, min_chars: 0, tool_prompt_file: true },
     thinking_injection: { enabled: true, prompt: '', default_prompt: '' },
     model_aliases_text: '{}',
@@ -39,17 +38,6 @@ function parseJSONMap(raw, fieldName, t) {
     return parsed
 }
 
-function normalizeAutoDeleteMode(raw) {
-    const mode = String(raw?.mode || '').trim().toLowerCase()
-    if (mode === 'none' || mode === 'single' || mode === 'all') {
-        return mode
-    }
-    if (Boolean(raw?.sessions)) {
-        return 'all'
-    }
-    return 'none'
-}
-
 function fromServerForm(data) {
     const currentInputFileEnabled = data.current_input_file?.enabled ?? true
     return {
@@ -68,9 +56,6 @@ function fromServerForm(data) {
         },
         embeddings: {
             provider: data.embeddings?.provider || '',
-        },
-        auto_delete: {
-            mode: normalizeAutoDeleteMode(data.auto_delete),
         },
         current_input_file: {
             enabled: currentInputFileEnabled,
@@ -99,9 +84,7 @@ function toServerPayload(form) {
         compat: {
             strip_reference_markers: Boolean(form.compat?.strip_reference_markers ?? true),
         },
-        responses: { store_ttl_seconds: Number(form.responses.store_ttl_seconds) },
-        embeddings: { provider: String(form.embeddings.provider || '').trim() },
-        auto_delete: { mode: normalizeAutoDeleteMode(form.auto_delete) },
+        responses: { store_ttl_seconds: 600 },
         current_input_file: {
             enabled: currentInputFileEnabled,
             min_chars: Number(form.current_input_file?.min_chars ?? 0),

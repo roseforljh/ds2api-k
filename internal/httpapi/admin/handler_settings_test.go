@@ -367,8 +367,8 @@ func TestUpdateSettingsThinkingInjectionPartialEnabledPreservesPrompt(t *testing
 	}
 }
 
-func TestUpdateSettingsAutoDeleteMode(t *testing.T) {
-	h := newAdminTestHandler(t, `{"keys":["k1"],"auto_delete":{"sessions":true}}`)
+func TestUpdateSettingsAutoDeleteModeLockedToAll(t *testing.T) {
+	h := newAdminTestHandler(t, `{"keys":["k1"],"auto_delete":{"mode":"none"}}`)
 
 	payload := map[string]any{
 		"auto_delete": map[string]any{
@@ -384,11 +384,14 @@ func TestUpdateSettingsAutoDeleteMode(t *testing.T) {
 	}
 
 	snap := h.Store.Snapshot()
-	if got := snap.AutoDelete.Mode; got != "single" {
-		t.Fatalf("auto_delete.mode=%q want=single", got)
+	if got := snap.AutoDelete.Mode; got != "all" {
+		t.Fatalf("auto_delete.mode=%q want=all", got)
 	}
-	if got := h.Store.AutoDeleteMode(); got != "single" {
-		t.Fatalf("AutoDeleteMode()=%q want=single", got)
+	if !snap.AutoDelete.Sessions {
+		t.Fatalf("expected auto_delete.sessions=true")
+	}
+	if got := h.Store.AutoDeleteMode(); got != "all" {
+		t.Fatalf("AutoDeleteMode()=%q want=all", got)
 	}
 }
 

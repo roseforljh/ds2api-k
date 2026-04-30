@@ -19,17 +19,16 @@ import (
 const (
 	FileVersion      = 2
 	DisabledLimit    = 0
-	DefaultLimit     = 20
-	MaxLimit         = 50
+	DefaultLimit     = 1
+	MaxLimit         = 1
 	defaultPreviewAt = 160
 )
 
 var allowedLimits = map[int]struct{}{
-	DisabledLimit: {},
-	10:            {},
-	20:            {},
-	50:            {},
+	DefaultLimit: {},
 }
+
+const debugRetentionTTL = 10 * time.Minute
 
 var ErrDisabled = errors.New("chat history disabled")
 
@@ -191,6 +190,9 @@ func (s *Store) Snapshot() (File, error) {
 	if s.err != nil {
 		return File{}, s.err
 	}
+	if err := s.persistRetentionLocked(); err != nil {
+		return File{}, err
+	}
 	return cloneFile(s.state), nil
 }
 
@@ -202,6 +204,9 @@ func (s *Store) Revision() (int64, error) {
 	defer s.mu.Unlock()
 	if s.err != nil {
 		return 0, s.err
+	}
+	if err := s.persistRetentionLocked(); err != nil {
+		return 0, err
 	}
 	return s.state.Revision, nil
 }
@@ -215,7 +220,10 @@ func (s *Store) Enabled() bool {
 	if s.err != nil {
 		return false
 	}
-	return s.state.Limit != DisabledLimit
+	if err := s.persistRetentionLocked(); err != nil {
+		return false
+	}
+	return len(s.state.Items) > 0
 }
 
 func (s *Store) Get(id string) (Entry, error) {
@@ -226,6 +234,9 @@ func (s *Store) Get(id string) (Entry, error) {
 	defer s.mu.Unlock()
 	if s.err != nil {
 		return Entry{}, s.err
+	}
+	if err := s.persistRetentionLocked(); err != nil {
+		return Entry{}, err
 	}
 	item, ok := s.details[strings.TrimSpace(id)]
 	if !ok {
@@ -389,10 +400,8 @@ func (s *Store) SetLimit(limit int) (File, error) {
 	if s.err != nil {
 		return File{}, s.err
 	}
-	if !isAllowedLimit(limit) {
-		return File{}, fmt.Errorf("unsupported chat history limit: %d", limit)
-	}
-	s.state.Limit = limit
+	_ = limit
+	s.state.Limit = DefaultLimit
 	s.nextRevisionLocked()
 	s.rebuildIndexLocked()
 	if err := s.saveLocked(); err != nil {
@@ -494,6 +503,9 @@ func (s *Store) loadLegacyLocked(legacy legacyFile) {
 }
 
 func (s *Store) saveLocked() error {
+	if s.enforceRetentionLocked() {
+		s.nextRevisionLocked()
+	}
 	s.state.Version = FileVersion
 	if !isAllowedLimit(s.state.Limit) {
 		s.state.Limit = DefaultLimit
@@ -539,6 +551,10 @@ func (s *Store) saveLocked() error {
 }
 
 func (s *Store) rebuildIndexLocked() {
+	s.enforceRetentionLocked()
+	if s.state.Limit < DisabledLimit || !isAllowedLimit(s.state.Limit) {
+		s.state.Limit = DefaultLimit
+	}
 	summaries := make([]SummaryEntry, 0, len(s.details))
 	for _, item := range s.details {
 		summaries = append(summaries, summaryFromEntry(item))
@@ -549,13 +565,6 @@ func (s *Store) rebuildIndexLocked() {
 		}
 		return summaries[i].UpdatedAt > summaries[j].UpdatedAt
 	})
-	if s.state.Limit < DisabledLimit || !isAllowedLimit(s.state.Limit) {
-		s.state.Limit = DefaultLimit
-	}
-	if s.state.Limit == DisabledLimit {
-		s.state.Items = summaries
-		return
-	}
 	if len(summaries) > s.state.Limit {
 		keep := make(map[string]struct{}, s.state.Limit)
 		for _, item := range summaries[:s.state.Limit] {
@@ -570,6 +579,65 @@ func (s *Store) rebuildIndexLocked() {
 		summaries = summaries[:s.state.Limit]
 	}
 	s.state.Items = summaries
+}
+
+func (s *Store) persistRetentionLocked() error {
+	if !s.enforceRetentionLocked() {
+		return nil
+	}
+	s.nextRevisionLocked()
+	return s.saveLocked()
+}
+
+func (s *Store) enforceRetentionLocked() bool {
+	changed := false
+	if s.state.Limit != DefaultLimit {
+		s.state.Limit = DefaultLimit
+		changed = true
+	}
+
+	cutoff := time.Now().Add(-debugRetentionTTL).UnixMilli()
+	for id, item := range s.details {
+		ts := item.CompletedAt
+		if ts == 0 {
+			ts = item.UpdatedAt
+		}
+		if ts == 0 {
+			ts = item.CreatedAt
+		}
+		if ts > 0 && ts < cutoff {
+			s.markDetailDeletedLocked(id)
+			delete(s.details, id)
+			changed = true
+		}
+	}
+
+	if len(s.details) <= DefaultLimit {
+		return changed
+	}
+
+	summaries := make([]SummaryEntry, 0, len(s.details))
+	for _, item := range s.details {
+		summaries = append(summaries, summaryFromEntry(item))
+	}
+	sort.Slice(summaries, func(i, j int) bool {
+		if summaries[i].UpdatedAt == summaries[j].UpdatedAt {
+			return summaries[i].CreatedAt > summaries[j].CreatedAt
+		}
+		return summaries[i].UpdatedAt > summaries[j].UpdatedAt
+	})
+	keep := map[string]struct{}{
+		summaries[0].ID: {},
+	}
+	for id := range s.details {
+		if _, ok := keep[id]; ok {
+			continue
+		}
+		s.markDetailDeletedLocked(id)
+		delete(s.details, id)
+		changed = true
+	}
+	return changed
 }
 
 func (s *Store) nextRevisionLocked() int64 {

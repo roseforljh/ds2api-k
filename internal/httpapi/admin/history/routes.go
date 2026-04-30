@@ -7,5 +7,4 @@ func RegisterRoutes(r chi.Router, h *Handler) {
 	r.Get("/chat-history/{id}", h.getChatHistoryItem)
 	r.Delete("/chat-history", h.clearChatHistory)
 	r.Delete("/chat-history/{id}", h.deleteChatHistoryItem)
-	r.Put("/chat-history/settings", h.updateChatHistorySettings)
 }

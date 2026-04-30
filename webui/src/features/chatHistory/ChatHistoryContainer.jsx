@@ -4,8 +4,7 @@ import clsx from 'clsx'
 
 import { useI18n } from '../../i18n'
 
-const LIMIT_OPTIONS = [0, 10, 20, 50]
-const DISABLED_LIMIT = 0
+const LOCKED_LIMIT = 1
 function formatDateTime(value, lang) {
     if (!value) return '-'
     try {
@@ -345,7 +344,6 @@ export default function ChatHistoryContainer({ authFetch, onMessage }) {
     const [refreshing, setRefreshing] = useState(false)
     const [selectedId, setSelectedId] = useState('')
     const [selectedDetail, setSelectedDetail] = useState(null)
-    const [savingLimit, setSavingLimit] = useState(false)
     const [clearing, setClearing] = useState(false)
     const [deletingId, setDeletingId] = useState('')
     const [detail, setDetail] = useState('')
@@ -454,12 +452,12 @@ export default function ChatHistoryContainer({ authFetch, onMessage }) {
     }, [])
 
     useEffect(() => {
-        if (!autoRefreshReady || limit === DISABLED_LIMIT) return undefined
+        if (!autoRefreshReady) return undefined
         const timer = window.setInterval(() => {
             loadList({ mode: 'silent', announceError: false })
         }, 5000)
         return () => window.clearInterval(timer)
-    }, [autoRefreshReady, limit])
+    }, [autoRefreshReady, loadList])
 
     useEffect(() => {
         if (!autoRefreshReady || !selectedId || selectedSummary?.status !== 'streaming') return undefined
@@ -513,36 +511,6 @@ export default function ChatHistoryContainer({ authFetch, onMessage }) {
         if (selectedId) {
             detailETagRef.current = ''
             await loadDetail(selectedId, { announceError: manual })
-        }
-    }
-
-    const handleLimitChange = async (nextLimit) => {
-        if (nextLimit === limit || savingLimit) return
-        setSavingLimit(true)
-        try {
-            const res = await apiFetch('/admin/chat-history/settings', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ limit: nextLimit }),
-            })
-            const data = await res.json()
-            if (!res.ok) {
-                throw new Error(data?.detail || t('chatHistory.updateLimitFailed'))
-            }
-            const resolvedLimit = typeof data.limit === 'number' ? data.limit : nextLimit
-            setLimit(resolvedLimit)
-            listETagRef.current = ''
-            syncItems(Array.isArray(data.items) ? data.items : [])
-            onMessage?.(
-                'success',
-                resolvedLimit === DISABLED_LIMIT
-                    ? t('chatHistory.disabledSuccess')
-                    : t('chatHistory.limitUpdated', { limit: resolvedLimit })
-            )
-        } catch (error) {
-            onMessage?.('error', error.message || t('chatHistory.updateLimitFailed'))
-        } finally {
-            setSavingLimit(false)
         }
     }
 
@@ -646,24 +614,9 @@ export default function ChatHistoryContainer({ authFetch, onMessage }) {
                     <div className="text-xs text-muted-foreground mt-1">{t('chatHistory.retentionDesc')}</div>
                 </div>
                 <div className="flex flex-wrap gap-2 items-center">
-                    {LIMIT_OPTIONS.map(option => (
-                        <button
-                            key={option}
-                            type="button"
-                            disabled={savingLimit}
-                            onClick={() => handleLimitChange(option)}
-                            className={clsx(
-                                'h-9 px-3 rounded-lg border text-sm transition-colors',
-                                option === limit
-                                    ? (option === DISABLED_LIMIT
-                                        ? 'border-destructive bg-destructive text-destructive-foreground'
-                                        : 'border-primary bg-primary text-primary-foreground')
-                                    : 'border-border bg-background text-muted-foreground hover:text-foreground hover:bg-secondary/70'
-                            )}
-                        >
-                            {option === DISABLED_LIMIT ? t('chatHistory.off') : option}
-                        </button>
-                    ))}
+                    <div className="h-9 px-3 rounded-lg border border-primary bg-primary text-primary-foreground text-sm flex items-center">
+                        {LOCKED_LIMIT}
+                    </div>
                     <button
                         type="button"
                         onClick={() => handleRefresh({ manual: true })}

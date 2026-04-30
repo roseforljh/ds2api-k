@@ -1,7 +1,6 @@
 package history
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -104,37 +103,15 @@ func TestGetChatHistoryAndUpdateSettings(t *testing.T) {
 		t.Fatalf("expected detail 304, got %d body=%s", notModifiedItemRec.Code, notModifiedItemRec.Body.String())
 	}
 
-	updateReq := httptest.NewRequest(http.MethodPut, "/chat-history/settings", bytes.NewReader([]byte(`{"limit":10}`)))
-	updateReq.Header.Set("Authorization", "Bearer admin")
-	updateRec := httptest.NewRecorder()
-	r.ServeHTTP(updateRec, updateReq)
-	if updateRec.Code != http.StatusOK {
-		t.Fatalf("expected 200 from settings update, got %d body=%s", updateRec.Code, updateRec.Body.String())
-	}
 	snapshot, err := historyStore.Snapshot()
 	if err != nil {
 		t.Fatalf("snapshot failed: %v", err)
 	}
-	if snapshot.Limit != 10 {
-		t.Fatalf("expected limit=10, got %d", snapshot.Limit)
-	}
-
-	disableReq := httptest.NewRequest(http.MethodPut, "/chat-history/settings", bytes.NewReader([]byte(`{"limit":0}`)))
-	disableReq.Header.Set("Authorization", "Bearer admin")
-	disableRec := httptest.NewRecorder()
-	r.ServeHTTP(disableRec, disableReq)
-	if disableRec.Code != http.StatusOK {
-		t.Fatalf("expected 200 from disable update, got %d body=%s", disableRec.Code, disableRec.Body.String())
-	}
-	snapshot, err = historyStore.Snapshot()
-	if err != nil {
-		t.Fatalf("snapshot after disable failed: %v", err)
-	}
-	if snapshot.Limit != chathistory.DisabledLimit {
-		t.Fatalf("expected limit=0, got %d", snapshot.Limit)
+	if snapshot.Limit != chathistory.DefaultLimit {
+		t.Fatalf("expected locked limit=%d, got %d", chathistory.DefaultLimit, snapshot.Limit)
 	}
 	if len(snapshot.Items) != 1 {
-		t.Fatalf("expected history preserved when disabled, got %d", len(snapshot.Items))
+		t.Fatalf("expected exactly one retained history item, got %d", len(snapshot.Items))
 	}
 }
 

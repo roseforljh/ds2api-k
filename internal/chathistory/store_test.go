@@ -105,14 +105,11 @@ func TestStoreCreatesAndPersistsEntries(t *testing.T) {
 	}
 }
 
-func TestStoreTrimsToConfiguredLimit(t *testing.T) {
+func TestStoreKeepsOnlyLatestEntry(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "chat_history.json")
 	store := New(path)
-	if _, err := store.SetLimit(10); err != nil {
-		t.Fatalf("set limit failed: %v", err)
-	}
 
-	for i := 0; i < 12; i++ {
+	for i := 0; i < 3; i++ {
 		entry, err := store.Start(StartParams{Model: "deepseek-v4-flash", UserInput: "msg"})
 		if err != nil {
 			t.Fatalf("start %d failed: %v", i, err)
@@ -126,8 +123,11 @@ func TestStoreTrimsToConfiguredLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("snapshot failed: %v", err)
 	}
-	if len(snapshot.Items) != 10 {
-		t.Fatalf("expected 10 items, got %d", len(snapshot.Items))
+	if snapshot.Limit != DefaultLimit {
+		t.Fatalf("expected limit=%d, got %d", DefaultLimit, snapshot.Limit)
+	}
+	if len(snapshot.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(snapshot.Items))
 	}
 }
 
@@ -156,7 +156,7 @@ func TestStoreDeleteClearAndLimitValidation(t *testing.T) {
 	}
 }
 
-func TestStoreDisablePreservesHistoryAndBlocksNewEntries(t *testing.T) {
+func TestStoreExpiresDebugEntryAfterTenMinutes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "chat_history.json")
 	store := New(path)
 
@@ -164,25 +164,32 @@ func TestStoreDisablePreservesHistoryAndBlocksNewEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start failed: %v", err)
 	}
-	if _, err := store.Update(entry.ID, UpdateParams{Status: "success", Content: "world", Completed: true}); err != nil {
+	updated, err := store.Update(entry.ID, UpdateParams{Status: "success", Content: "world", Completed: true})
+	if err != nil {
 		t.Fatalf("update failed: %v", err)
 	}
 
-	snapshot, err := store.SetLimit(DisabledLimit)
+	store.mu.Lock()
+	item := store.details[updated.ID]
+	stale := time.Now().Add(-debugRetentionTTL - time.Minute).UnixMilli()
+	item.CreatedAt = stale
+	item.UpdatedAt = stale
+	item.CompletedAt = stale
+	store.details[updated.ID] = item
+	store.mu.Unlock()
+
+	snapshot, err := store.Snapshot()
 	if err != nil {
-		t.Fatalf("disable failed: %v", err)
+		t.Fatalf("snapshot failed: %v", err)
 	}
-	if snapshot.Limit != DisabledLimit {
-		t.Fatalf("expected disabled limit, got %d", snapshot.Limit)
-	}
-	if len(snapshot.Items) != 1 {
-		t.Fatalf("expected disabled mode to preserve summaries, got %d", len(snapshot.Items))
+	if len(snapshot.Items) != 0 {
+		t.Fatalf("expected expired debug entry to be removed, got %d", len(snapshot.Items))
 	}
 	if store.Enabled() {
-		t.Fatalf("expected store to report disabled")
+		t.Fatalf("expected store to report disabled after ttl eviction")
 	}
-	if _, err := store.Start(StartParams{UserInput: "later"}); err != ErrDisabled {
-		t.Fatalf("expected ErrDisabled, got %v", err)
+	if _, err := store.Get(updated.ID); err == nil {
+		t.Fatalf("expected expired entry lookup to fail")
 	}
 }
 

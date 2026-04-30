@@ -223,7 +223,7 @@ func (s *Store) Enabled() bool {
 	if err := s.persistRetentionLocked(); err != nil {
 		return false
 	}
-	return len(s.state.Items) > 0
+	return s.state.Limit != DisabledLimit
 }
 
 func (s *Store) Get(id string) (Entry, error) {

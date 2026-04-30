@@ -47,7 +47,7 @@ func startChatHistory(store *chathistory.Store, r *http.Request, a *auth.Request
 		UserInput:      extractSingleUserInput(historyMessages),
 		Messages:       extractAllMessages(historyMessages),
 		HistoryText:    stdReq.HistoryText,
-		ToolPromptText: stdReq.ToolPromptText,
+		ToolPromptText: "",
 		FinalPrompt:    finalPrompt,
 	})
 	startParams := chathistory.StartParams{
@@ -58,7 +58,7 @@ func startChatHistory(store *chathistory.Store, r *http.Request, a *auth.Request
 		UserInput:      extractSingleUserInput(historyMessages),
 		Messages:       extractAllMessages(historyMessages),
 		HistoryText:    stdReq.HistoryText,
-		ToolPromptText: stdReq.ToolPromptText,
+		ToolPromptText: "",
 		FinalPrompt:    finalPrompt,
 	}
 	session := &chatHistorySession{
@@ -87,10 +87,33 @@ func chatHistoryMessages(stdReq promptcompat.StandardRequest) []any {
 }
 
 func chatHistoryFinalPrompt(stdReq promptcompat.StandardRequest) string {
-	if stdReq.CurrentInputFileApplied {
-		return ""
+	return stripInlineToolInstructionsForHistory(stdReq.FinalPrompt)
+}
+
+func stripInlineToolInstructionsForHistory(text string) string {
+	const startMarker = "=== TOOL INSTRUCTIONS, MUST FOLLOW ==="
+	const endMarker = "=== END TOOL INSTRUCTIONS ==="
+	start := strings.Index(text, startMarker)
+	if start < 0 {
+		return text
 	}
-	return stdReq.FinalPrompt
+	end := strings.Index(text[start:], endMarker)
+	if end < 0 {
+		return text
+	}
+	after := start + end + len(endMarker)
+	for after < len(text) {
+		switch text[after] {
+		case '\r', '\n', ' ', '\t':
+			after++
+		default:
+			stripped := text[:start] + text[after:]
+			stripped = strings.ReplaceAll(stripped, "tool instructions, ", "")
+			stripped = strings.ReplaceAll(stripped, ", tool instructions", "")
+			return stripped
+		}
+	}
+	return strings.TrimSpace(text[:start])
 }
 
 func shouldCaptureChatHistory(r *http.Request) bool {
@@ -100,7 +123,7 @@ func shouldCaptureChatHistory(r *http.Request) bool {
 	if isVercelStreamPrepareRequest(r) || isVercelStreamReleaseRequest(r) {
 		return false
 	}
-	return strings.TrimSpace(r.Header.Get(adminWebUISourceHeader)) != adminWebUISourceValue
+	return true
 }
 
 func extractSingleUserInput(messages []any) string {

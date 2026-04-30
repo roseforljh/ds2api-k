@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func blockDetailDir(t *testing.T, detailDir string) func() {
@@ -105,6 +106,15 @@ func TestStoreCreatesAndPersistsEntries(t *testing.T) {
 	}
 }
 
+func TestStoreEnabledWhenEmpty(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "chat_history.json")
+	store := New(path)
+
+	if !store.Enabled() {
+		t.Fatalf("expected empty initialized store to be enabled so the first chat can be captured")
+	}
+}
+
 func TestStoreKeepsOnlyLatestEntry(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "chat_history.json")
 	store := New(path)
@@ -185,8 +195,8 @@ func TestStoreExpiresDebugEntryAfterTenMinutes(t *testing.T) {
 	if len(snapshot.Items) != 0 {
 		t.Fatalf("expected expired debug entry to be removed, got %d", len(snapshot.Items))
 	}
-	if store.Enabled() {
-		t.Fatalf("expected store to report disabled after ttl eviction")
+	if !store.Enabled() {
+		t.Fatalf("expected store to remain enabled after ttl eviction so the next chat can be captured")
 	}
 	if _, err := store.Get(updated.ID); err == nil {
 		t.Fatalf("expected expired entry lookup to fail")

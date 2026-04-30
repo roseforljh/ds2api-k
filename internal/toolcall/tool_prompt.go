@@ -30,7 +30,10 @@ RULES:
 10) Do NOT wrap XML in markdown fences. Do NOT output explanations, role markers, or internal monologue.
 11) If you call a tool, the first non-whitespace characters of that tool block must be exactly <|DSML|tool_calls>.
 12) Never omit the opening <|DSML|tool_calls> tag, even if you already plan to close with </|DSML|tool_calls>.
-13) Compatibility note: the runtime also accepts the legacy XML tags <tool_calls> / <invoke> / <parameter>, but prefer the DSML-prefixed form above.
+13) Tool-call tags must use ASCII punctuation only: < > | / ! " '.
+14) Never use fullwidth or localized punctuation in tool-call tags.
+15) Forbidden in tool-call tags: ｜ 〈 〉 ！ ／ “ ”.
+16) Compatibility note: the runtime also accepts the legacy XML tags <tool_calls> / <invoke> / <parameter>, but prefer the DSML-prefixed form above.
 
 PARAMETER SHAPES:
 - string => <|DSML|parameter name="x"><![CDATA[value]]></|DSML|parameter>
@@ -49,6 +52,9 @@ Wrong 2 — Markdown code fences:
 Wrong 3 — missing opening wrapper:
   <|DSML|invoke name="TOOL_NAME">...</|DSML|invoke>
   </|DSML|tool_calls>
+Wrong 4 — fullwidth DSML punctuation:
+  <｜DSML｜tool_calls〉
+  <！/DSML｜tool_calls〉
 
 Remember: The ONLY valid way to use tools is the <|DSML|tool_calls>...</|DSML|tool_calls> block at the end of your response.
 

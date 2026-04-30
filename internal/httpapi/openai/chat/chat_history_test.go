@@ -212,7 +212,67 @@ func TestHandleStreamContextCancelledMarksHistoryStopped(t *testing.T) {
 	}
 }
 
-func TestChatCompletionsSkipsAdminWebUISource(t *testing.T) {
+func TestHandleStreamWithRetryContextCancelledDoesNotOverwriteStoppedHistory(t *testing.T) {
+	historyStore := newTestChatHistoryStore(t)
+	entry, err := historyStore.Start(chathistory.StartParams{
+		CallerID:  "caller:test",
+		Model:     "deepseek-v4-flash",
+		Stream:    true,
+		UserInput: "hello",
+	})
+	if err != nil {
+		t.Fatalf("start history failed: %v", err)
+	}
+	session := &chatHistorySession{
+		store:       historyStore,
+		entryID:     entry.ID,
+		startedAt:   time.Now(),
+		lastPersist: time.Now(),
+		finalPrompt: "hello",
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	h := &Handler{}
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	resp := makeOpenAISSEHTTPResponse(`data: {"p":"response/content","v":"hello"}`, `data: [DONE]`)
+	streamRuntime := newChatStreamRuntime(
+		rec,
+		http.NewResponseController(rec),
+		false,
+		"cid-stop",
+		time.Now().Unix(),
+		"deepseek-v4-flash",
+		"hello",
+		false,
+		false,
+		true,
+		nil,
+		nil,
+		false,
+		false,
+	)
+
+	h.consumeChatStreamAttempt(req, resp, streamRuntime, "text", false, session, false)
+
+	snapshot, err := historyStore.Snapshot()
+	if err != nil {
+		t.Fatalf("snapshot failed: %v", err)
+	}
+	if len(snapshot.Items) != 1 {
+		t.Fatalf("expected one history item, got %d", len(snapshot.Items))
+	}
+	full, err := historyStore.Get(snapshot.Items[0].ID)
+	if err != nil {
+		t.Fatalf("get detail failed: %v", err)
+	}
+	if full.Status != "stopped" {
+		t.Fatalf("expected stopped status to remain after retry stream cancellation, got %#v", full)
+	}
+}
+
+func TestChatCompletionsCapturesAdminWebUISource(t *testing.T) {
 	historyStore := newTestChatHistoryStore(t)
 	h := &Handler{
 		Store:       mockOpenAIConfig{wideInput: true},
@@ -236,15 +296,18 @@ func TestChatCompletionsSkipsAdminWebUISource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("snapshot failed: %v", err)
 	}
-	if len(snapshot.Items) != 0 {
-		t.Fatalf("expected admin webui source to be skipped, got %#v", snapshot.Items)
+	if len(snapshot.Items) != 1 {
+		t.Fatalf("expected admin webui source to be captured, got %#v", snapshot.Items)
+	}
+	if snapshot.Items[0].UserInput != "hi there" {
+		t.Fatalf("unexpected captured user input: %#v", snapshot.Items[0])
 	}
 }
 
-func TestChatCompletionsSkipsHistoryWhenDisabled(t *testing.T) {
+func TestChatCompletionsCapturesHistoryAfterLimitReset(t *testing.T) {
 	historyStore := newTestChatHistoryStore(t)
 	if _, err := historyStore.SetLimit(chathistory.DisabledLimit); err != nil {
-		t.Fatalf("disable history store failed: %v", err)
+		t.Fatalf("reset history limit failed: %v", err)
 	}
 	h := &Handler{
 		Store:       mockOpenAIConfig{wideInput: true},
@@ -267,8 +330,8 @@ func TestChatCompletionsSkipsHistoryWhenDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("snapshot failed: %v", err)
 	}
-	if len(snapshot.Items) != 0 {
-		t.Fatalf("expected disabled history to stay empty, got %#v", snapshot.Items)
+	if len(snapshot.Items) != 1 {
+		t.Fatalf("expected history to capture first item after limit reset, got %#v", snapshot.Items)
 	}
 }
 
@@ -330,7 +393,55 @@ func TestChatCompletionsCurrentInputFilePersistsNeutralMessagesAndHistoryText(t 
 			t.Fatalf("synthetic prompt leaked into persisted messages: %#v", full.Messages)
 		}
 	}
-	if strings.Contains(full.FinalPrompt, "HISTORY.txt") || strings.Contains(full.FinalPrompt, "TOOL INSTRUCTIONS") {
-		t.Fatalf("expected synthetic final prompt to be hidden from chat history, got %q", full.FinalPrompt)
+	if !strings.Contains(full.FinalPrompt, "HISTORY.txt") || !strings.Contains(full.FinalPrompt, "WORKING STATE") {
+		t.Fatalf("expected live prompt to be persisted for official-web style history, got %q", full.FinalPrompt)
+	}
+}
+
+func TestChatCompletionsHistoryHidesInlineToolPromptFromWebUI(t *testing.T) {
+	historyStore := newTestChatHistoryStore(t)
+	ds := &inlineUploadDSStub{}
+	h := &Handler{
+		Store: mockOpenAIConfig{
+			wideInput:           true,
+			currentInputEnabled: true,
+			toolPromptFile:      true,
+		},
+		Auth:        streamStatusAuthStub{},
+		DS:          ds,
+		ChatHistory: historyStore,
+	}
+
+	reqBody := `{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"find docs"},{"role":"assistant","content":"","tool_calls":[{"name":"search","arguments":{"query":"docs"}}]},{"role":"tool","name":"search","tool_call_id":"call-1","content":"tool result"},{"role":"user","content":"summarize"}],"tools":[{"type":"function","function":{"name":"search","description":"Search docs","parameters":{"type":"object"}}}],"stream":false}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
+	req.Header.Set("Authorization", "Bearer direct-token")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.ChatCompletions(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	upstreamPrompt, _ := ds.completionReq["prompt"].(string)
+	if !strings.Contains(upstreamPrompt, "=== TOOL INSTRUCTIONS, MUST FOLLOW ===") || !strings.Contains(upstreamPrompt, "Tool: search") {
+		t.Fatalf("expected upstream prompt to keep inline tool instructions, got %q", upstreamPrompt)
+	}
+	snapshot, err := historyStore.Snapshot()
+	if err != nil {
+		t.Fatalf("snapshot failed: %v", err)
+	}
+	full, err := historyStore.Get(snapshot.Items[0].ID)
+	if err != nil {
+		t.Fatalf("expected detail item, got %v", err)
+	}
+	if strings.Contains(full.FinalPrompt, "=== TOOL INSTRUCTIONS, MUST FOLLOW ===") || strings.Contains(full.FinalPrompt, "Tool: search") || strings.Contains(full.FinalPrompt, "You have access to these tools:") {
+		t.Fatalf("expected WebUI final prompt to hide injected tool instructions, got %q", full.FinalPrompt)
+	}
+	if !strings.Contains(full.FinalPrompt, "HISTORY.txt") || !strings.Contains(full.FinalPrompt, "WORKING STATE") {
+		t.Fatalf("expected WebUI final prompt to keep live prompt context instruction, got %q", full.FinalPrompt)
+	}
+	if full.ToolPromptText != "" {
+		t.Fatalf("expected tool prompt text not to be persisted for WebUI, got %q", full.ToolPromptText)
 	}
 }

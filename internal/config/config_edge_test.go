@@ -234,7 +234,8 @@ func TestAutoDeleteModeResolution(t *testing.T) {
 		cfg  AutoDeleteConfig
 		want string
 	}{
-		{name: "default", cfg: AutoDeleteConfig{}, want: "none"},
+		{name: "default", cfg: AutoDeleteConfig{}, want: "retention"},
+		{name: "retention", cfg: AutoDeleteConfig{Mode: "retention"}, want: "retention"},
 		{name: "legacy all", cfg: AutoDeleteConfig{Sessions: true}, want: "all"},
 		{name: "single", cfg: AutoDeleteConfig{Mode: "single"}, want: "single"},
 		{name: "all", cfg: AutoDeleteConfig{Mode: "all"}, want: "all"},

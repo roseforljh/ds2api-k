@@ -1,7 +1,6 @@
 package openai
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -623,72 +622,66 @@ func TestApplyCurrentInputFileDisabledPassThrough(t *testing.T) {
 	}
 }
 
-func TestApplyCurrentInputFileUploadsFirstTurnWithInjectedWrapper(t *testing.T) {
-	ds := &inlineUploadDSStub{}
-	h := &openAITestSurface{
-		Store: mockOpenAIConfig{
-			wideInput:           true,
-			currentInputEnabled: true,
-			currentInputMin:     10,
-			thinkingInjection:   boolPtr(true),
+func TestApplyCurrentInputFileSkipsNewSessionWithoutAssistantOrToolHistory(t *testing.T) {
+	tests := []struct {
+		name     string
+		messages []any
+	}{
+		{
+			name: "single user first turn",
+			messages: []any{
+				map[string]any{"role": "user", "content": "first turn content that is long enough"},
+			},
 		},
-		DS: ds,
-	}
-	req := map[string]any{
-		"model": "deepseek-v4-flash",
-		"messages": []any{
-			map[string]any{"role": "user", "content": "first turn content that is long enough"},
+		{
+			name: "system plus user first turn",
+			messages: []any{
+				map[string]any{"role": "system", "content": "system instructions"},
+				map[string]any{"role": "user", "content": "first turn content that is long enough"},
+			},
 		},
 	}
-	stdReq, err := promptcompat.NormalizeOpenAIChatRequest(h.Store, req, "")
-	if err != nil {
-		t.Fatalf("normalize failed: %v", err)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ds := &inlineUploadDSStub{}
+			h := &openAITestSurface{
+				Store: mockOpenAIConfig{
+					wideInput:           true,
+					currentInputEnabled: true,
+					currentInputMin:     10,
+					thinkingInjection:   boolPtr(true),
+				},
+				DS: ds,
+			}
+			req := map[string]any{
+				"model":    "deepseek-v4-flash",
+				"messages": tt.messages,
+			}
+			stdReq, err := promptcompat.NormalizeOpenAIChatRequest(h.Store, req, "")
+			if err != nil {
+				t.Fatalf("normalize failed: %v", err)
+			}
 
-	out, err := h.applyCurrentInputFile(context.Background(), &auth.RequestAuth{DeepSeekToken: "token"}, stdReq)
-	if err != nil {
-		t.Fatalf("apply current input file failed: %v", err)
-	}
-	if len(ds.uploadCalls) != 1 {
-		t.Fatalf("expected 1 current input upload, got %d", len(ds.uploadCalls))
-	}
-	upload := ds.uploadCalls[0]
-	if upload.Filename != "HISTORY.txt" {
-		t.Fatalf("unexpected upload filename: %q", upload.Filename)
-	}
-	uploadedText := string(upload.Data)
-	if !bytes.HasPrefix(upload.Data, []byte{0xEF, 0xBB, 0xBF}) {
-		t.Fatalf("expected UTF-8 BOM prefix on generated context upload, got % x", upload.Data[:min(3, len(upload.Data))])
-	}
-	if strings.Contains(uploadedText, "[file content end]") || strings.Contains(uploadedText, "[file content begin]") || strings.Contains(uploadedText, "[file name]:") {
-		t.Fatalf("expected normal current input file content without file-boundary tags, got %q", uploadedText)
-	}
-	if !strings.Contains(uploadedText, "[User]\nfirst turn content that is long enough") {
-		t.Fatalf("expected readable current user turn, got %q", uploadedText)
-	}
-	if !strings.Contains(uploadedText, promptcompat.ThinkingInjectionMarker) {
-		t.Fatalf("expected thinking injection in current input file, got %q", uploadedText)
-	}
-	if strings.Contains(out.FinalPrompt, "first turn content that is long enough") {
-		t.Fatalf("expected current input text to be replaced in live prompt, got %s", out.FinalPrompt)
-	}
-	if strings.Contains(out.FinalPrompt, "CURRENT_USER_INPUT.txt") || strings.Contains(out.FinalPrompt, "Read that file") {
-		t.Fatalf("expected live prompt not to use deprecated file-read wording, got %s", out.FinalPrompt)
-	}
-	if !strings.Contains(out.FinalPrompt, "latest user message") {
-		t.Fatalf("expected neutral continuation instruction in live prompt, got %s", out.FinalPrompt)
-	}
-	if !strings.Contains(out.FinalPrompt, "HISTORY.txt") {
-		t.Fatalf("expected final prompt to mention HISTORY.txt, got %s", out.FinalPrompt)
-	}
-	if !strings.Contains(out.FinalPrompt, "WORKING STATE") {
-		t.Fatalf("expected final prompt to instruct following HISTORY.txt working state, got %s", out.FinalPrompt)
-	}
-	if !strings.Contains(out.FinalPrompt, "no_active_working") {
-		t.Fatalf("expected final prompt to mention no_active_working, got %s", out.FinalPrompt)
-	}
-	if len(out.RefFileIDs) != 1 || out.RefFileIDs[0] != "file-inline-1" {
-		t.Fatalf("expected current input file id in ref_file_ids, got %#v", out.RefFileIDs)
+			out, err := h.applyCurrentInputFile(context.Background(), &auth.RequestAuth{DeepSeekToken: "token"}, stdReq)
+			if err != nil {
+				t.Fatalf("apply current input file failed: %v", err)
+			}
+			if len(ds.uploadCalls) != 0 {
+				t.Fatalf("expected new-session request to skip current input upload, got %d", len(ds.uploadCalls))
+			}
+			if out.CurrentInputFileApplied {
+				t.Fatalf("expected new-session request to stay direct, got current_input applied")
+			}
+			if len(out.RefFileIDs) != 0 {
+				t.Fatalf("expected no current input ref files for new-session request, got %#v", out.RefFileIDs)
+			}
+			if !strings.Contains(out.FinalPrompt, "first turn content that is long enough") {
+				t.Fatalf("expected direct first-turn prompt to preserve user content, got %s", out.FinalPrompt)
+			}
+			if strings.Contains(out.FinalPrompt, "HISTORY.txt") || strings.Contains(out.FinalPrompt, "WORKING STATE") {
+				t.Fatalf("expected direct first-turn prompt not to mention HISTORY.txt/WORKING STATE, got %s", out.FinalPrompt)
+			}
+		})
 	}
 }
 
@@ -755,6 +748,8 @@ func TestApplyCurrentInputFileDropsStaleRefFileIDs(t *testing.T) {
 		"model":        "deepseek-v4-flash",
 		"ref_file_ids": []any{"stale-history-file"},
 		"messages": []any{
+			map[string]any{"role": "user", "content": "first user turn"},
+			map[string]any{"role": "assistant", "content": "assistant reply"},
 			map[string]any{"role": "user", "content": "latest user turn"},
 		},
 	}
@@ -785,7 +780,9 @@ func TestApplyCurrentInputFileUsesRequestLocalPrompt(t *testing.T) {
 	req := map[string]any{
 		"model": "deepseek-v4-flash",
 		"messages": []any{
-			map[string]any{"role": "user", "content": "hi"},
+			map[string]any{"role": "user", "content": "first user turn"},
+			map[string]any{"role": "assistant", "content": "assistant reply"},
+			map[string]any{"role": "user", "content": "latest user turn"},
 		},
 	}
 	stdReq, err := promptcompat.NormalizeOpenAIChatRequest(h.Store, req, "")
@@ -878,6 +875,9 @@ func TestApplyCurrentInputFileInlinesToolPromptWhenEnabled(t *testing.T) {
 		"=== TOOL INSTRUCTIONS, MUST FOLLOW ===",
 		"=== END TOOL INSTRUCTIONS ===",
 		"<|DSML|tool_calls>",
+		"Tool-call tags must use ASCII punctuation only",
+		"Never use fullwidth or localized punctuation in tool-call tags",
+		"Forbidden in tool-call tags: ｜ 〈 〉 ！ ／ “ ”",
 		"HISTORY.txt",
 		"WORKING STATE",
 		"no_active_working",

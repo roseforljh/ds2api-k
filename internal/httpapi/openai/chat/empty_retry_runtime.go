@@ -357,6 +357,7 @@ func (h *Handler) prepareChatStreamRuntime(w http.ResponseWriter, resp *http.Res
 func (h *Handler) consumeChatStreamAttempt(r *http.Request, resp *http.Response, streamRuntime *chatStreamRuntime, initialType string, thinkingEnabled bool, historySession *chatHistorySession, allowDeferEmpty bool) (bool, bool) {
 	defer func() { _ = resp.Body.Close() }()
 	finalReason := "stop"
+	contextCancelled := false
 	streamengine.ConsumeSSE(streamengine.ConsumeConfig{
 		Context:             r.Context(),
 		Body:                resp.Body,
@@ -380,11 +381,15 @@ func (h *Handler) consumeChatStreamAttempt(r *http.Request, resp *http.Response,
 			}
 		},
 		OnContextDone: func() {
+			contextCancelled = true
 			if historySession != nil {
 				historySession.stopped(streamRuntime.thinking.String(), streamRuntime.text.String(), string(streamengine.StopReasonContextCancelled))
 			}
 		},
 	})
+	if contextCancelled {
+		return true, false
+	}
 	terminalWritten := streamRuntime.finalize(finalReason, allowDeferEmpty && finalReason != "content_filter")
 	if terminalWritten {
 		recordChatStreamHistory(streamRuntime, historySession)

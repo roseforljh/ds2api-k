@@ -273,7 +273,7 @@
         "viewModeList": "列表模式",
         "viewModeMerged": "合并模式",
         "emptyTitle": "还没有可用的对话记录",
-        "emptyDesc": "当外部客户端调用 /v1/chat/completions 时，服务端会自动把结果写入这里。",
+        "emptyDesc": "当项目 WebUI 或外部客户端调用 /v1/chat/completions 时，服务端会自动把最新结果写入这里。",
         "untitled": "未命名对话",
         "noPreview": "暂无预览内容",
         "selectPrompt": "从左侧选择一条记录查看详情。",

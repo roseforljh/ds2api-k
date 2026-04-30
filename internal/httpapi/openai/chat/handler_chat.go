@@ -17,6 +17,8 @@ import (
 	streamengine "ds2api/internal/stream"
 )
 
+var remoteSessionRetentionDelay = 10 * time.Minute
+
 func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	if isVercelStreamReleaseRequest(r) {
 		h.handleVercelStreamRelease(w, r)
@@ -76,6 +78,8 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 	historySession := startChatHistory(h.ChatHistory, r, a, stdReq)
 
+	h.deletePreviousRemoteSessionsForRetention(r.Context(), a)
+
 	sessionID, err = h.DS.CreateSession(r.Context(), a, 3)
 	if err != nil {
 		if a.UseConfigToken {
@@ -119,16 +123,76 @@ func (h *Handler) autoDeleteRemoteSession(ctx context.Context, a *auth.RequestAu
 	if a.DeepSeekToken == "" {
 		return
 	}
+	mode := strings.TrimSpace(strings.ToLower(h.Store.AutoDeleteMode()))
+	if mode == "" || mode == "none" {
+		return
+	}
+	if mode == "single" && strings.TrimSpace(sessionID) == "" {
+		return
+	}
+	if mode == "retention" {
+		h.scheduleRemoteSessionRetentionDeletion(a, sessionID)
+		return
+	}
 
 	deleteBaseCtx := context.WithoutCancel(ctx)
 	deleteCtx, cancel := context.WithTimeout(deleteBaseCtx, 10*time.Second)
 	defer cancel()
 
-	if err := h.DS.DeleteAllSessionsForToken(deleteCtx, a.DeepSeekToken); err != nil {
-		config.Logger.Warn("[auto_delete_sessions] failed", "account", a.AccountID, "mode", "all_locked", "session_id", sessionID, "error", err)
+	switch mode {
+	case "single":
+		if _, err := h.DS.DeleteSessionForToken(deleteCtx, a.DeepSeekToken, sessionID); err != nil {
+			config.Logger.Warn("[auto_delete_sessions] failed", "account", a.AccountID, "mode", mode, "session_id", sessionID, "error", err)
+			return
+		}
+	case "all":
+		if err := h.DS.DeleteAllSessionsForToken(deleteCtx, a.DeepSeekToken); err != nil {
+			config.Logger.Warn("[auto_delete_sessions] failed", "account", a.AccountID, "mode", mode, "session_id", sessionID, "error", err)
+			return
+		}
+	default:
 		return
 	}
-	config.Logger.Debug("[auto_delete_sessions] success", "account", a.AccountID, "mode", "all_locked", "session_id", sessionID)
+	config.Logger.Debug("[auto_delete_sessions] success", "account", a.AccountID, "mode", mode, "session_id", sessionID)
+}
+
+func (h *Handler) deletePreviousRemoteSessionsForRetention(ctx context.Context, a *auth.RequestAuth) {
+	if a == nil || strings.TrimSpace(a.DeepSeekToken) == "" {
+		return
+	}
+	mode := strings.TrimSpace(strings.ToLower(h.Store.AutoDeleteMode()))
+	if mode != "retention" {
+		return
+	}
+	deleteBaseCtx := context.WithoutCancel(ctx)
+	deleteCtx, cancel := context.WithTimeout(deleteBaseCtx, 10*time.Second)
+	defer cancel()
+	if err := h.DS.DeleteAllSessionsForToken(deleteCtx, a.DeepSeekToken); err != nil {
+		config.Logger.Warn("[remote_session_retention] clear previous sessions failed", "account", a.AccountID, "error", err)
+		return
+	}
+	config.Logger.Debug("[remote_session_retention] previous sessions cleared", "account", a.AccountID)
+}
+
+func (h *Handler) scheduleRemoteSessionRetentionDeletion(a *auth.RequestAuth, sessionID string) {
+	if a == nil || strings.TrimSpace(a.DeepSeekToken) == "" || strings.TrimSpace(sessionID) == "" {
+		return
+	}
+	token := a.DeepSeekToken
+	accountID := a.AccountID
+	go func() {
+		timer := time.NewTimer(remoteSessionRetentionDelay)
+		defer timer.Stop()
+		<-timer.C
+
+		deleteCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if _, err := h.DS.DeleteSessionForToken(deleteCtx, token, sessionID); err != nil {
+			config.Logger.Warn("[remote_session_retention] delayed delete failed", "account", accountID, "session_id", sessionID, "error", err)
+			return
+		}
+		config.Logger.Debug("[remote_session_retention] delayed delete success", "account", accountID, "session_id", sessionID)
+	}()
 }
 
 func (h *Handler) handleNonStream(w http.ResponseWriter, resp *http.Response, completionID, model, finalPrompt string, thinkingEnabled, searchEnabled bool, toolNames []string, toolsRaw any, historySession *chatHistorySession) {

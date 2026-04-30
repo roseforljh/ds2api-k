@@ -133,8 +133,18 @@ func parseSettingsUpdateRequest(req map[string]any) (*config.AdminConfig, *confi
 		}
 	}
 
-	if _, ok := req["auto_delete"].(map[string]any); ok {
-		autoDeleteCfg = &config.AutoDeleteConfig{Mode: "all", Sessions: true}
+	if raw, ok := req["auto_delete"].(map[string]any); ok {
+		cfg := &config.AutoDeleteConfig{}
+		if v, exists := raw["mode"]; exists {
+			cfg.Mode = strings.TrimSpace(strings.ToLower(fmt.Sprintf("%v", v)))
+		}
+		if v, exists := raw["sessions"]; exists {
+			cfg.Sessions = boolFrom(v)
+		}
+		if err := config.ValidateAutoDeleteConfig(*cfg); err != nil {
+			return nil, nil, nil, nil, nil, nil, nil, nil, nil, err
+		}
+		autoDeleteCfg = cfg
 	}
 
 	if raw, ok := req["current_input_file"].(map[string]any); ok {

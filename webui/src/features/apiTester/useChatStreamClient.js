@@ -2,6 +2,8 @@ import { useCallback } from 'react'
 
 import { getAttachedFileAccountIds } from './fileAccountBinding'
 
+const STREAM_CONTENT_FLUSH_MS = 120
+
 export function useChatStreamClient({
     t,
     onMessage,
@@ -99,6 +101,41 @@ export function useChatStreamClient({
         setStreamingThinking('')
 
         abortControllerRef.current = new AbortController()
+        let streamFlushTimer = null
+        let pendingStreamContent = ''
+        let visibleStreamContent = ''
+        let pendingStreamThinking = ''
+        let visibleStreamThinking = ''
+
+        const flushStreamContent = () => {
+            if (pendingStreamContent) {
+                visibleStreamContent += pendingStreamContent
+                pendingStreamContent = ''
+                setStreamingContent(visibleStreamContent)
+            }
+            if (pendingStreamThinking) {
+                visibleStreamThinking += pendingStreamThinking
+                pendingStreamThinking = ''
+                setStreamingThinking(visibleStreamThinking)
+            }
+        }
+
+        const scheduleStreamFlush = () => {
+            if (streamFlushTimer) return
+            streamFlushTimer = globalThis.setTimeout(() => {
+                streamFlushTimer = null
+                flushStreamContent()
+            }, STREAM_CONTENT_FLUSH_MS)
+        }
+
+        const disposeStreamFlush = () => {
+            if (streamFlushTimer) {
+                globalThis.clearTimeout(streamFlushTimer)
+                streamFlushTimer = null
+            }
+            pendingStreamContent = ''
+            pendingStreamThinking = ''
+        }
 
         try {
             const selectedAccountId = String(selectedAccount || '').trim()
@@ -194,11 +231,13 @@ export function useChatStreamClient({
                                 const delta = choice.delta
                                 if (delta.reasoning_content) {
                                     accumulatedThinking += delta.reasoning_content
-                                    setStreamingThinking(prev => prev + delta.reasoning_content)
+                                    pendingStreamThinking += delta.reasoning_content
+                                    scheduleStreamFlush()
                                 }
                                 if (delta.content) {
                                     accumulatedContent += delta.content
-                                    setStreamingContent(prev => prev + delta.content)
+                                    pendingStreamContent += delta.content
+                                    scheduleStreamFlush()
                                 }
                             }
                         } catch (e) {
@@ -209,6 +248,7 @@ export function useChatStreamClient({
 
                 if (streamError) {
                     await reader.cancel().catch(() => {})
+                    disposeStreamFlush()
                     setStreamingContent('')
                     setStreamingThinking('')
                     setResponse({
@@ -223,6 +263,8 @@ export function useChatStreamClient({
                     setIsStreaming(false)
                     return
                 }
+                flushStreamContent()
+                disposeStreamFlush()
 
                 setResponse({
                     success: true,
@@ -252,6 +294,7 @@ export function useChatStreamClient({
                 setResponse({ error: e.message, success: false })
             }
         } finally {
+            disposeStreamFlush()
             setLoading(false)
             setIsStreaming(false)
             abortControllerRef.current = null

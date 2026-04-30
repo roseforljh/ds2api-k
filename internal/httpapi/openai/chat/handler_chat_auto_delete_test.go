@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"ds2api/internal/auth"
 	dsclient "ds2api/internal/deepseek/client"
@@ -103,6 +104,83 @@ func TestChatCompletionsAutoDeleteModes(t *testing.T) {
 				t.Fatalf("expected single delete for session-id, got %q", ds.lastSessionID)
 			}
 		})
+	}
+}
+
+func TestChatCompletionsDefaultRetentionDeletesOldSessionsBeforeCreateOnly(t *testing.T) {
+	originalDelay := remoteSessionRetentionDelay
+	remoteSessionRetentionDelay = time.Hour
+	t.Cleanup(func() { remoteSessionRetentionDelay = originalDelay })
+
+	ds := &autoDeleteModeDSStub{
+		resp: makeOpenAISSEHTTPResponse(
+			`data: {"p":"response/content","v":"hello"}`,
+			"data: [DONE]",
+		),
+	}
+	h := &Handler{
+		Store: mockOpenAIConfig{
+			wideInput: true,
+		},
+		Auth: streamStatusAuthStub{},
+		DS:   ds,
+	}
+
+	reqBody := `{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"hi"}],"stream":false}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
+	req.Header.Set("Authorization", "Bearer direct-token")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.ChatCompletions(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if ds.allCalls != 1 {
+		t.Fatalf("old remote sessions should be cleared before creating the new one, all delete calls=%d want=1", ds.allCalls)
+	}
+	if ds.singleCalls != 0 {
+		t.Fatalf("current remote session should not be deleted immediately, single delete calls=%d want=0", ds.singleCalls)
+	}
+}
+
+func TestChatCompletionsDefaultRetentionDeletesCurrentSessionAfterDelay(t *testing.T) {
+	originalDelay := remoteSessionRetentionDelay
+	remoteSessionRetentionDelay = time.Millisecond
+	t.Cleanup(func() { remoteSessionRetentionDelay = originalDelay })
+
+	ds := &autoDeleteModeDSStub{
+		resp: makeOpenAISSEHTTPResponse(
+			`data: {"p":"response/content","v":"hello"}`,
+			"data: [DONE]",
+		),
+	}
+	h := &Handler{
+		Store: mockOpenAIConfig{
+			wideInput: true,
+		},
+		Auth: streamStatusAuthStub{},
+		DS:   ds,
+	}
+
+	reqBody := `{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"hi"}],"stream":false}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
+	req.Header.Set("Authorization", "Bearer direct-token")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.ChatCompletions(rec, req)
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) && ds.singleCalls == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	if ds.singleCalls != 1 {
+		t.Fatalf("current remote session should be deleted after retention delay, single delete calls=%d want=1", ds.singleCalls)
+	}
+	if ds.lastSessionID != "session-id" {
+		t.Fatalf("expected delayed delete for session-id, got %q", ds.lastSessionID)
 	}
 }
 

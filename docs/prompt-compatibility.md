@@ -242,7 +242,7 @@ OpenAI 文件相关实现：
 
 兼容层现在只保留 `current_input_file` 这一种拆分方式；旧的 `history_split` 已废弃，只保留为兼容旧配置的字段，不再参与请求处理。
 
-- `current_input_file` 默认开启；它用于把“完整上下文”合并进隐藏上下文文件。当最新 user turn 的纯文本长度达到 `current_input_file.min_chars`（默认 `0`）时，兼容层会上传一个文件名为 `HISTORY.txt` 的上下文文件，并在 live prompt 中只保留一个中性的 user 消息要求模型读取 `WORKING STATE`。如果当前请求带 tools 且启用工具提示分离，工具提示会由服务端直接 inline 到这个临时 live prompt 的 `TOOL INSTRUCTIONS` 区块，不再上传单独的 `TOOL_PROMPT.txt`。
+- `current_input_file` 默认开启；它用于把“已有对话/工具上下文”合并进隐藏上下文文件。只有请求中已经存在 assistant / tool / function 历史时，且最新 user turn 的纯文本长度达到 `current_input_file.min_chars`（默认 `0`），兼容层才会上传一个文件名为 `HISTORY.txt` 的上下文文件，并在 live prompt 中只保留一个中性的 user 消息要求模型读取 `WORKING STATE`。新会话首轮单 user 输入不会触发该包装，避免模型把空工作区误判成旧任务续跑。如果当前请求带 tools 且启用工具提示分离，工具提示会由服务端直接 inline 到这个临时 live prompt 的 `TOOL INSTRUCTIONS` 区块，不再上传单独的 `TOOL_PROMPT.txt`。
 - 如果 `current_input_file.enabled=false`，请求会直接透传，不上传任何拆分上下文文件。
 - 旧的 `history_split.enabled` / `history_split.trigger_after_turns` 会被读取进配置对象以保持兼容，但不会触发拆分上传，也不会影响 `current_input_file` 的默认开启。
 

@@ -273,7 +273,7 @@
         "viewModeList": "List mode",
         "viewModeMerged": "Merged mode",
         "emptyTitle": "No conversation history yet",
-        "emptyDesc": "When external clients call /v1/chat/completions, the server will save the results here automatically.",
+        "emptyDesc": "When the project WebUI or external clients call /v1/chat/completions, the server will save the latest result here automatically.",
         "untitled": "Untitled conversation",
         "noPreview": "No preview available.",
         "selectPrompt": "Select a record on the left to view details.",

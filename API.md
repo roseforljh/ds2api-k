@@ -725,7 +725,7 @@ data: {"type":"message_stop"}
 - `runtime`（`account_max_inflight`、`account_max_queue`、`global_max_inflight`、`token_refresh_interval_hours`）
 - `compat`（`wide_input_strict_output`、`strip_reference_markers`）
 - `responses` / `embeddings`
-- `auto_delete`（`mode`：`none` / `single` / `all`；旧配置 `sessions=true` 仍按 `all` 处理）
+- `auto_delete`（`mode`：默认 `retention`，请求前清空旧 DS 官方 Web 会话、仅保留本次新会话并在 10 分钟后删除；也支持 `none` / `single` / `all`；旧配置 `sessions=true` 仍按 `all` 处理）
 - `current_input_file`（`enabled` 默认返回 `true`、`min_chars`）
 - `model_aliases`
 - `env_backed`、`needs_vercel_sync`

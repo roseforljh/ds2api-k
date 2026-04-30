@@ -289,7 +289,7 @@ go run ./cmd/ds2api
 - `accounts`：DeepSeek 托管账号，支持 `email` 或 `mobile` 登录，可配置代理、名称和备注。
 - `model_aliases`：OpenAI / Claude / Gemini 共用的模型 alias 映射。
 - `runtime`：账号并发、队列与 token 刷新策略，可通过 Admin Settings 热更新。
-- `auto_delete.mode`：请求结束后的远端会话清理策略，支持 `none` / `single` / `all`。
+- `auto_delete.mode`：远端 DS 官方 Web 会话清理策略，默认 `retention`（请求前清空旧会话，仅保留本次新会话，10 分钟后删除）；也支持 `none` / `single` / `all`。
 - `history_split`：旧轮次拆分字段，已废弃并忽略，仅保留兼容旧配置。
 - `current_input_file`：唯一生效的独立拆分策略；默认开启且阈值为 `0`，触发时将完整上下文合并上传为隐藏上下文文件；`tool_prompt_file` 默认开启，会把由 `tools` 生成的大段工具说明额外上传为隐藏工具提示文件，减少最终 `prompt` 暴露的 Claude Code / Agent 工具说明。
 - 如果关闭 `current_input_file`，请求会直接透传，不上传拆分上下文文件。

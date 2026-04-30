@@ -22,6 +22,9 @@ func (s Service) ApplyCurrentInputFile(ctx context.Context, a *auth.RequestAuth,
 	if s.DS == nil || s.Store == nil || a == nil || !s.Store.CurrentInputFileEnabled() {
 		return stdReq, nil
 	}
+	if !hasPriorAssistantOrToolMessage(stdReq.Messages) {
+		return stdReq, nil
+	}
 	threshold := s.Store.CurrentInputFileMinChars()
 
 	index, text := latestUserInputForFile(stdReq.Messages)
@@ -86,6 +89,20 @@ func (s Service) ApplyCurrentInputFile(ctx context.Context, a *auth.RequestAuth,
 		stdReq.ToolNames = builtToolNames
 	}
 	return stdReq, nil
+}
+
+func hasPriorAssistantOrToolMessage(messages []any) bool {
+	for _, raw := range messages {
+		msg, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(shared.AsString(msg["role"]))) {
+		case "assistant", "tool", "function":
+			return true
+		}
+	}
+	return false
 }
 
 func latestUserInputForFile(messages []any) (int, string) {

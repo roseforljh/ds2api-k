@@ -145,9 +145,9 @@ func ValidateTrimmedString(name, value string, required bool) error {
 func ValidateAutoDeleteMode(mode string) error {
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	switch mode {
-	case "", "none", "single", "all":
+	case "", "retention", "none", "single", "all":
 		return nil
 	default:
-		return fmt.Errorf("auto_delete.mode must be one of none, single, all")
+		return fmt.Errorf("auto_delete.mode must be one of retention, none, single, all")
 	}
 }

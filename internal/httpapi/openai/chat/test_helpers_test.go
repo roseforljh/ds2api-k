@@ -22,6 +22,7 @@ type mockOpenAIConfig struct {
 	historySplitTurns   int
 	currentInputEnabled bool
 	currentInputMin     int
+	toolPromptFile      bool
 	thinkingInjection   *bool
 	thinkingPrompt      string
 }
@@ -37,7 +38,7 @@ func (m mockOpenAIConfig) ResponsesStoreTTLSeconds() int       { return m.respon
 func (m mockOpenAIConfig) EmbeddingsProvider() string          { return m.embedProv }
 func (m mockOpenAIConfig) AutoDeleteMode() string {
 	if m.autoDeleteMode == "" {
-		return "none"
+		return "retention"
 	}
 	return m.autoDeleteMode
 }
@@ -53,7 +54,7 @@ func (m mockOpenAIConfig) CurrentInputFileEnabled() bool { return m.currentInput
 func (m mockOpenAIConfig) CurrentInputFileMinChars() int {
 	return m.currentInputMin
 }
-func (m mockOpenAIConfig) CurrentInputToolPromptFileEnabled() bool { return false }
+func (m mockOpenAIConfig) CurrentInputToolPromptFileEnabled() bool { return m.toolPromptFile }
 func (m mockOpenAIConfig) ThinkingInjectionEnabled() bool {
 	if m.thinkingInjection == nil {
 		return false

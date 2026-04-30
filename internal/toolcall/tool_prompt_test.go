@@ -119,6 +119,21 @@ func TestBuildToolCallInstructions_AnchorsMissingOpeningWrapperFailureMode(t *te
 	}
 }
 
+func TestBuildToolCallInstructions_ForbidsFullwidthDSMLPunctuation(t *testing.T) {
+	out := BuildToolCallInstructions([]string{"Skill"})
+	for _, want := range []string{
+		"Tool-call tags must use ASCII punctuation only",
+		"Never use fullwidth or localized punctuation in tool-call tags",
+		"Forbidden in tool-call tags: ｜ 〈 〉 ！ ／ “ ”",
+		"Wrong 4 — fullwidth DSML punctuation",
+		"<｜DSML｜tool_calls〉",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected fullwidth-punctuation guard %q, got: %s", want, out)
+		}
+	}
+}
+
 func TestBuildToolCallInstructions_StatesToolsAreOptionalForDirectAnswers(t *testing.T) {
 	out := BuildToolCallInstructions([]string{"Skill"})
 	for _, want := range []string{

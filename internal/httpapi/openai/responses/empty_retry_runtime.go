@@ -11,6 +11,7 @@ import (
 	"ds2api/internal/config"
 	dsprotocol "ds2api/internal/deepseek/protocol"
 	openaifmt "ds2api/internal/format/openai"
+	"ds2api/internal/httpapi/openai/shared"
 	"ds2api/internal/promptcompat"
 	"ds2api/internal/sse"
 	streamengine "ds2api/internal/stream"
@@ -27,12 +28,23 @@ type responsesNonStreamResult struct {
 	responseMessageID     int
 }
 
+func retryFeedbackForResponsesResult(attempt int, result responsesNonStreamResult) shared.RetryFeedback {
+	return shared.RetryFeedback{
+		Attempt: attempt,
+		Kind:    "empty_output",
+		Summary: "empty output or no valid tool call",
+		Raw:     result.text,
+	}
+}
+
 func (h *Handler) handleResponsesNonStreamWithRetry(w http.ResponseWriter, ctx context.Context, a *auth.RequestAuth, resp *http.Response, payload map[string]any, pow, owner, responseID, model, finalPrompt string, thinkingEnabled, searchEnabled bool, toolNames []string, toolsRaw any, toolChoice promptcompat.ToolChoicePolicy, traceID string) {
 	attempts := 0
 	currentResp := resp
 	usagePrompt := finalPrompt
 	accumulatedThinking := ""
 	accumulatedToolDetectionThinking := ""
+	retryStartedAt := time.Now()
+	retryHistory := []shared.RetryFeedback{}
 	for {
 		result, ok := h.collectResponsesNonStreamAttempt(w, currentResp, responseID, model, usagePrompt, thinkingEnabled, searchEnabled, toolNames, toolsRaw)
 		if !ok {
@@ -45,19 +57,24 @@ func (h *Handler) handleResponsesNonStreamWithRetry(w http.ResponseWriter, ctx c
 		result.parsed = detectAssistantToolCalls(result.text, result.thinking, result.toolDetectionThinking, toolNames)
 		result.body = openaifmt.BuildResponseObjectWithToolCalls(responseID, model, usagePrompt, result.thinking, result.text, result.parsed.Calls, toolsRaw)
 
-		if !shouldRetryResponsesNonStream(result, attempts) {
+		if !shouldRetryResponsesNonStream(result, attempts, retryStartedAt, time.Now()) {
 			h.finishResponsesNonStreamResult(w, result, attempts, owner, responseID, toolChoice, traceID)
 			return
 		}
 
 		attempts++
+		retryHistory = shared.PushRetryFeedbackWindow(retryHistory, retryFeedbackForResponsesResult(attempts, result))
 		config.Logger.Info("[openai_empty_retry] attempting synthetic retry", "surface", "responses", "stream", false, "retry_attempt", attempts, "parent_message_id", result.responseMessageID)
 		retryPow, powErr := h.DS.GetPow(ctx, a, 3)
 		if powErr != nil {
 			config.Logger.Warn("[openai_empty_retry] retry PoW fetch failed, falling back to original PoW", "surface", "responses", "stream", false, "retry_attempt", attempts, "error", powErr)
 			retryPow = pow
 		}
-		nextResp, err := h.DS.CallCompletion(ctx, a, clonePayloadForEmptyOutputRetry(payload, result.responseMessageID), retryPow, 3)
+		retryPayload := clonePayloadForEmptyOutputRetry(payload, result.responseMessageID)
+		if original, _ := retryPayload["prompt"].(string); len(retryHistory) > 0 {
+			retryPayload["prompt"] = strings.TrimRight(original, "\r\n\t ") + "\n\n" + shared.RenderRetryFeedbackWindow(retryHistory)
+		}
+		nextResp, err := h.DS.CallCompletion(ctx, a, retryPayload, retryPow, 3)
 		if err != nil {
 			writeOpenAIError(w, http.StatusInternalServerError, "Failed to get completion.")
 			config.Logger.Warn("[openai_empty_retry] retry request failed", "surface", "responses", "stream", false, "retry_attempt", attempts, "error", err)
@@ -115,8 +132,9 @@ func (h *Handler) finishResponsesNonStreamResult(w http.ResponseWriter, result r
 	config.Logger.Info("[openai_empty_retry] completed", "surface", "responses", "stream", false, "retry_attempts", attempts, "success_source", source)
 }
 
-func shouldRetryResponsesNonStream(result responsesNonStreamResult, attempts int) bool {
+func shouldRetryResponsesNonStream(result responsesNonStreamResult, attempts int, startedAt, now time.Time) bool {
 	return emptyOutputRetryEnabled() &&
+		emptyOutputRetryWithinWindow(startedAt, now) &&
 		attempts < emptyOutputRetryMaxAttempts() &&
 		!result.contentFilter &&
 		len(result.parsed.Calls) == 0 &&
@@ -129,26 +147,34 @@ func (h *Handler) handleResponsesStreamWithRetry(w http.ResponseWriter, r *http.
 		return
 	}
 	attempts := 0
+	retryStartedAt := time.Now()
+	retryHistory := []shared.RetryFeedback{}
 	currentResp := resp
 	for {
-		terminalWritten, retryable := h.consumeResponsesStreamAttempt(r, currentResp, streamRuntime, initialType, thinkingEnabled, attempts < emptyOutputRetryMaxAttempts())
+		withinWindow := emptyOutputRetryWithinWindow(retryStartedAt, time.Now())
+		terminalWritten, retryable := h.consumeResponsesStreamAttempt(r, currentResp, streamRuntime, initialType, thinkingEnabled, withinWindow && attempts < emptyOutputRetryMaxAttempts())
 		if terminalWritten {
 			logResponsesStreamTerminal(streamRuntime, attempts)
 			return
 		}
-		if !retryable || !emptyOutputRetryEnabled() || attempts >= emptyOutputRetryMaxAttempts() {
+		if !retryable || !emptyOutputRetryEnabled() || !withinWindow || attempts >= emptyOutputRetryMaxAttempts() {
 			streamRuntime.finalize("stop", false)
 			config.Logger.Info("[openai_empty_retry] terminal empty output", "surface", "responses", "stream", true, "retry_attempts", attempts, "success_source", "none", "error_code", streamRuntime.finalErrorCode)
 			return
 		}
 		attempts++
+		retryHistory = shared.PushRetryFeedbackWindow(retryHistory, shared.RetryFeedback{Attempt: attempts, Kind: "empty_output", Summary: "empty output or no valid tool call", Raw: streamRuntime.text.String()})
 		config.Logger.Info("[openai_empty_retry] attempting synthetic retry", "surface", "responses", "stream", true, "retry_attempt", attempts, "parent_message_id", streamRuntime.responseMessageID)
 		retryPow, powErr := h.DS.GetPow(r.Context(), a, 3)
 		if powErr != nil {
 			config.Logger.Warn("[openai_empty_retry] retry PoW fetch failed, falling back to original PoW", "surface", "responses", "stream", true, "retry_attempt", attempts, "error", powErr)
 			retryPow = pow
 		}
-		nextResp, err := h.DS.CallCompletion(r.Context(), a, clonePayloadForEmptyOutputRetry(payload, streamRuntime.responseMessageID), retryPow, 3)
+		retryPayload := clonePayloadForEmptyOutputRetry(payload, streamRuntime.responseMessageID)
+		if original, _ := retryPayload["prompt"].(string); len(retryHistory) > 0 {
+			retryPayload["prompt"] = strings.TrimRight(original, "\r\n\t ") + "\n\n" + shared.RenderRetryFeedbackWindow(retryHistory)
+		}
+		nextResp, err := h.DS.CallCompletion(r.Context(), a, retryPayload, retryPow, 3)
 		if err != nil {
 			streamRuntime.failResponse(http.StatusInternalServerError, "Failed to get completion.", "error")
 			config.Logger.Warn("[openai_empty_retry] retry request failed", "surface", "responses", "stream", true, "retry_attempt", attempts, "error", err)

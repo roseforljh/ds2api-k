@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"sync"
+	"time"
 
 	"ds2api/internal/auth"
 	"ds2api/internal/chathistory"
@@ -116,6 +117,10 @@ func emptyOutputRetryEnabled() bool {
 
 func emptyOutputRetryMaxAttempts() int {
 	return shared.EmptyOutputRetryMaxAttempts()
+}
+
+func emptyOutputRetryWithinWindow(startedAt, now time.Time) bool {
+	return shared.EmptyOutputRetryWithinWindow(startedAt, now)
 }
 
 func clonePayloadForEmptyOutputRetry(payload map[string]any, parentMessageID int) map[string]any {

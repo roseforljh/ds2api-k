@@ -1,0 +1,74 @@
+package chat
+
+import (
+	"strings"
+	"testing"
+
+	"ds2api/internal/httpapi/openai/shared"
+)
+
+func TestAppendToolEmptyOutputRetrySuffixIncludesSkeletonOnly(t *testing.T) {
+	got := appendToolEmptyOutputRetrySuffix("BASE PROMPT", nil)
+	for _, want := range []string{
+		"Your previous reply was invalid or empty and was not shown to the user.",
+		"A) Normal answer: plain natural-language answer only.",
+		"B) Tool call skeleton:",
+		"<|DSML|tool_calls>",
+		"<|DSML|invoke name=\"VALID_TOOL_NAME_FROM_CURRENT_TOOL_LIST\">",
+		"<|DSML|parameter name=\"VALID_PARAMETER_NAME\"><![CDATA[NON_EMPTY_VALUE]]></|DSML|parameter>",
+		"Do not copy placeholder names literally.",
+		"Now output only the corrected final answer or one valid tool call.",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected retry suffix to contain %q, got %q", want, got)
+		}
+	}
+	for _, forbidden := range []string{"README.md", "file_path", "Read\""} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("expected empty-output retry suffix not to contain concrete example value %q, got %q", forbidden, got)
+		}
+	}
+}
+
+func TestAppendMalformedToolCallRetrySuffixIncludesSkeletonAndInvalidOutput(t *testing.T) {
+	malformed := `<|DSML|invoke name="Read"></|DSML|invoke>`
+	got := appendMalformedToolCallRetrySuffix("BASE PROMPT", malformed, nil)
+	for _, want := range []string{
+		"Your previous reply included an invalid tool call and was not shown to the user.",
+		"Tool-call skeleton:",
+		"<|DSML|tool_calls>",
+		"<|DSML|invoke name=\"VALID_TOOL_NAME_FROM_CURRENT_TOOL_LIST\">",
+		"<|DSML|parameter name=\"VALID_PARAMETER_NAME\"><![CDATA[NON_EMPTY_VALUE]]></|DSML|parameter>",
+		"Parameter names must come from that tool's schema in the current request.",
+		"Invalid previous reply:",
+		malformed,
+		"Now output only one corrected tool call and nothing else.",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected malformed retry suffix to contain %q, got %q", want, got)
+		}
+	}
+	for _, forbidden := range []string{"README.md", "file_path"} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("expected malformed retry suffix not to contain concrete example value %q, got %q", forbidden, got)
+		}
+	}
+}
+
+func TestAppendRetrySuffixIncludesOnlyLatestTwoRetryFailures(t *testing.T) {
+	history := []shared.RetryFeedback{
+		{Attempt: 2, Summary: "too old"},
+		{Attempt: 3, Summary: "invalid tool-call structure"},
+		{Attempt: 4, Summary: "empty output"},
+	}
+	window := shared.PushRetryFeedbackWindow(history[:2], history[2])
+	got := appendToolEmptyOutputRetrySuffix("BASE PROMPT", window)
+	if strings.Contains(got, "too old") {
+		t.Fatalf("expected oldest retry failure to be dropped, got %q", got)
+	}
+	for _, want := range []string{"Recent retry failures:", "Retry #3: invalid tool-call structure", "Retry #4: empty output"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected retry window text to contain %q, got %q", want, got)
+		}
+	}
+}

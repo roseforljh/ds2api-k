@@ -217,16 +217,85 @@ function ToolPromptTextView({ item, t, onMessage }) {
     )
 }
 
+function DebugPanel({ selectedItem, t, onMessage, messages, historyAvailable }) {
+    const hasReasoning = Boolean((selectedItem?.reasoning_content || '').trim())
+    const hasHistory = Boolean(historyAvailable)
+    const hasToolPrompt = Boolean((selectedItem?.tool_prompt_text || '').trim())
+    const hasMessages = Array.isArray(messages) && messages.length > 0
+    const hasDebugContent = hasReasoning || hasHistory || hasToolPrompt || hasMessages
+
+    if (!hasDebugContent) return null
+
+    return (
+        <details className="max-w-4xl mx-auto rounded-xl border border-border bg-background/70 p-4 space-y-4 group">
+            <summary className="cursor-pointer list-none flex items-center justify-between gap-3 text-sm font-medium text-foreground">
+                <span>{t('chatHistory.debugPanelTitle')}</span>
+                <span className="text-xs text-muted-foreground group-open:hidden">{t('chatHistory.debugPanelExpand')}</span>
+                <span className="text-xs text-muted-foreground hidden group-open:inline">{t('chatHistory.debugPanelCollapse')}</span>
+            </summary>
+
+            <div className="mt-4 space-y-4">
+                {hasReasoning && (
+                    <div className="text-xs bg-secondary/50 border border-border rounded-lg p-3 space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-muted-foreground">
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span className="font-medium">{t('chatHistory.reasoningTrace')}</span>
+                        </div>
+                        <div className="whitespace-pre-wrap leading-relaxed text-muted-foreground font-mono text-[12px] md:text-[13px] max-h-64 overflow-y-auto custom-scrollbar pl-5 border-l-2 border-border/50 break-words">
+                            {selectedItem.reasoning_content}
+                        </div>
+                    </div>
+                )}
+
+                {hasHistory && <HistoryTextView item={selectedItem} t={t} onMessage={onMessage} />}
+                {hasToolPrompt && <ToolPromptTextView item={selectedItem} t={t} onMessage={onMessage} />}
+                {hasMessages && <RequestMessages item={selectedItem} t={t} messages={messages} onMessage={onMessage} />}
+
+                <div className="rounded-xl border border-border bg-background/70 p-4 space-y-3">
+                    <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">{t('chatHistory.metaTitle')}</div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                        <div className="rounded-lg border border-border bg-card px-3 py-2">
+                            <div className="text-[11px] text-muted-foreground">{t('chatHistory.metaAccount')}</div>
+                            <div className="text-sm font-medium text-foreground">{selectedItem.account_id || t('chatHistory.metaUnknown')}</div>
+                        </div>
+                        <div className="rounded-lg border border-border bg-card px-3 py-2">
+                            <div className="text-[11px] text-muted-foreground">{t('chatHistory.metaElapsed')}</div>
+                            <div className="text-sm font-medium text-foreground flex items-center gap-2">
+                                <Clock3 className="w-3.5 h-3.5 text-muted-foreground" />
+                                {formatElapsed(selectedItem.elapsed_ms, t)}
+                            </div>
+                        </div>
+                        <div className="rounded-lg border border-border bg-card px-3 py-2">
+                            <div className="text-[11px] text-muted-foreground">{t('chatHistory.metaModel')}</div>
+                            <div className="text-sm font-medium text-foreground break-all">{selectedItem.model || t('chatHistory.metaUnknown')}</div>
+                        </div>
+                        <div className="rounded-lg border border-border bg-card px-3 py-2">
+                            <div className="text-[11px] text-muted-foreground">{t('chatHistory.metaStatusCode')}</div>
+                            <div className="text-sm font-medium text-foreground">{selectedItem.status_code || '-'}</div>
+                        </div>
+                        <div className="rounded-lg border border-border bg-card px-3 py-2">
+                            <div className="text-[11px] text-muted-foreground">{t('chatHistory.metaStream')}</div>
+                            <div className="text-sm font-medium text-foreground">{selectedItem.stream ? t('chatHistory.streamMode') : t('chatHistory.nonStreamMode')}</div>
+                        </div>
+                        <div className="rounded-lg border border-border bg-card px-3 py-2">
+                            <div className="text-[11px] text-muted-foreground">{t('chatHistory.metaCaller')}</div>
+                            <div className="text-sm font-medium text-foreground break-all">{selectedItem.caller_id || t('chatHistory.metaUnknown')}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </details>
+    )
+}
+
 function DetailConversation({ selectedItem, t, detailScrollRef, assistantStartRef, bottomButtonClassName, onMessage }) {
     if (!selectedItem) return null
     const listModeState = buildListModeMessages(selectedItem, t)
+    const currentRoundMessages = [{ role: 'user', content: selectedItem.user_input || t('chatHistory.emptyUserInput') }]
 
     return (
         <>
-            {listModeState.historyAvailable && <HistoryTextView item={selectedItem} t={t} onMessage={onMessage} />}
-            <ToolPromptTextView item={selectedItem} t={t} onMessage={onMessage} />
-
-            <RequestMessages item={selectedItem} t={t} messages={listModeState.messages} onMessage={onMessage} />
+            <RequestMessages item={selectedItem} t={t} messages={currentRoundMessages} onMessage={onMessage} />
 
             <div ref={assistantStartRef} className="flex gap-4 max-w-4xl mx-auto">
                 <div className={clsx(
@@ -236,19 +305,10 @@ function DetailConversation({ selectedItem, t, detailScrollRef, assistantStartRe
                     <Bot className={clsx('w-4 h-4', selectedItem.status === 'error' ? 'text-destructive' : 'text-foreground')} />
                 </div>
                 <div className="space-y-4 flex-1 min-w-0">
-                    {(selectedItem.reasoning_content || '').trim() && (
-                        <div className="text-xs bg-secondary/50 border border-border rounded-lg p-3 space-y-1.5">
-                            <div className="flex items-center gap-1.5 text-muted-foreground">
-                                <Sparkles className="w-3.5 h-3.5" />
-                                <span className="font-medium">{t('chatHistory.reasoningTrace')}</span>
-                            </div>
-                            <div className="whitespace-pre-wrap leading-relaxed text-muted-foreground font-mono text-[12px] md:text-[13px] max-h-64 overflow-y-auto custom-scrollbar pl-5 border-l-2 border-border/50 break-words">
-                                {selectedItem.reasoning_content}
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="text-sm leading-7 text-foreground whitespace-pre-wrap break-words">
+                    <div className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground mb-2 px-1">
+                        {t('chatHistory.role.assistant')}
+                    </div>
+                    <div className="rounded-2xl px-5 py-3 text-sm leading-7 text-foreground shadow-sm border bg-secondary/60 rounded-tl-sm border-border whitespace-pre-wrap break-words">
                         {selectedItem.status === 'error'
                             ? <span className="text-destructive font-medium">{selectedItem.error || t('chatHistory.failedOutput')}</span>
                             : (selectedItem.content || t('chatHistory.emptyAssistantOutput'))}
@@ -256,38 +316,13 @@ function DetailConversation({ selectedItem, t, detailScrollRef, assistantStartRe
                 </div>
             </div>
 
-            <div className="max-w-4xl mx-auto rounded-xl border border-border bg-background/70 p-4 space-y-3">
-                <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">{t('chatHistory.metaTitle')}</div>
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                    <div className="rounded-lg border border-border bg-card px-3 py-2">
-                        <div className="text-[11px] text-muted-foreground">{t('chatHistory.metaAccount')}</div>
-                        <div className="text-sm font-medium text-foreground">{selectedItem.account_id || t('chatHistory.metaUnknown')}</div>
-                    </div>
-                    <div className="rounded-lg border border-border bg-card px-3 py-2">
-                        <div className="text-[11px] text-muted-foreground">{t('chatHistory.metaElapsed')}</div>
-                        <div className="text-sm font-medium text-foreground flex items-center gap-2">
-                            <Clock3 className="w-3.5 h-3.5 text-muted-foreground" />
-                            {formatElapsed(selectedItem.elapsed_ms, t)}
-                        </div>
-                    </div>
-                    <div className="rounded-lg border border-border bg-card px-3 py-2">
-                        <div className="text-[11px] text-muted-foreground">{t('chatHistory.metaModel')}</div>
-                        <div className="text-sm font-medium text-foreground break-all">{selectedItem.model || t('chatHistory.metaUnknown')}</div>
-                    </div>
-                    <div className="rounded-lg border border-border bg-card px-3 py-2">
-                        <div className="text-[11px] text-muted-foreground">{t('chatHistory.metaStatusCode')}</div>
-                        <div className="text-sm font-medium text-foreground">{selectedItem.status_code || '-'}</div>
-                    </div>
-                    <div className="rounded-lg border border-border bg-card px-3 py-2">
-                        <div className="text-[11px] text-muted-foreground">{t('chatHistory.metaStream')}</div>
-                        <div className="text-sm font-medium text-foreground">{selectedItem.stream ? t('chatHistory.streamMode') : t('chatHistory.nonStreamMode')}</div>
-                    </div>
-                    <div className="rounded-lg border border-border bg-card px-3 py-2">
-                        <div className="text-[11px] text-muted-foreground">{t('chatHistory.metaCaller')}</div>
-                        <div className="text-sm font-medium text-foreground break-all">{selectedItem.caller_id || t('chatHistory.metaUnknown')}</div>
-                    </div>
-                </div>
-            </div>
+            <DebugPanel
+                selectedItem={selectedItem}
+                t={t}
+                onMessage={onMessage}
+                messages={listModeState.messages}
+                historyAvailable={listModeState.historyAvailable}
+            />
 
             <button
                 type="button"

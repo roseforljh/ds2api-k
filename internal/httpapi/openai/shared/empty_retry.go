@@ -1,6 +1,9 @@
 package shared
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 const EmptyOutputRetrySuffix = "Previous reply had no visible output. Please regenerate the visible final answer or tool call now."
 
@@ -8,8 +11,20 @@ func EmptyOutputRetryEnabled() bool {
 	return true
 }
 
+func EmptyOutputRetryWindow() time.Duration {
+	return 10 * time.Minute
+}
+
+func EmptyOutputRetryWithinWindow(startedAt, now time.Time) bool {
+	window := EmptyOutputRetryWindow()
+	if window <= 0 || startedAt.IsZero() || now.IsZero() {
+		return false
+	}
+	return !now.Before(startedAt) && now.Sub(startedAt) < window
+}
+
 func EmptyOutputRetryMaxAttempts() int {
-	return 1
+	return 1 << 30
 }
 
 func ClonePayloadWithEmptyOutputRetryPrompt(payload map[string]any) map[string]any {

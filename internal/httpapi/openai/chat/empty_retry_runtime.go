@@ -11,6 +11,7 @@ import (
 	"ds2api/internal/config"
 	dsprotocol "ds2api/internal/deepseek/protocol"
 	openaifmt "ds2api/internal/format/openai"
+	"ds2api/internal/httpapi/openai/shared"
 	"ds2api/internal/sse"
 	streamengine "ds2api/internal/stream"
 	"ds2api/internal/toolcall"
@@ -29,12 +30,31 @@ type chatNonStreamResult struct {
 	responseMessageID     int
 }
 
+func retryFeedbackForChatResult(attempt int, result chatNonStreamResult) shared.RetryFeedback {
+	if strings.TrimSpace(result.malformedToolFeedback) != "" {
+		return shared.RetryFeedback{
+			Attempt: attempt,
+			Kind:    "malformed_tool_call",
+			Summary: "invalid tool-call structure or empty required parameter",
+			Raw:     result.malformedToolFeedback,
+		}
+	}
+	return shared.RetryFeedback{
+		Attempt: attempt,
+		Kind:    "empty_output",
+		Summary: "empty output or no valid tool call",
+		Raw:     result.text,
+	}
+}
+
 func (h *Handler) handleNonStreamWithRetry(w http.ResponseWriter, ctx context.Context, a *auth.RequestAuth, resp *http.Response, payload map[string]any, pow, completionID, model, finalPrompt string, thinkingEnabled, searchEnabled bool, toolNames []string, toolsRaw any, historySession *chatHistorySession) {
 	attempts := 0
 	currentResp := resp
 	usagePrompt := finalPrompt
 	accumulatedThinking := ""
 	accumulatedToolDetectionThinking := ""
+	retryStartedAt := time.Now()
+	retryHistory := []shared.RetryFeedback{}
 	for {
 		result, ok := h.collectChatNonStreamAttempt(w, currentResp, completionID, model, usagePrompt, thinkingEnabled, searchEnabled, toolNames, toolsRaw)
 		if !ok {
@@ -52,19 +72,20 @@ func (h *Handler) handleNonStreamWithRetry(w http.ResponseWriter, ctx context.Co
 		}
 		result.body = openaifmt.BuildChatCompletionWithToolCalls(completionID, model, usagePrompt, result.thinking, result.text, detected.Calls, toolsRaw)
 		result.finishReason = chatFinishReason(result.body)
-		if !shouldRetryChatNonStream(result, attempts) {
+		if !shouldRetryChatNonStream(result, attempts, retryStartedAt, time.Now()) {
 			h.finishChatNonStreamResult(w, result, attempts, usagePrompt, historySession)
 			return
 		}
 
 		attempts++
+		retryHistory = shared.PushRetryFeedbackWindow(retryHistory, retryFeedbackForChatResult(attempts, result))
 		config.Logger.Info("[openai_empty_retry] attempting synthetic retry", "surface", "chat.completions", "stream", false, "retry_attempt", attempts, "parent_message_id", result.responseMessageID)
 		retryPow, powErr := h.DS.GetPow(ctx, a, 3)
 		if powErr != nil {
 			config.Logger.Warn("[openai_empty_retry] retry PoW fetch failed, falling back to original PoW", "surface", "chat.completions", "stream", false, "retry_attempt", attempts, "error", powErr)
 			retryPow = pow
 		}
-		retryPayload := clonePayloadForMalformedOrEmptyRetry(payload, result.responseMessageID, result.malformedToolFeedback, len(toolNames) > 0)
+		retryPayload := clonePayloadForMalformedOrEmptyRetry(payload, result.responseMessageID, result.malformedToolFeedback, len(toolNames) > 0, retryHistory)
 		nextResp, err := h.DS.CallCompletion(ctx, a, retryPayload, retryPow, 3)
 		if err != nil {
 			if historySession != nil {
@@ -138,8 +159,9 @@ func chatFinishReason(respBody map[string]any) string {
 	return "stop"
 }
 
-func shouldRetryChatNonStream(result chatNonStreamResult, attempts int) bool {
+func shouldRetryChatNonStream(result chatNonStreamResult, attempts int, startedAt, now time.Time) bool {
 	return emptyOutputRetryEnabled() &&
+		emptyOutputRetryWithinWindow(startedAt, now) &&
 		attempts < emptyOutputRetryMaxAttempts() &&
 		!result.contentFilter &&
 		result.detectedCalls == 0 &&
@@ -150,9 +172,13 @@ func shouldRetryMalformedToolCall(parsed toolcall.ToolCallParseResult, text stri
 	return parsed.RejectedInvalid && strings.TrimSpace(text) != ""
 }
 
-func clonePayloadForMalformedOrEmptyRetry(payload map[string]any, parentMessageID int, malformedToolFeedback string, toolsAvailable bool) map[string]any {
+func clonePayloadForMalformedOrEmptyRetry(payload map[string]any, parentMessageID int, malformedToolFeedback string, toolsAvailable bool, retryHistory []shared.RetryFeedback) map[string]any {
 	if strings.TrimSpace(malformedToolFeedback) == "" && !toolsAvailable {
-		return clonePayloadForEmptyOutputRetry(payload, parentMessageID)
+		clone := clonePayloadForEmptyOutputRetry(payload, parentMessageID)
+		if original, _ := clone["prompt"].(string); len(retryHistory) > 0 {
+			clone["prompt"] = appendToolEmptyOutputRetrySuffix(original, retryHistory)
+		}
+		return clone
 	}
 	clone := make(map[string]any, len(payload))
 	for k, v := range payload {
@@ -160,9 +186,9 @@ func clonePayloadForMalformedOrEmptyRetry(payload map[string]any, parentMessageI
 	}
 	original, _ := payload["prompt"].(string)
 	if strings.TrimSpace(malformedToolFeedback) != "" {
-		clone["prompt"] = appendMalformedToolCallRetrySuffix(original, malformedToolFeedback)
+		clone["prompt"] = appendMalformedToolCallRetrySuffix(original, malformedToolFeedback, retryHistory)
 	} else {
-		clone["prompt"] = appendToolEmptyOutputRetrySuffix(original)
+		clone["prompt"] = appendToolEmptyOutputRetrySuffix(original, retryHistory)
 	}
 	if parentMessageID > 0 {
 		clone["parent_message_id"] = parentMessageID
@@ -170,18 +196,68 @@ func clonePayloadForMalformedOrEmptyRetry(payload map[string]any, parentMessageI
 	return clone
 }
 
-func appendMalformedToolCallRetrySuffix(prompt string, malformedToolFeedback string) string {
+func appendMalformedToolCallRetrySuffix(prompt string, malformedToolFeedback string, retryHistory []shared.RetryFeedback) string {
 	prompt = strings.TrimRight(prompt, "\r\n\t ")
-	suffix := "Previous reply attempted a tool call, but the tool call format was invalid and was not shown to the user. You MUST carefully follow the tool instructions in the current request, especially the exact tool-call XML/DSML format, then regenerate the tool call only. Required tool parameters must be non-empty. For Read, file_path must contain the absolute or relative path to read. Invalid hidden tool call:\n\n" + strings.TrimSpace(malformedToolFeedback)
+	parts := []string{
+		"Your previous reply included an invalid tool call and was not shown to the user.",
+	}
+	if historyText := shared.RenderRetryFeedbackWindow(retryHistory); strings.TrimSpace(historyText) != "" {
+		parts = append(parts, historyText)
+	}
+	parts = append(parts,
+		"Regenerate your reply using the exact required tool-call structure below.",
+		"Tool-call skeleton:",
+		"<|DSML|tool_calls>",
+		"  <|DSML|invoke name=\"VALID_TOOL_NAME_FROM_CURRENT_TOOL_LIST\">",
+		"    <|DSML|parameter name=\"VALID_PARAMETER_NAME\"><![CDATA[NON_EMPTY_VALUE]]></|DSML|parameter>",
+		"  </|DSML|invoke>",
+		"</|DSML|tool_calls>",
+		"Rules:",
+		"1) Do not copy placeholder names literally.",
+		"2) The tool name must be one allowed tool name from the current request.",
+		"3) Parameter names must come from that tool's schema in the current request.",
+		"4) Required parameters must be present and non-empty.",
+		"5) Output no explanation, no markdown fences, and no extra text.",
+		"6) If you use a tool, your first non-whitespace characters must be exactly <|DSML|tool_calls>.",
+		"Invalid previous reply:",
+		strings.TrimSpace(malformedToolFeedback),
+		"Now output only one corrected tool call and nothing else.",
+	)
+	suffix := strings.Join(parts, "\n")
 	if prompt == "" {
 		return suffix
 	}
 	return prompt + "\n\n" + suffix
 }
 
-func appendToolEmptyOutputRetrySuffix(prompt string) string {
+func appendToolEmptyOutputRetrySuffix(prompt string, retryHistory []shared.RetryFeedback) string {
 	prompt = strings.TrimRight(prompt, "\r\n\t ")
-	suffix := "Previous reply ended without natural-language content or a valid tool call. If a tool is needed, follow the tool instructions in the current request, then emit exactly one valid tool call using the exact tool-call XML/DSML format described there. If no tool is needed, answer the user directly. Do not return an empty response."
+	parts := []string{
+		"Your previous reply was invalid or empty and was not shown to the user.",
+	}
+	if historyText := shared.RenderRetryFeedbackWindow(retryHistory); strings.TrimSpace(historyText) != "" {
+		parts = append(parts, historyText)
+	}
+	parts = append(parts,
+		"Regenerate your reply using exactly one of these forms:",
+		"A) Normal answer: plain natural-language answer only.",
+		"B) Tool call skeleton:",
+		"<|DSML|tool_calls>",
+		"  <|DSML|invoke name=\"VALID_TOOL_NAME_FROM_CURRENT_TOOL_LIST\">",
+		"    <|DSML|parameter name=\"VALID_PARAMETER_NAME\"><![CDATA[NON_EMPTY_VALUE]]></|DSML|parameter>",
+		"  </|DSML|invoke>",
+		"</|DSML|tool_calls>",
+		"Rules:",
+		"1) Do not copy placeholder names literally.",
+		"2) If using a tool, the tool name must be one allowed tool name from the current request.",
+		"3) Parameter names must come from that tool's schema in the current request.",
+		"4) Required parameters must be present and non-empty.",
+		"5) Output no explanation, no markdown fences, and no extra text.",
+		"6) If you use a tool, your first non-whitespace characters must be exactly <|DSML|tool_calls>.",
+		"7) If no tool is needed, answer the user directly instead of returning empty output.",
+		"Now output only the corrected final answer or one valid tool call.",
+	)
+	suffix := strings.Join(parts, "\n")
 	if prompt == "" {
 		return suffix
 	}
@@ -194,20 +270,30 @@ func (h *Handler) handleStreamWithRetry(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	attempts := 0
+	retryStartedAt := time.Now()
+	retryHistory := []shared.RetryFeedback{}
 	currentResp := resp
 	for {
-		terminalWritten, retryable := h.consumeChatStreamAttempt(r, currentResp, streamRuntime, initialType, thinkingEnabled, historySession, attempts < emptyOutputRetryMaxAttempts())
+		withinWindow := emptyOutputRetryWithinWindow(retryStartedAt, time.Now())
+		terminalWritten, retryable := h.consumeChatStreamAttempt(r, currentResp, streamRuntime, initialType, thinkingEnabled, historySession, withinWindow && attempts < emptyOutputRetryMaxAttempts())
 		if terminalWritten {
 			logChatStreamTerminal(streamRuntime, attempts)
 			return
 		}
-		if !retryable || !emptyOutputRetryEnabled() || attempts >= emptyOutputRetryMaxAttempts() {
+		if !retryable || !emptyOutputRetryEnabled() || !withinWindow || attempts >= emptyOutputRetryMaxAttempts() {
 			streamRuntime.finalize("stop", false)
 			recordChatStreamHistory(streamRuntime, historySession)
 			config.Logger.Info("[openai_empty_retry] terminal empty output", "surface", "chat.completions", "stream", true, "retry_attempts", attempts, "success_source", "none")
 			return
 		}
 		attempts++
+		feedback := shared.RetryFeedback{Attempt: attempts, Kind: "empty_output", Summary: "empty output or no valid tool call", Raw: streamRuntime.text.String()}
+		if strings.TrimSpace(streamRuntime.malformedToolFeedback) != "" {
+			feedback.Kind = "malformed_tool_call"
+			feedback.Summary = "invalid tool-call structure or empty required parameter"
+			feedback.Raw = streamRuntime.malformedToolFeedback
+		}
+		retryHistory = shared.PushRetryFeedbackWindow(retryHistory, feedback)
 		config.Logger.Info("[openai_empty_retry] attempting synthetic retry", "surface", "chat.completions", "stream", true, "retry_attempt", attempts, "parent_message_id", streamRuntime.responseMessageID)
 		retryPow, powErr := h.DS.GetPow(r.Context(), a, 3)
 		if powErr != nil {
@@ -215,7 +301,7 @@ func (h *Handler) handleStreamWithRetry(w http.ResponseWriter, r *http.Request, 
 			retryPow = pow
 		}
 		malformedFeedback := streamRuntime.malformedToolFeedback
-		nextResp, err := h.DS.CallCompletion(r.Context(), a, clonePayloadForMalformedOrEmptyRetry(payload, streamRuntime.responseMessageID, malformedFeedback, len(toolNames) > 0), retryPow, 3)
+		nextResp, err := h.DS.CallCompletion(r.Context(), a, clonePayloadForMalformedOrEmptyRetry(payload, streamRuntime.responseMessageID, malformedFeedback, len(toolNames) > 0, retryHistory), retryPow, 3)
 		if err != nil {
 			failChatStreamRetry(streamRuntime, historySession, http.StatusInternalServerError, "Failed to get completion.", "error")
 			config.Logger.Warn("[openai_empty_retry] retry request failed", "surface", "chat.completions", "stream", true, "retry_attempt", attempts, "error", err)

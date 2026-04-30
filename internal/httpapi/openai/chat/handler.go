@@ -128,6 +128,10 @@ func emptyOutputRetryMaxAttempts() int {
 	return shared.EmptyOutputRetryMaxAttempts()
 }
 
+func emptyOutputRetryWithinWindow(startedAt, now time.Time) bool {
+	return shared.EmptyOutputRetryWithinWindow(startedAt, now)
+}
+
 func clonePayloadForEmptyOutputRetry(payload map[string]any, parentMessageID int) map[string]any {
 	return shared.ClonePayloadForEmptyOutputRetry(payload, parentMessageID)
 }

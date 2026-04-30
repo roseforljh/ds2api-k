@@ -24,10 +24,18 @@ func (c *Client) CallCompletion(ctx context.Context, a *auth.RequestAuth, payloa
 	captureSession := c.capture.Start("deepseek_completion", dsprotocol.DeepSeekCompletionURL, a.AccountID, payload)
 	attempts := 0
 	for attempts < maxAttempts {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		resp, err := c.streamPost(ctx, clients.stream, dsprotocol.DeepSeekCompletionURL, headers, payload)
 		if err != nil {
 			attempts++
-			time.Sleep(time.Second)
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
+			if !sleepWithContext(ctx, time.Second) {
+				return nil, ctx.Err()
+			}
 			continue
 		}
 		if resp.StatusCode == http.StatusOK {
@@ -42,9 +50,25 @@ func (c *Client) CallCompletion(ctx context.Context, a *auth.RequestAuth, payloa
 		}
 		_ = resp.Body.Close()
 		attempts++
-		time.Sleep(time.Second)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		if !sleepWithContext(ctx, time.Second) {
+			return nil, ctx.Err()
+		}
 	}
 	return nil, errors.New("completion failed")
+}
+
+func sleepWithContext(ctx context.Context, d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 func (c *Client) streamPost(ctx context.Context, doer trans.Doer, url string, headers map[string]string, payload any) (*http.Response, error) {

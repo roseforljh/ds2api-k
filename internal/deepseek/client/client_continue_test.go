@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"ds2api/internal/auth"
 )
@@ -121,6 +122,41 @@ func TestCallCompletionAutoContinueThreadsPowHeader(t *testing.T) {
 	}
 	if !bytes.Contains(out, []byte(`data: [DONE]`)) {
 		t.Fatalf("expected final DONE sentinel in body, got=%s", string(out))
+	}
+}
+
+func TestCallCompletionReturnsContextErrorWithoutRetrySleep(t *testing.T) {
+	fallbackCalls := 0
+	client := &Client{
+		stream: failingDoer{err: errors.New("stream transport failed")},
+		fallbackS: &http.Client{
+			Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				fallbackCalls++
+				return nil, req.Context().Err()
+			}),
+		},
+		maxRetries: 3,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	startedAt := time.Now()
+	resp, err := client.CallCompletion(ctx, &auth.RequestAuth{
+		DeepSeekToken: "token",
+		AccountID:     "acct",
+	}, map[string]any{}, "pow-response-xyz", 0)
+	elapsed := time.Since(startedAt)
+
+	if resp != nil {
+		t.Fatalf("expected nil response after cancellation")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+	if fallbackCalls != 0 {
+		t.Fatalf("expected no attempt after pre-cancelled context, got %d", fallbackCalls)
+	}
+	if elapsed >= 500*time.Millisecond {
+		t.Fatalf("expected cancellation to skip retry sleep, elapsed=%s", elapsed)
 	}
 }
 

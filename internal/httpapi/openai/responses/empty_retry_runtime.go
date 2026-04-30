@@ -223,6 +223,7 @@ func (h *Handler) prepareResponsesStreamRuntime(w http.ResponseWriter, resp *htt
 func (h *Handler) consumeResponsesStreamAttempt(r *http.Request, resp *http.Response, streamRuntime *responsesStreamRuntime, initialType string, thinkingEnabled bool, allowDeferEmpty bool) (bool, bool) {
 	defer func() { _ = resp.Body.Close() }()
 	finalReason := "stop"
+	contextCancelled := false
 	streamengine.ConsumeSSE(streamengine.ConsumeConfig{
 		Context:             r.Context(),
 		Body:                resp.Body,
@@ -238,7 +239,13 @@ func (h *Handler) consumeResponsesStreamAttempt(r *http.Request, resp *http.Resp
 				finalReason = "content_filter"
 			}
 		},
+		OnContextDone: func() {
+			contextCancelled = true
+		},
 	})
+	if contextCancelled {
+		return true, false
+	}
 	terminalWritten := streamRuntime.finalize(finalReason, allowDeferEmpty && finalReason != "content_filter")
 	if terminalWritten {
 		return true, false

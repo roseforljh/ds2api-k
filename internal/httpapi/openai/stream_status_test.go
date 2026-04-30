@@ -3,6 +3,7 @@ package openai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -101,6 +102,42 @@ func (m *streamStatusDSSeqStub) DeleteSessionForToken(_ context.Context, _ strin
 }
 
 func (m *streamStatusDSSeqStub) DeleteAllSessionsForToken(_ context.Context, _ string) error {
+	return nil
+}
+
+type streamStatusDSCancelRetryStub struct {
+	payloads []map[string]any
+}
+
+func (m *streamStatusDSCancelRetryStub) CreateSession(_ context.Context, _ *auth.RequestAuth, _ int) (string, error) {
+	return "session-id", nil
+}
+
+func (m *streamStatusDSCancelRetryStub) GetPow(_ context.Context, _ *auth.RequestAuth, _ int) (string, error) {
+	return "pow", nil
+}
+
+func (m *streamStatusDSCancelRetryStub) UploadFile(_ context.Context, _ *auth.RequestAuth, _ dsclient.UploadFileRequest, _ int) (*dsclient.UploadFileResult, error) {
+	return &dsclient.UploadFileResult{ID: "file-id", Filename: "file.txt", Bytes: 1, Status: "uploaded"}, nil
+}
+
+func (m *streamStatusDSCancelRetryStub) CallCompletion(_ context.Context, _ *auth.RequestAuth, payload map[string]any, _ string, _ int) (*http.Response, error) {
+	clone := make(map[string]any, len(payload))
+	for k, v := range payload {
+		clone[k] = v
+	}
+	m.payloads = append(m.payloads, clone)
+	if len(m.payloads) > 1 {
+		return nil, errors.New("unexpected retry after client cancellation")
+	}
+	return makeOpenAISSEHTTPResponse(`data: {"response_message_id":77,"p":"response/thinking_content","v":"plan"}`, "data: [DONE]"), nil
+}
+
+func (m *streamStatusDSCancelRetryStub) DeleteSessionForToken(_ context.Context, _ string, _ string) (*dsclient.DeleteSessionResult, error) {
+	return &dsclient.DeleteSessionResult{Success: true}, nil
+}
+
+func (m *streamStatusDSCancelRetryStub) DeleteAllSessionsForToken(_ context.Context, _ string) error {
 	return nil
 }
 
@@ -494,6 +531,28 @@ func TestResponsesStreamRetriesThinkingOnlyOutput(t *testing.T) {
 	}
 	if strings.Count(body, "data: [DONE]") != 1 {
 		t.Fatalf("expected one [DONE], body=%s", body)
+	}
+}
+
+func TestResponsesStreamDoesNotRetryAfterClientCancellation(t *testing.T) {
+	ds := &streamStatusDSCancelRetryStub{}
+	h := &openAITestSurface{
+		Store: mockOpenAIConfig{wideInput: true},
+		Auth:  streamStatusAuthStub{},
+		DS:    ds,
+	}
+	reqBody := `{"model":"deepseek-v4-pro","input":"hi","stream":true}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(reqBody))
+	req.Header.Set("Authorization", "Bearer direct-token")
+	req.Header.Set("Content-Type", "application/json")
+	ctx, cancel := context.WithCancel(req.Context())
+	cancel()
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	newOpenAITestRouter(h).ServeHTTP(rec, req)
+
+	if len(ds.payloads) != 1 {
+		t.Fatalf("expected no synthetic retry after client cancellation, got %d calls", len(ds.payloads))
 	}
 }
 

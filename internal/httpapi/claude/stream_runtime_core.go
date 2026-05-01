@@ -8,6 +8,8 @@ import (
 
 	"ds2api/internal/sse"
 	streamengine "ds2api/internal/stream"
+	"ds2api/internal/toolcall"
+	"ds2api/internal/toolstream"
 )
 
 type claudeStreamRuntime struct {
@@ -36,6 +38,7 @@ type claudeStreamRuntime struct {
 	textBlockIndex     int
 	ended              bool
 	upstreamErr        string
+	malformedToolText  string
 }
 
 func newClaudeStreamRuntime(
@@ -78,6 +81,17 @@ func (s *claudeStreamRuntime) onParsed(parsed sse.LineResult) streamengine.Parse
 	}
 	if parsed.Stop {
 		return streamengine.ParsedDecision{Stop: true}
+	}
+	if s.bufferToolContent {
+		for _, p := range parsed.Parts {
+			if p.Type != "thinking" && toolstream.LooksSuspiciousToolLikeText(p.Text) &&
+				!detectSuspiciousClaudeTextAlreadyStructuredAsToolCall(p.Text, s.toolNames) &&
+				looksLikeMalformedClaudeToolText(p.Text) {
+				s.malformedToolText = strings.TrimSpace(p.Text)
+				s.upstreamErr = "malformed tool-call output"
+				return streamengine.ParsedDecision{Stop: true, StopReason: streamengine.StopReason("upstream_error")}
+			}
+		}
 	}
 
 	contentSeen := false
@@ -129,13 +143,13 @@ func (s *claudeStreamRuntime) onParsed(parsed sse.LineResult) streamengine.Parse
 		if trimmed == "" {
 			continue
 		}
-		s.text.WriteString(trimmed)
 		if s.bufferToolContent {
 			if hasUnclosedCodeFence(s.text.String()) {
 				continue
 			}
 			continue
 		}
+		s.text.WriteString(trimmed)
 		s.closeThinkingBlock()
 		if !s.textBlockOpen {
 			s.textBlockIndex = s.nextBlockIndex
@@ -161,6 +175,18 @@ func (s *claudeStreamRuntime) onParsed(parsed sse.LineResult) streamengine.Parse
 	}
 
 	return streamengine.ParsedDecision{ContentSeen: contentSeen}
+}
+
+func detectSuspiciousClaudeTextAlreadyStructuredAsToolCall(text string, toolNames []string) bool {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return false
+	}
+	return len(toolcall.ParseStandaloneToolCalls(trimmed, toolNames)) > 0
+}
+
+func looksLikeMalformedClaudeToolText(text string) bool {
+	return toolcall.LooksLikeMalformedRequiredToolCall(strings.TrimSpace(text))
 }
 
 func hasUnclosedCodeFence(text string) bool {

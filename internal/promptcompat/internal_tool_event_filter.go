@@ -18,6 +18,7 @@ var (
 	internalToolErrorLinePattern           = regexp.MustCompile(`^\s*(?:String to replace not found in file\.|String:\s|Error:\s|File .* has been modified externally|The file .* has been updated successfully)`)
 	internalProgressUILinePattern          = regexp.MustCompile(`^\s*[✽⎿]\s*(?:Processing|Tip:)`)
 	internalTaskOrdinalLinePattern         = regexp.MustCompile(`^\s*\[Task(?:Create|Update|Delete|Complete|Cancel)[A-Za-z]*\](?:\s|$)`)
+	internalTaskCreateCallLinePattern      = regexp.MustCompile(`^\s*\[(?:调用\s*)?TaskCreate\].*"(?:subagent_type|prompt|description)"`)
 )
 
 func sanitizePromptVisibleInternalToolEvents(role, content string) string {
@@ -89,6 +90,7 @@ func isInternalToolEventLeakLine(line string) bool {
 	}
 	return internalTaskEventLinePattern.MatchString(trimmed) ||
 		internalTaskOrdinalLinePattern.MatchString(trimmed) ||
+		internalTaskCreateCallLinePattern.MatchString(trimmed) ||
 		internalTaskCreatedLinePattern.MatchString(trimmed) ||
 		internalTaskProgressLinePattern.MatchString(trimmed) ||
 		internalTaskUpdatedLinePattern.MatchString(trimmed) ||

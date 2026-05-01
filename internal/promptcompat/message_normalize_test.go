@@ -377,6 +377,29 @@ func TestBuildOpenAICurrentInputContextTranscriptScrubsDSMLSpaceVariantToolMarku
 	}
 }
 
+func TestBuildOpenAICurrentInputContextTranscriptScrubsTaskCreateSubagentProtocol(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "继续"},
+		map[string]any{"role": "assistant", "content": strings.Join([]string{
+			"我准备派发子任务。",
+			`[调用 TaskCreate] {"description":"修复 Claude→OpenAI→Claude 桥接 BUG","prompt":"逐一修复...","subagent_type":"pua:senior-engineer-p7","name":"fix-bridge-bugs"}`,
+			"后续我会汇总结果。",
+		}, "\n")},
+	}
+
+	transcript := BuildOpenAICurrentInputContextTranscript(messages)
+	for _, leaked := range []string{"TaskCreate", "subagent_type", "pua:senior-engineer-p7", `"prompt":"逐一修复"`} {
+		if strings.Contains(transcript, leaked) {
+			t.Fatalf("expected internal subagent protocol %q to be scrubbed, got %q", leaked, transcript)
+		}
+	}
+	for _, want := range []string{"我准备派发子任务。", "后续我会汇总结果。"} {
+		if !strings.Contains(transcript, want) {
+			t.Fatalf("expected surrounding assistant prose %q preserved, got %q", want, transcript)
+		}
+	}
+}
+
 func TestBuildOpenAICurrentInputContextTranscriptScrubsMultilineParameterFragment(t *testing.T) {
 	messages := []any{
 		map[string]any{"role": "user", "content": "继续"},

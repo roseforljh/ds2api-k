@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"ds2api/internal/auth"
+	"ds2api/internal/sse"
 )
 
 type testGeminiConfig struct{}
@@ -254,6 +255,20 @@ func TestStreamGenerateContentEmitsSSE(t *testing.T) {
 	parts, _ := content["parts"].([]any)
 	if len(parts) == 0 {
 		t.Fatalf("expected non-empty parts in finish frame content, got %#v", content)
+	}
+}
+
+func TestStreamGenerateContentMalformedBareInvokeDoesNotLeakAsText(t *testing.T) {
+	runtime := newGeminiStreamRuntime(httptest.NewRecorder(), http.NewResponseController(httptest.NewRecorder()), false, "gemini-2.5-pro", "prompt", false, false, true, []string{"Read"})
+	decision := runtime.onParsed(sse.LineResult{
+		Parsed: true,
+		Parts:  []sse.ContentPart{{Type: "text", Text: "继续拉通剩余协议文件。\n<invoke name=\"Read\">\n<parameter name=\"file_path\"></parameter>\n</invoke>"}},
+	})
+	if !decision.ContentSeen {
+		t.Fatalf("expected suspicious malformed text to be observed for safe handling")
+	}
+	if strings.Contains(runtime.text.String(), "<invoke name=\"Read\">") || strings.Contains(runtime.text.String(), "继续拉通剩余协议文件") {
+		t.Fatalf("expected malformed bare invoke not to enter Gemini visible text buffer, got %q", runtime.text.String())
 	}
 }
 

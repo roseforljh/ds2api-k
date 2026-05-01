@@ -397,6 +397,23 @@ func TestHandleClaudeStreamRealtimeIgnoresUnclosedFencedToolExample(t *testing.T
 	}
 }
 
+func TestHandleClaudeStreamRealtimeMalformedBareInvokeDoesNotLeakAsText(t *testing.T) {
+	h := &Handler{}
+	resp := makeClaudeSSEHTTPResponse(
+		`data: {"p":"response/content","v":"<invoke name=\"Read\">\n<parameter name=\"file_path\"></parameter>\n</invoke>"}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", nil)
+
+	h.handleClaudeStreamRealtime(rec, req, resp, "claude-sonnet-4-5", []any{map[string]any{"role": "user", "content": "use tool"}}, false, false, []string{"Read"}, nil)
+
+	body := rec.Body.String()
+	if strings.Contains(body, `<invoke name=\"Read\">`) || strings.Contains(body, "继续拉通剩余协议文件") {
+		t.Fatalf("expected malformed bare invoke not to leak as Claude text, body=%s", body)
+	}
+}
+
 // Backward-compatible alias for historical test name used in CI logs.
 func TestHandleClaudeStreamRealtimePromotesUnclosedFencedToolExample(t *testing.T) {
 	TestHandleClaudeStreamRealtimeIgnoresUnclosedFencedToolExample(t)

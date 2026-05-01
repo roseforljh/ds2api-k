@@ -10,6 +10,8 @@ import (
 	dsprotocol "ds2api/internal/deepseek/protocol"
 	"ds2api/internal/sse"
 	streamengine "ds2api/internal/stream"
+	"ds2api/internal/toolcall"
+	"ds2api/internal/toolstream"
 )
 
 //nolint:unused // retained for native Gemini stream handling path.
@@ -114,6 +116,13 @@ func (s *geminiStreamRuntime) onParsed(parsed sse.LineResult) streamengine.Parse
 	if parsed.ContentFilter || parsed.ErrorMessage != "" || parsed.Stop {
 		return streamengine.ParsedDecision{Stop: true}
 	}
+	if s.bufferContent {
+		for _, p := range parsed.Parts {
+			if p.Type != "thinking" && toolstream.LooksSuspiciousToolLikeText(p.Text) && len(toolcall.ParseStandaloneToolCalls(strings.TrimSpace(p.Text), s.toolNames)) == 0 {
+				return streamengine.ParsedDecision{ContentSeen: true}
+			}
+		}
+	}
 
 	contentSeen := false
 	for _, p := range parsed.Parts {
@@ -139,10 +148,10 @@ func (s *geminiStreamRuntime) onParsed(parsed sse.LineResult) streamengine.Parse
 		if trimmed == "" {
 			continue
 		}
-		s.text.WriteString(trimmed)
 		if s.bufferContent {
 			continue
 		}
+		s.text.WriteString(trimmed)
 		s.sendChunk(map[string]any{
 			"candidates": []map[string]any{
 				{

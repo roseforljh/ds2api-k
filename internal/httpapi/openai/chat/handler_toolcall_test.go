@@ -149,7 +149,7 @@ func TestHandleNonStreamReturns429WhenUpstreamHasOnlyThinking(t *testing.T) {
 func TestHandleNonStreamPromotesThinkingToolCallsWhenTextEmpty(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
-		`data: {"p":"response/thinking_content","v":"<tool_calls><invoke name=\"search\"><parameter name=\"q\">from-thinking</parameter></invoke></tool_calls>"}`,
+		`data: {"p":"response/thinking_content","v":"<｜DSML｜tool_calls><｜DSML｜invoke name=\"search\"><｜DSML｜parameter name=\"q\">from-thinking</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>"}`,
 		`data: [DONE]`,
 	)
 	rec := httptest.NewRecorder()
@@ -180,7 +180,7 @@ func TestHandleNonStreamPromotesThinkingToolCallsWhenTextEmpty(t *testing.T) {
 func TestHandleNonStreamPromotesHiddenThinkingDSMLToolCallsWhenTextEmpty(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
-		`data: {"p":"response/thinking_content","v":"<|DSML|tool_calls><|DSML|invoke name=\"search\"><|DSML|parameter name=\"q\">from-hidden-thinking</|DSML|parameter></|DSML|invoke></|DSML|tool_calls>"}`,
+		`data: {"p":"response/thinking_content","v":"<｜DSML｜tool_calls><｜DSML｜invoke name=\"search\"><｜DSML｜parameter name=\"q\">from-hidden-thinking</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>"}`,
 		`data: [DONE]`,
 	)
 	rec := httptest.NewRecorder()
@@ -208,7 +208,7 @@ func TestHandleNonStreamPromotesHiddenThinkingDSMLToolCallsWhenTextEmpty(t *test
 func TestHandleNonStreamPromotesDSMFullwidthToolCalls(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
-		`data: {"p":"response/content","v":"<DSM｜tool_calls><DSM｜invoke name=\"Bash\"><DSM｜parameter name=\"command\"><![CDATA[pwd]]></DSM｜parameter></DSM｜invoke></DSM｜tool_calls>"}`,
+		`data: {"p":"response/content","v":"<｜DSML｜tool_calls><｜DSML｜invoke name=\"Bash\"><｜DSML｜parameter name=\"command\"><![CDATA[pwd]]></｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>"}`,
 		`data: [DONE]`,
 	)
 	rec := httptest.NewRecorder()
@@ -368,7 +368,7 @@ func TestHandleNonStreamRetriesDSMDLTypoWithOfficialDSMLGuidance(t *testing.T) {
 	if !strings.Contains(retryPrompt, malformed) {
 		t.Fatalf("expected retry prompt to include malformed DSMDL feedback, got %q", retryPrompt)
 	}
-	if !strings.Contains(retryPrompt, "<｜DSML｜tool_calls>") || strings.Contains(retryPrompt, "<|DSML|tool_calls>") {
+	if !strings.Contains(retryPrompt, "<｜DSML｜tool_calls>") {
 		t.Fatalf("expected retry prompt to use official fullwidth DSML guidance, got %q", retryPrompt)
 	}
 	if strings.Contains(rec.Body.String(), "DSMDL") || strings.Contains(rec.Body.String(), "README.md") {
@@ -450,7 +450,7 @@ func TestHandleStreamRetriesDSMDLTypoWithOfficialDSMLGuidance(t *testing.T) {
 	if !strings.Contains(retryPrompt, malformed) {
 		t.Fatalf("expected stream retry prompt to include malformed DSMDL feedback, got %q", retryPrompt)
 	}
-	if !strings.Contains(retryPrompt, "<｜DSML｜tool_calls>") || strings.Contains(retryPrompt, "<|DSML|tool_calls>") {
+	if !strings.Contains(retryPrompt, "<｜DSML｜tool_calls>") {
 		t.Fatalf("expected retry prompt to use official fullwidth DSML guidance, got %q", retryPrompt)
 	}
 	if strings.Contains(rec.Body.String(), "DSMDL") || strings.Contains(rec.Body.String(), "README.md") {
@@ -515,7 +515,7 @@ func TestHandleStreamRetriesToolEmptyOutputWithToolPromptGuidance(t *testing.T) 
 func TestHandleStreamSuppressesTextAfterToolCallInSameTurn(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
-		`data: {"p":"response/content","v":"<tool_calls><invoke name=\"Read\"><parameter name=\"file_path\">/tmp/input.txt</parameter></invoke></tool_calls>\n继续读取剩余文件。"}`,
+		`data: {"p":"response/content","v":"<｜DSML｜tool_calls><｜DSML｜invoke name=\"Read\"><｜DSML｜parameter name=\"file_path\">/tmp/input.txt</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>\n继续读取剩余文件。"}`,
 		`data: [DONE]`,
 	)
 	rec := httptest.NewRecorder()
@@ -686,7 +686,7 @@ func TestHandleStreamIncompleteCapturedToolJSONFlushesAsTextOnFinalize(t *testin
 func TestHandleStreamPromotesThinkingToolCallsOnFinalizeWithoutMidstreamIntercept(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
-		`data: {"p":"response/thinking_content","v":"<tool_calls><invoke name=\"search\"><parameter name=\"q\">from-thinking</parameter></invoke></tool_calls>"}`,
+		`data: {"p":"response/thinking_content","v":"<｜DSML｜tool_calls><｜DSML｜invoke name=\"search\"><｜DSML｜parameter name=\"q\">from-thinking</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>"}`,
 		`data: [DONE]`,
 	)
 	rec := httptest.NewRecorder()
@@ -723,7 +723,7 @@ func TestHandleStreamPromotesThinkingToolCallsOnFinalizeWithoutMidstreamIntercep
 func TestHandleStreamPromotesHiddenThinkingDSMLToolCallsOnFinalize(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
-		`data: {"p":"response/thinking_content","v":"<|DSML|tool_calls><|DSML|invoke name=\"search\"><|DSML|parameter name=\"q\">from-hidden-thinking</|DSML|parameter></|DSML|invoke></|DSML|tool_calls>"}`,
+		`data: {"p":"response/thinking_content","v":"<｜DSML｜tool_calls><｜DSML｜invoke name=\"search\"><｜DSML｜parameter name=\"q\">from-hidden-thinking</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>"}`,
 		`data: [DONE]`,
 	)
 	rec := httptest.NewRecorder()
@@ -756,8 +756,8 @@ func TestHandleStreamPromotesHiddenThinkingDSMLToolCallsOnFinalize(t *testing.T)
 func TestHandleStreamEmitsDistinctToolCallIDsAcrossSeparateToolBlocks(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
-		`data: {"p":"response/content","v":"前置文本\n<tool_calls>\n  <invoke name=\"read_file\">\n    <parameter name=\"path\">README.MD</parameter>\n  </invoke>\n</tool_calls>"}`,
-		`data: {"p":"response/content","v":"中间文本\n<tool_calls>\n  <invoke name=\"search\">\n    <parameter name=\"q\">golang</parameter>\n  </invoke>\n</tool_calls>"}`,
+		`data: {"p":"response/content","v":"前置文本\n<｜DSML｜tool_calls>\n  <｜DSML｜invoke name=\"read_file\">\n    <｜DSML｜parameter name=\"path\">README.MD</｜DSML｜parameter>\n  </｜DSML｜invoke>\n</｜DSML｜tool_calls>"}`,
+		`data: {"p":"response/content","v":"中间文本\n<｜DSML｜tool_calls>\n  <｜DSML｜invoke name=\"search\">\n    <｜DSML｜parameter name=\"q\">golang</｜DSML｜parameter>\n  </｜DSML｜invoke>\n</｜DSML｜tool_calls>"}`,
 		`data: [DONE]`,
 	)
 	rec := httptest.NewRecorder()

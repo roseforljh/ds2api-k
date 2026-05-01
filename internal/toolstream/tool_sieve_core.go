@@ -95,13 +95,18 @@ func ProcessChunk(state *State, chunk string, toolNames []string) []Event {
 		if pending == "" {
 			break
 		}
+		if strings.TrimSpace(state.MalformedToolFeedback) != "" {
+			state.MalformedToolFeedback += pending
+			state.pending.Reset()
+			break
+		}
 		if len(toolNames) > 0 && shouldHoldPrefixForPartialToolDetection(pending) && chunk != "" {
 			break
 		}
 		start := findToolSegmentStart(state, pending, toolNames)
 		if start >= 0 {
 			prefix := pending[:start]
-			if shouldAttachPrefixToLocalizedMalformedCapture(prefix, pending[start:]) {
+			if shouldAttachPrefixToMalformedCapture(prefix, pending[start:], toolNames) {
 				start = 0
 				prefix = ""
 			}
@@ -284,10 +289,16 @@ func shouldHoldPrefixForPartialToolDetection(prefix string) bool {
 	return trimmed == "●" || trimmed == "•" || trimmed == "-" || strings.EqualFold(trimmed, "Skill")
 }
 
-func shouldAttachPrefixToLocalizedMalformedCapture(prefix string, segment string) bool {
+func shouldAttachPrefixToMalformedCapture(prefix string, segment string, toolNames []string) bool {
 	trimmedPrefix := strings.TrimSpace(prefix)
 	if trimmedPrefix == "" {
 		return false
+	}
+	if len(toolNames) > 0 && toolcall.ContainsNonOfficialToolMarkupSyntaxOutsideIgnored(segment) {
+		return true
+	}
+	if len(toolNames) > 0 && toolcall.LooksLikeUnsafeStructuredToolIntent(segment, toolNames) {
+		return true
 	}
 	if strings.Contains(strings.ToLower(segment), "<invoke") || strings.Contains(strings.ToLower(segment), "<parameter") {
 		return true

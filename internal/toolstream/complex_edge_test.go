@@ -7,12 +7,12 @@ import (
 
 // ---- 错位工具块 ----
 
-// 只有 </tool_calls> 没有 <tool_calls>
+// 只有 </｜DSML｜tool_calls> 没有 <｜DSML｜tool_calls>
 func TestSieve_MismatchedClose_OnlyClosingTag(t *testing.T) {
 	var state State
 	chunks := []string{
 		"一些正文内容\n",
-		"</tool_calls>\n",
+		"</｜DSML｜tool_calls>\n",
 		"后续内容",
 	}
 	var events []Event
@@ -35,13 +35,13 @@ func TestSieve_MismatchedClose_OnlyClosingTag(t *testing.T) {
 	}
 }
 
-// <tool_calls> 打开后跟的不是 <invoke> 而是普通文本
+// <｜DSML｜tool_calls> 打开后跟的不是 <invoke> 而是普通文本
 func TestSieve_ToolCallsWrapperWithNoInvoke(t *testing.T) {
 	var state State
 	chunks := []string{
-		"<tool_calls>\n",
+		"<｜DSML｜tool_calls>\n",
 		"这里没有 invoke 标签\n",
-		"</tool_calls>\n",
+		"</｜DSML｜tool_calls>\n",
 		"后续内容",
 	}
 	var events []Event
@@ -65,9 +65,9 @@ func TestSieve_ToolCallsWrapperWithNoInvoke(t *testing.T) {
 func TestSieve_TwoConsecutiveToolCallBlocks(t *testing.T) {
 	var state State
 	chunks := []string{
-		`<tool_calls><invoke name="read_file"><parameter name="path">a.txt</parameter></invoke></tool_calls>`,
+		`<｜DSML｜tool_calls><｜DSML｜invoke name="read_file"><｜DSML｜parameter name="path">a.txt</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`,
 		"\n",
-		`<tool_calls><invoke name="read_file"><parameter name="path">b.txt</parameter></invoke></tool_calls>`,
+		`<｜DSML｜tool_calls><｜DSML｜invoke name="read_file"><｜DSML｜parameter name="path">b.txt</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`,
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -91,9 +91,9 @@ func TestSieve_FencedExampleThenRealToolCall(t *testing.T) {
 	var state State
 	chunks := []string{
 		"示例：\n```xml\n",
-		`<tool_calls><invoke name="fake"><parameter name="x">1</parameter></invoke></tool_calls>`,
+		`<｜DSML｜tool_calls><｜DSML｜invoke name="fake"><｜DSML｜parameter name="x">1</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`,
 		"\n```\n",
-		`<tool_calls><invoke name="read_file"><parameter name="path">real.txt</parameter></invoke></tool_calls>`,
+		`<｜DSML｜tool_calls><｜DSML｜invoke name="read_file"><｜DSML｜parameter name="path">real.txt</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`,
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -127,7 +127,7 @@ func TestSieve_TildeFencedToolCallIgnored(t *testing.T) {
 	var state State
 	chunks := []string{
 		"~~~\n",
-		`<tool_calls><invoke name="read_file"><parameter name="path">x</parameter></invoke></tool_calls>`,
+		`<｜DSML｜tool_calls><｜DSML｜invoke name="read_file"><｜DSML｜parameter name="path">x</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`,
 		"\n~~~\n",
 		"结束",
 	}
@@ -157,7 +157,7 @@ func TestSieve_FourBacktickNestedThreeWithToolCall(t *testing.T) {
 	chunks := []string{
 		"````markdown\n",
 		"```xml\n",
-		`<tool_calls><invoke name="read_file"><parameter name="path">x</parameter></invoke></tool_calls>`,
+		`<｜DSML｜tool_calls><｜DSML｜invoke name="read_file"><｜DSML｜parameter name="path">x</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`,
 		"\n```\n",
 		"````\n",
 		"外部文本",
@@ -188,11 +188,11 @@ func TestSieve_DSMLInsideFenceIgnored(t *testing.T) {
 	var state State
 	chunks := []string{
 		"```\n",
-		"<|DSML|tool_calls>\n",
-		`<|DSML|invoke name="read_file">`,
-		`<|DSML|parameter name="path">x</|DSML|parameter>`,
-		"</|DSML|invoke>\n",
-		"</|DSML|tool_calls>\n",
+		"<｜DSML｜tool_calls>\n",
+		`<｜DSML｜invoke name="read_file">`,
+		`<｜DSML｜parameter name="path">x</｜DSML｜parameter>`,
+		"</｜DSML｜invoke>\n",
+		"</｜DSML｜tool_calls>\n",
 		"```\n",
 		"结束",
 	}
@@ -218,7 +218,7 @@ func TestSieve_RichTextAroundToolCall(t *testing.T) {
 	chunks := []string{
 		"我来帮你查看文件内容。\n\n",
 		"首先读取 README：\n",
-		`<tool_calls><invoke name="read_file"><parameter name="path">README.md</parameter></invoke></tool_calls>`,
+		`<｜DSML｜tool_calls><｜DSML｜invoke name="read_file"><｜DSML｜parameter name="path">README.md</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`,
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -249,12 +249,12 @@ func TestSieve_ToolCallWithCDATAContainingFence(t *testing.T) {
 	var state State
 	payload := "```python\nprint('hello')\n```"
 	chunks := []string{
-		"<tool_calls>\n",
-		`<invoke name="write_file">` + "\n",
-		`<parameter name="path">test.md</parameter>` + "\n",
-		`<parameter name="content"><![CDATA[` + payload + `]]></parameter>` + "\n",
-		"</invoke>\n",
-		"</tool_calls>",
+		"<｜DSML｜tool_calls>\n",
+		`<｜DSML｜invoke name="write_file">` + "\n",
+		`<｜DSML｜parameter name="path">test.md</｜DSML｜parameter>` + "\n",
+		`<｜DSML｜parameter name="content"><![CDATA[` + payload + `]]></｜DSML｜parameter>` + "\n",
+		"</｜DSML｜invoke>\n",
+		"</｜DSML｜tool_calls>",
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -289,7 +289,7 @@ func TestSieve_ToolCallWithCDATAContainingFence(t *testing.T) {
 // 工具标签被拆成单字符流式到达
 func TestSieve_CharByCharToolCall(t *testing.T) {
 	var state State
-	full := `<tool_calls><invoke name="read_file"><parameter name="path">go.mod</parameter></invoke></tool_calls>`
+	full := `<｜DSML｜tool_calls><｜DSML｜invoke name="read_file"><｜DSML｜parameter name="path">go.mod</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	var events []Event
 	for _, ch := range full {
 		events = append(events, ProcessChunk(&state, string(ch), []string{"read_file"})...)
@@ -316,11 +316,11 @@ func TestSieve_CharByCharToolCall(t *testing.T) {
 func TestSieve_FullwidthPipeWrapperDSMLInvoke(t *testing.T) {
 	var state State
 	chunks := []string{
-		"<｜tool_calls>\n",
-		"<|DSML|invoke name=\"read_file\">\n",
-		"<|DSML|parameter name=\"path\">README.md</|DSML|parameter>\n",
-		"</|DSML|invoke>\n",
-		"</｜tool_calls>",
+		"<｜DSML｜tool_calls>\n",
+		"<｜DSML｜invoke name=\"read_file\">\n",
+		"<｜DSML｜parameter name=\"path\">README.md</｜DSML｜parameter>\n",
+		"</｜DSML｜invoke>\n",
+		"</｜DSML｜tool_calls>",
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -347,10 +347,10 @@ func TestSieve_FullwidthPipeWrapperDSMLInvoke(t *testing.T) {
 func TestSieve_UnclosedToolCallBlockFallsBack(t *testing.T) {
 	var state State
 	chunks := []string{
-		"<tool_calls>\n",
-		`<invoke name="read_file">` + "\n",
-		`<parameter name="path">README.md</parameter>` + "\n",
-		// 缺少 </invoke> 和 </tool_calls>
+		"<｜DSML｜tool_calls>\n",
+		`<｜DSML｜invoke name="read_file">` + "\n",
+		`<｜DSML｜parameter name="path">README.md</｜DSML｜parameter>` + "\n",
+		// 缺少 </｜DSML｜invoke> 和 </｜DSML｜tool_calls>
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -364,12 +364,14 @@ func TestSieve_UnclosedToolCallBlockFallsBack(t *testing.T) {
 		text.WriteString(e.Content)
 		tc += len(e.ToolCalls)
 	}
-	// 未闭合的应回退为文本，不应丢失
-	if text.String() == "" {
-		t.Fatalf("未闭合工具块不应丢失所有内容")
+	if text.String() != "" {
+		t.Fatalf("未闭合工具块应隐藏并触发重试, got %q", text.String())
 	}
 	if tc != 0 {
 		t.Fatalf("未闭合工具块不应解析出工具调用，got %d", tc)
+	}
+	if !strings.Contains(state.MalformedToolFeedback, "<｜DSML｜tool_calls>") {
+		t.Fatalf("未闭合工具块应保留重试反馈，got %q", state.MalformedToolFeedback)
 	}
 }
 
@@ -382,13 +384,13 @@ func TestSieve_TagMentionInTextThenRealToolCall(t *testing.T) {
 	chunks := []string{
 		"建议的 commit message：\n\nfeat: expand DSML alias support\n\n",
 		"Add support for <dsml|tool_calls>, ",
-		"<｜tool_calls> (fullwidth pipe),\n",
-		"and <|tool_calls> wrapper variants.\n\n",
-		"<|DSML|tool_calls>\n",
-		"<|DSML|invoke name=\"Bash\">\n",
-		"<|DSML|parameter name=\"command\"><![CDATA[git status]]></|DSML|parameter>\n",
-		"</|DSML|invoke>\n",
-		"</|DSML|tool_calls>",
+		"<｜DSML｜tool_calls> (fullwidth pipe),\n",
+		"and <｜DSML｜tool_calls> wrapper variants.\n\n",
+		"<｜DSML｜tool_calls>\n",
+		"<｜DSML｜invoke name=\"Bash\">\n",
+		"<｜DSML｜parameter name=\"command\"><![CDATA[git status]]></｜DSML｜parameter>\n",
+		"</｜DSML｜invoke>\n",
+		"</｜DSML｜tool_calls>",
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -421,12 +423,12 @@ func TestSieve_TagMentionInTextThenRealToolCall(t *testing.T) {
 func TestSieve_SameVariantTagMentionInTextThenRealToolCall(t *testing.T) {
 	var state State
 	chunks := []string{
-		"Summary: support canonical <tool_calls> and DSML <|DSML|tool_calls> wrappers.\n\n",
-		"<|DSML|tool_calls>\n",
-		"<|DSML|invoke name=\"Bash\">\n",
-		"<|DSML|parameter name=\"command\"><![CDATA[git status]]></|DSML|parameter>\n",
-		"</|DSML|invoke>\n",
-		"</|DSML|tool_calls>",
+		"Summary: support canonical <｜DSML｜tool_calls> and DSML <｜DSML｜tool_calls> wrappers.\n\n",
+		"<｜DSML｜tool_calls>\n",
+		"<｜DSML｜invoke name=\"Bash\">\n",
+		"<｜DSML｜parameter name=\"command\"><![CDATA[git status]]></｜DSML｜parameter>\n",
+		"</｜DSML｜invoke>\n",
+		"</｜DSML｜tool_calls>",
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -466,17 +468,17 @@ func TestSieve_ReviewSampleWithAliasMentionsPreservesBodyAndToolCalls(t *testing
 	chunks := []string{
 		"Done reviewing the diff. Here's my analysis before we commit:\n\n",
 		"Summary of Changes\n",
-		"DSML wrapper variant support — recognize aliases (<dsml|tool_calls>, <|tool_calls>, <｜tool_calls>) alongside canonical <tool_calls> and <|DSML|tool_calls> wrappers.\n\n",
-		"<|DSML|tool_calls>\n",
-		"<|DSML|invoke name=\"Bash\">\n",
-		"<|DSML|parameter name=\"command\"><![CDATA[git add docs/toolcall-semantics.md internal/toolstream/tool_sieve_xml.go]]></|DSML|parameter>\n",
-		"<|DSML|parameter name=\"description\"><![CDATA[Stage all relevant changed files]]></|DSML|parameter>\n",
-		"</|DSML|invoke>\n",
-		"<|DSML|invoke name=\"Bash\">\n",
-		"<|DSML|parameter name=\"command\"><![CDATA[git commit -m \"$(cat <<'EOF'\nfeat(toolstream): expand DSML wrapper detection\n\nSupport DSML wrapper aliases: <dsml|tool_calls>, <|tool_calls>, <｜tool_calls> alongside existing canonical wrappers.\nEOF\n)\"]]></|DSML|parameter>\n",
-		"<|DSML|parameter name=\"description\"><![CDATA[Create commit with all staged changes]]></|DSML|parameter>\n",
-		"</|DSML|invoke>\n",
-		"</|DSML|tool_calls>",
+		"DSML wrapper variant support — recognize aliases (<dsml|tool_calls>, <｜DSML｜tool_calls>, <｜DSML｜tool_calls>) alongside canonical <｜DSML｜tool_calls> and <｜DSML｜tool_calls> wrappers.\n\n",
+		"<｜DSML｜tool_calls>\n",
+		"<｜DSML｜invoke name=\"Bash\">\n",
+		"<｜DSML｜parameter name=\"command\"><![CDATA[git add docs/toolcall-semantics.md internal/toolstream/tool_sieve_xml.go]]></｜DSML｜parameter>\n",
+		"<｜DSML｜parameter name=\"description\"><![CDATA[Stage all relevant changed files]]></｜DSML｜parameter>\n",
+		"</｜DSML｜invoke>\n",
+		"<｜DSML｜invoke name=\"Bash\">\n",
+		"<｜DSML｜parameter name=\"command\"><![CDATA[git commit -m \"$(cat <<'EOF'\nfeat(toolstream): expand DSML wrapper detection\n\nSupport DSML wrapper aliases: <dsml|tool_calls>, <｜DSML｜tool_calls>, <｜DSML｜tool_calls> alongside existing canonical wrappers.\nEOF\n)\"]]></｜DSML｜parameter>\n",
+		"<｜DSML｜parameter name=\"description\"><![CDATA[Create commit with all staged changes]]></｜DSML｜parameter>\n",
+		"</｜DSML｜invoke>\n",
+		"</｜DSML｜tool_calls>",
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -499,7 +501,7 @@ func TestSieve_ReviewSampleWithAliasMentionsPreservesBodyAndToolCalls(t *testing
 	if len(commands) != 2 {
 		t.Fatalf("应解析出 2 个 Bash 工具调用，got %d, text=%q", len(commands), text.String())
 	}
-	if !strings.Contains(text.String(), "<|DSML|tool_calls> wrappers") {
+	if !strings.Contains(text.String(), "<｜DSML｜tool_calls> wrappers") {
 		t.Fatalf("正文中的 DSML mention 应保留, got %q", text.String())
 	}
 	if !strings.Contains(text.String(), "Summary of Changes") {
@@ -518,14 +520,14 @@ func TestSieve_ChineseReviewSamplePreservesInlineDSMLMention(t *testing.T) {
 	chunks := []string{
 		"# Context from my IDE setup:\n\n## My request for Codex:\n",
 		"基于我的审查，这是工作区更改的总结和提交。\n\n## 审查报告\n\n### 文档\n\nAPI.md 中的工具调用部分缺少针对新 DSML 别名的更新——它只提到了 `",
-		"<|DSML|tool_calls>` 和 canonical `<tool_calls>`。由于这涉及 API 兼容性和文档准确性，需要在下游进行记录。\n\n",
+		"<｜DSML｜tool_calls>` 和 canonical `<｜DSML｜tool_calls>`。由于这涉及 API 兼容性和文档准确性，需要在下游进行记录。\n\n",
 		"### 代码\n\n所有更改现在一致地处理四个 DSML wrapper 变体。\n\n现在提交已暂存的更改。\n\n",
-		"<|DSML|tool_calls>\n",
-		"  <|DSML|invoke name=\"Bash\">\n",
-		"    <|DSML|parameter name=\"command\"><![CDATA[git commit -m \"$(cat <<'EOF'\nfeat: expand DSML tool-call alias and fence handling\nEOF\n)\"]]></|DSML|parameter>\n",
-		"    <|DSML|parameter name=\"description\"><![CDATA[Commit staged changes]]></|DSML|parameter>\n",
-		"  </|DSML|invoke>\n",
-		"</|DSML|tool_calls>\n\n补充",
+		"<｜DSML｜tool_calls>\n",
+		"  <｜DSML｜invoke name=\"Bash\">\n",
+		"    <｜DSML｜parameter name=\"command\"><![CDATA[git commit -m \"$(cat <<'EOF'\nfeat: expand DSML tool-call alias and fence handling\nEOF\n)\"]]></｜DSML｜parameter>\n",
+		"    <｜DSML｜parameter name=\"description\"><![CDATA[Commit staged changes]]></｜DSML｜parameter>\n",
+		"  </｜DSML｜invoke>\n",
+		"</｜DSML｜tool_calls>\n\n补充",
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -543,14 +545,14 @@ func TestSieve_ChineseReviewSamplePreservesInlineDSMLMention(t *testing.T) {
 	if callCount != 1 {
 		t.Fatalf("应解析出 1 个工具调用，got %d, text=%q", callCount, text.String())
 	}
-	want := "它只提到了 `<|DSML|tool_calls>` 和 canonical `<tool_calls>`。由于这涉及 API 兼容性"
+	want := "它只提到了 `<｜DSML｜tool_calls>` 和 canonical `<｜DSML｜tool_calls>`。由于这涉及 API 兼容性"
 	if !strings.Contains(text.String(), want) {
 		t.Fatalf("正文不应在 inline DSML mention 处截断, want contains %q, got %q", want, text.String())
 	}
 	if !strings.Contains(text.String(), "补充") {
 		t.Fatalf("工具块后的正文应保留, got %q", text.String())
 	}
-	if strings.Contains(text.String(), "<|DSML|invoke") {
+	if strings.Contains(text.String(), "<｜DSML｜invoke") {
 		t.Fatalf("真实工具块不应泄漏到正文, got %q", text.String())
 	}
 }
@@ -559,11 +561,11 @@ func TestSieve_ToleratesDSMLSpaceSeparatorTypo(t *testing.T) {
 	var state State
 	chunks := []string{
 		"准备读取文件。\n",
-		"<|DSML tool_calls>\n",
-		"<|DSML invoke name=\"Read\">\n",
-		"<|DSML parameter name=\"file_path\"><![CDATA[/tmp/input.txt]]></|DSML parameter>\n",
-		"</|DSML invoke>\n",
-		"</|DSML tool_calls>",
+		"<｜DSML｜tool_calls>\n",
+		"<｜DSML｜invoke name=\"Read\">\n",
+		"<｜DSML｜parameter name=\"file_path\"><![CDATA[/tmp/input.txt]]></｜DSML｜parameter>\n",
+		"</｜DSML｜invoke>\n",
+		"</｜DSML｜tool_calls>",
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -598,7 +600,7 @@ func TestSieve_ToleratesDSMLSpaceSeparatorTypo(t *testing.T) {
 
 func TestSieve_DSMLSpaceLookalikeTagNameHiddenForRetry(t *testing.T) {
 	var state State
-	input := "<|DSML tool_calls_extra><|DSML invoke name=\"Read\"><|DSML parameter name=\"file_path\">/tmp/input.txt</|DSML parameter></|DSML invoke></|DSML tool_calls_extra>"
+	input := "<|DSML tool_calls_extra><｜DSML｜invoke name=\"Read\"><｜DSML｜parameter name=\"file_path\">/tmp/input.txt</｜DSML｜parameter></｜DSML｜invoke></|DSML tool_calls_extra>"
 	events := ProcessChunk(&state, input, []string{"Read"})
 	events = append(events, Flush(&state, []string{"Read"})...)
 
@@ -624,11 +626,11 @@ func TestSieve_DSMLCollapsedTagNamesWithPrefixText(t *testing.T) {
 [x] 给出调查结论`
 	chunks := []string{
 		"[]\n",
-		"<DSMLtool_calls>\n",
-		"<DSMLinvoke name=\"update_todo_list\">\n",
-		"<DSMLparameter name=\"todos\"><![CDATA[" + todos + "]]></DSMLparameter>\n",
-		"</DSMLinvoke>\n",
-		"</DSMLtool_calls>",
+		"<｜DSML｜tool_calls>\n",
+		"<｜DSML｜invoke name=\"update_todo_list\">\n",
+		"<｜DSML｜parameter name=\"todos\"><![CDATA[" + todos + "]]></｜DSML｜parameter>\n",
+		"</｜DSML｜invoke>\n",
+		"</｜DSML｜tool_calls>",
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -659,7 +661,7 @@ func TestSieve_DSMLCollapsedTagNamesWithPrefixText(t *testing.T) {
 
 func TestSieve_DSMLCollapsedLookalikeTagNameHiddenForRetry(t *testing.T) {
 	var state State
-	input := "<DSMLtool_calls_extra><DSMLinvoke name=\"update_todo_list\"><DSMLparameter name=\"todos\">x</DSMLparameter></DSMLinvoke></DSMLtool_calls_extra>"
+	input := "<DSMLtool_calls_extra><｜DSML｜invoke name=\"update_todo_list\"><｜DSML｜parameter name=\"todos\">x</｜DSML｜parameter></｜DSML｜invoke></DSMLtool_calls_extra>"
 	events := ProcessChunk(&state, input, []string{"update_todo_list"})
 	events = append(events, Flush(&state, []string{"update_todo_list"})...)
 

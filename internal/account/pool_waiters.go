@@ -37,7 +37,10 @@ func (p *Pool) removeWaiterLocked(waiter chan struct{}) bool {
 
 func (p *Pool) drainWaitersLocked() {
 	for _, waiter := range p.waiters {
-		close(waiter)
+		select {
+		case waiter <- struct{}{}:
+		default:
+		}
 	}
 	p.waiters = nil
 }

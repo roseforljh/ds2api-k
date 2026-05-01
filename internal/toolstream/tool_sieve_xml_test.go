@@ -10,11 +10,11 @@ func TestProcessToolSieveInterceptsXMLToolCallWithoutLeak(t *testing.T) {
 	var state State
 	// Simulate a model producing XML tool call output chunk by chunk.
 	chunks := []string{
-		"<tool_calls>\n",
-		`  <invoke name="read_file">` + "\n",
-		`    <parameter name="path">README.MD</parameter>` + "\n",
-		"  </invoke>\n",
-		"</tool_calls>",
+		"<｜DSML｜tool_calls>\n",
+		`  <｜DSML｜invoke name="read_file">` + "\n",
+		`    <｜DSML｜parameter name="path">README.MD</｜DSML｜parameter>` + "\n",
+		"  </｜DSML｜invoke>\n",
+		"</｜DSML｜tool_calls>",
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -31,7 +31,7 @@ func TestProcessToolSieveInterceptsXMLToolCallWithoutLeak(t *testing.T) {
 		toolCalls += len(evt.ToolCalls)
 	}
 
-	if strings.Contains(textContent, "<invoke ") {
+	if strings.Contains(textContent, "<｜DSML｜invoke ") {
 		t.Fatalf("XML tool call content leaked to text: %q", textContent)
 	}
 	if strings.Contains(textContent, "read_file") {
@@ -45,12 +45,12 @@ func TestProcessToolSieveInterceptsXMLToolCallWithoutLeak(t *testing.T) {
 func TestProcessToolSieveInterceptsDSMLToolCallWithoutLeak(t *testing.T) {
 	var state State
 	chunks := []string{
-		"<|DSML|tool",
+		"<｜DSML｜tool",
 		"_calls>\n",
-		`  <|DSML|invoke name="read_file">` + "\n",
-		`    <|DSML|parameter name="path">README.MD</|DSML|parameter>` + "\n",
-		"  </|DSML|invoke>\n",
-		"</|DSML|tool_calls>",
+		`  <｜DSML｜invoke name="read_file">` + "\n",
+		`    <｜DSML｜parameter name="path">README.MD</｜DSML｜parameter>` + "\n",
+		"  </｜DSML｜invoke>\n",
+		"</｜DSML｜tool_calls>",
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -171,20 +171,23 @@ func TestProcessToolSievePrefersDSMLBlockOverEarlierCanonicalBlock(t *testing.T)
 	for _, evt := range events {
 		calls = append(calls, evt.ToolCalls...)
 	}
-	if len(calls) != 1 || calls[0].Input["file_path"] != "official.md" {
-		t.Fatalf("expected DSML block to be preferred over earlier canonical block, got %#v events=%#v", calls, events)
+	if len(calls) != 0 {
+		t.Fatalf("expected non-official block to force retry before official block, got %#v events=%#v", calls, events)
+	}
+	if !strings.Contains(state.MalformedToolFeedback, "<tool_calls>") {
+		t.Fatalf("expected canonical malformed feedback, got %q", state.MalformedToolFeedback)
 	}
 }
 
 func TestProcessToolSieveInterceptsDSMLDSEPToolCallWithoutLeak(t *testing.T) {
 	state := State{}
 	chunks := []string{
-		"<DSML_DSEP_tool_calls>\n",
-		`<DSML_DSEP_invoke name="Read">` + "\n",
-		`<DSML_DSEP_parameter name="file_path"><![CDATA[C:\Users\me\repo\README.md]]></DSML_DSEP_parameter>` + "\n",
-		`<DSML_DSEP_parameter name="limit"><![CDATA[55]]></DSML_DSEP_parameter>` + "\n",
-		"</DSML_DSEP_invoke>\n",
-		"</DSML_DSEP_tool_calls>",
+		"<｜DSML｜tool_calls>\n",
+		`<｜DSML｜invoke name="Read">` + "\n",
+		`<｜DSML｜parameter name="file_path"><![CDATA[C:\Users\me\repo\README.md]]></｜DSML｜parameter>` + "\n",
+		`<｜DSML｜parameter name="limit"><![CDATA[55]]></｜DSML｜parameter>` + "\n",
+		"</｜DSML｜invoke>\n",
+		"</｜DSML｜tool_calls>",
 	}
 	var events []Event
 	for _, chunk := range chunks {
@@ -209,13 +212,13 @@ func TestProcessToolSieveInterceptsDSMLDSEPToolCallWithoutLeak(t *testing.T) {
 func TestProcessToolSieveInterceptsMixedFullwidthDSMLToolCallWithoutLeak(t *testing.T) {
 	var state State
 	chunks := []string{
-		"<|DSML｜tool",
+		"<｜DSML｜tool",
 		"_calls>\n",
-		`  <|DSML｜invoke name="TaskUpdate">` + "\n",
-		`    <|DSML｜parameter name="status">completed</|DSML｜parameter>` + "\n",
-		`    <|DSML｜parameter name="taskId">1</|DSML｜parameter>` + "\n",
-		"  </|DSML｜invoke>\n",
-		"</|DSML｜tool_calls>",
+		`  <｜DSML｜invoke name="TaskUpdate">` + "\n",
+		`    <｜DSML｜parameter name="status">completed</｜DSML｜parameter>` + "\n",
+		`    <｜DSML｜parameter name="taskId">1</｜DSML｜parameter>` + "\n",
+		"  </｜DSML｜invoke>\n",
+		"</｜DSML｜tool_calls>",
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -241,13 +244,13 @@ func TestProcessToolSieveInterceptsMixedFullwidthDSMLToolCallWithoutLeak(t *test
 func TestProcessToolSieveInterceptsBareMixedFullwidthDSMLToolCallWithoutLeak(t *testing.T) {
 	var state State
 	chunks := []string{
-		"<DSML｜tool",
+		"<｜DSML｜tool",
 		"_calls>\n",
-		`  <DSML｜invoke name="TaskUpdate">` + "\n",
-		`    <DSML｜parameter name="status">completed</DSML｜parameter>` + "\n",
-		`    <DSML｜parameter name="taskId">1</DSML｜parameter>` + "\n",
-		"  </DSML｜invoke>\n",
-		"</DSML｜tool_calls>",
+		`  <｜DSML｜invoke name="TaskUpdate">` + "\n",
+		`    <｜DSML｜parameter name="status">completed</｜DSML｜parameter>` + "\n",
+		`    <｜DSML｜parameter name="taskId">1</｜DSML｜parameter>` + "\n",
+		"  </｜DSML｜invoke>\n",
+		"</｜DSML｜tool_calls>",
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -273,12 +276,12 @@ func TestProcessToolSieveInterceptsBareMixedFullwidthDSMLToolCallWithoutLeak(t *
 func TestProcessToolSieveInterceptsBracketDSMLToolCallWithoutLeak(t *testing.T) {
 	var state State
 	chunks := []string{
-		"<⌜DSML⌝tool",
+		"<｜DSML｜tool",
 		"_calls>\n",
-		`  <⌜DSML⌝invoke name="Bash">` + "\n",
-		`    <⌜DSML⌝parameter name="command"><![CDATA[pwd]]><⌜/DSML⌝parameter>` + "\n",
-		"  <⌜/DSML⌝invoke>\n",
-		"<⌜/DSML⌝tool_calls>",
+		`  <｜DSML｜invoke name="Bash">` + "\n",
+		`    <｜DSML｜parameter name="command"><![CDATA[pwd]]></｜DSML｜parameter>` + "\n",
+		"  </｜DSML｜invoke>\n",
+		"</｜DSML｜tool_calls>",
 	}
 	var events []Event
 	for _, chunk := range chunks {
@@ -303,7 +306,7 @@ func TestProcessToolSieveInterceptsBracketDSMLToolCallWithoutLeak(t *testing.T) 
 
 func TestProcessToolSieveDropsBracketDSMEmptyReadWithoutLeak(t *testing.T) {
 	var state State
-	chunk := `<⌜DSML⌝tool_calls><⌜DSML⌝invoke name="Read"><⌜DSML⌝parameter name="file_path"><⌜/DSML⌝parameter><⌜/DSML⌝invoke><⌜/DSML⌝tool_calls>`
+	chunk := `<｜DSML｜tool_calls><｜DSML｜invoke name="Read"><｜DSML｜parameter name="file_path"></｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	events := ProcessChunk(&state, chunk, []string{"Read"})
 	events = append(events, Flush(&state, []string{"Read"})...)
 	for _, evt := range events {
@@ -348,7 +351,7 @@ func TestProcessToolSieveDropsSMLSentinelProtocolWithoutLeak(t *testing.T) {
 
 func TestProcessToolSieveDropsUnparseableReadFilePathWithoutLeak(t *testing.T) {
 	var state State
-	chunk := `<⌜DSML⌝tool_calls><⌜DSML⌝invoke name="Read"><⌜DSML⌝parameter name="file_path">C:\Users\me\repo\README.md`
+	chunk := `<｜DSML｜tool_calls><｜DSML｜invoke name="Read"><｜DSML｜parameter name="file_path">C:\Users\me\repo\README.md`
 	events := ProcessChunk(&state, chunk, []string{"Read"})
 	events = append(events, Flush(&state, []string{"Read"})...)
 	for _, evt := range events {
@@ -360,7 +363,7 @@ func TestProcessToolSieveDropsUnparseableReadFilePathWithoutLeak(t *testing.T) {
 
 func TestProcessToolSieveDropsBareReadMissingFilePathWithoutLeak(t *testing.T) {
 	var state State
-	chunk := `<invoke name="Read"><parameter name="limit"><![CDATA[30]]>`
+	chunk := `<｜DSML｜invoke name="Read"><｜DSML｜parameter name="limit"><![CDATA[30]]>`
 	events := ProcessChunk(&state, chunk, []string{"Read"})
 	events = append(events, Flush(&state, []string{"Read"})...)
 	for _, evt := range events {
@@ -368,7 +371,7 @@ func TestProcessToolSieveDropsBareReadMissingFilePathWithoutLeak(t *testing.T) {
 			t.Fatalf("expected bare Read call missing file_path to be hidden from client and not emitted, got %#v", events)
 		}
 	}
-	if !strings.Contains(state.MalformedToolFeedback, `<invoke name="Read">`) {
+	if !strings.Contains(state.MalformedToolFeedback, `<｜DSML｜invoke name="Read">`) {
 		t.Fatalf("expected bare Read malformed feedback to be retained for retry, got %q", state.MalformedToolFeedback)
 	}
 }
@@ -505,11 +508,11 @@ func TestProcessToolSieveDropsSentenceBareReadCallWithoutLeak(t *testing.T) {
 	chunk := `● <｜begin▁of▁sentence｜>Read
 reasoningReading the file at the insertion point to get precise content for the Edit tool.
 I need to read the file around the insertion point to get exact content for matching.
-</|DSML|parameter>
-</|DSML|parameter>
-</|DSML|parameter>
-</|DSML|parameter>
-</|DSML|invoke>`
+</｜DSML｜parameter>
+</｜DSML｜parameter>
+</｜DSML｜parameter>
+</｜DSML｜parameter>
+</｜DSML｜invoke>`
 	events := ProcessChunk(&state, chunk, []string{"Read"})
 	events = append(events, Flush(&state, []string{"Read"})...)
 	for _, evt := range events {
@@ -567,12 +570,12 @@ func TestProcessToolSieveBuffersLocalizedPunctuationReadCallAcrossChunks(t *test
 func TestProcessToolSievePreservesMixedFullwidthDSMLMentionBeforeToolCall(t *testing.T) {
 	var state State
 	chunks := []string{
-		"Summary: support mixed <|DSML｜tool_calls> wrappers.\n\n",
-		"<|DSML｜tool_calls>\n",
-		"<|DSML｜invoke name=\"TaskUpdate\">\n",
-		"<|DSML｜parameter name=\"status\">completed</|DSML｜parameter>\n",
-		"</|DSML｜invoke>\n",
-		"</|DSML｜tool_calls>",
+		"Summary: support mixed <｜DSML｜tool_calls> wrappers.\n\n",
+		"<｜DSML｜tool_calls>\n",
+		"<｜DSML｜invoke name=\"TaskUpdate\">\n",
+		"<｜DSML｜parameter name=\"status\">completed</｜DSML｜parameter>\n",
+		"</｜DSML｜invoke>\n",
+		"</｜DSML｜tool_calls>",
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -587,7 +590,7 @@ func TestProcessToolSievePreservesMixedFullwidthDSMLMentionBeforeToolCall(t *tes
 		toolCalls += len(evt.ToolCalls)
 	}
 
-	if !strings.Contains(textContent.String(), "Summary: support mixed <|DSML｜tool_calls> wrappers.") {
+	if !strings.Contains(textContent.String(), "Summary: support mixed <｜DSML｜tool_calls> wrappers.") {
 		t.Fatalf("expected mixed-separator DSML prose mention to be preserved, got %q", textContent.String())
 	}
 	if strings.Contains(textContent.String(), "TaskUpdate") {
@@ -604,10 +607,10 @@ func TestProcessToolSieveHandlesLongXMLToolCall(t *testing.T) {
 	payload := strings.Repeat("x", 4096)
 	splitAt := len(payload) / 2
 	chunks := []string{
-		"<tool_calls>\n  <invoke name=\"" + toolName + "\">\n    <parameter name=\"content\"><![CDATA[",
+		"<｜DSML｜tool_calls>\n  <｜DSML｜invoke name=\"" + toolName + "\">\n    <｜DSML｜parameter name=\"content\"><![CDATA[",
 		payload[:splitAt],
 		payload[splitAt:],
-		"]]></parameter>\n  </invoke>\n</tool_calls>",
+		"]]></｜DSML｜parameter>\n  </｜DSML｜invoke>\n</｜DSML｜tool_calls>",
 	}
 
 	var events []Event
@@ -648,20 +651,20 @@ func TestProcessToolSieveKeepsCDATAEmbeddedToolClosingBuffered(t *testing.T) {
 		"",
 		strings.Repeat("x", 4096),
 		"```xml",
-		"<tool_calls>",
-		"  <invoke name=\"demo\">",
-		"    <parameter name=\"value\">x</parameter>",
-		"  </invoke>",
-		"</tool_calls>",
+		"<｜DSML｜tool_calls>",
+		"  <｜DSML｜invoke name=\"demo\">",
+		"    <｜DSML｜parameter name=\"value\">x</｜DSML｜parameter>",
+		"  </｜DSML｜invoke>",
+		"</｜DSML｜tool_calls>",
 		"```",
 		"tail",
 	}, "\n")
-	innerClose := strings.Index(payload, "</tool_calls>") + len("</tool_calls>")
+	innerClose := strings.Index(payload, "</｜DSML｜tool_calls>") + len("</｜DSML｜tool_calls>")
 	chunks := []string{
-		"<tool_calls>\n  <invoke name=\"Write\">\n    <parameter name=\"content\"><![CDATA[",
+		"<｜DSML｜tool_calls>\n  <｜DSML｜invoke name=\"Write\">\n    <｜DSML｜parameter name=\"content\"><![CDATA[",
 		payload[:innerClose],
 		payload[innerClose:],
-		"]]></parameter>\n    <parameter name=\"file_path\">DS2API-4.0-Release-Notes.md</parameter>\n  </invoke>\n</tool_calls>",
+		"]]></｜DSML｜parameter>\n    <｜DSML｜parameter name=\"file_path\">DS2API-4.0-Release-Notes.md</｜DSML｜parameter>\n  </｜DSML｜invoke>\n</｜DSML｜tool_calls>",
 	}
 
 	var events []Event
@@ -703,9 +706,9 @@ func TestProcessToolSieveKeepsCDATAEmbeddedToolClosingBuffered(t *testing.T) {
 func TestProcessToolSieveFallsBackWhenCDATANeverCloses(t *testing.T) {
 	var state State
 	chunks := []string{
-		"<tool_calls>\n  <invoke name=\"Write\">\n    <parameter name=\"content\"><![CDATA[",
+		"<｜DSML｜tool_calls>\n  <｜DSML｜invoke name=\"Write\">\n    <｜DSML｜parameter name=\"content\"><![CDATA[",
 		"hello world",
-		"</parameter>\n  </invoke>\n</tool_calls>",
+		"</｜DSML｜parameter>\n  </｜DSML｜invoke>\n</｜DSML｜tool_calls>",
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -727,11 +730,11 @@ func TestProcessToolSieveFallsBackWhenCDATANeverCloses(t *testing.T) {
 		}
 	}
 
-	if toolCalls != 1 {
-		t.Fatalf("expected unclosed CDATA payload to still parse, got %d tool calls events=%#v", toolCalls, events)
+	if toolCalls != 0 {
+		t.Fatalf("expected unclosed CDATA payload to be rejected, got %d tool calls events=%#v", toolCalls, events)
 	}
-	if textContent.Len() != 0 {
-		t.Fatalf("expected no leaked text, got %q", textContent.String())
+	if textContent.Len() != 0 || !strings.Contains(state.MalformedToolFeedback, "<｜DSML｜tool_calls>") {
+		t.Fatalf("expected no leaked text and malformed feedback, text=%q feedback=%q", textContent.String(), state.MalformedToolFeedback)
 	}
 }
 
@@ -740,8 +743,8 @@ func TestProcessToolSieveXMLWithLeadingText(t *testing.T) {
 	// Model outputs some prose then an XML tool call.
 	chunks := []string{
 		"Let me check the file.\n",
-		"<tool_calls>\n  <invoke name=\"read_file\">\n",
-		`    <parameter name="path">go.mod</parameter>` + "\n  </invoke>\n</tool_calls>",
+		"<｜DSML｜tool_calls>\n  <｜DSML｜invoke name=\"read_file\">\n",
+		`    <｜DSML｜parameter name="path">go.mod</｜DSML｜parameter>` + "\n  </｜DSML｜invoke>\n</｜DSML｜tool_calls>",
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -763,7 +766,7 @@ func TestProcessToolSieveXMLWithLeadingText(t *testing.T) {
 		t.Fatalf("expected leading text to be emitted, got %q", textContent)
 	}
 	// The XML itself should NOT leak.
-	if strings.Contains(textContent, "<invoke ") {
+	if strings.Contains(textContent, "<｜DSML｜invoke ") {
 		t.Fatalf("XML tool call content leaked to text: %q", textContent)
 	}
 	if toolCalls == 0 {
@@ -793,7 +796,7 @@ func TestProcessToolSievePassesThroughNonToolXMLBlock(t *testing.T) {
 
 func TestProcessToolSieveNonToolXMLKeepsSuffixForToolParsing(t *testing.T) {
 	var state State
-	chunk := `<tool><title>plain xml</title></tool><tool_calls><invoke name="read_file"><parameter name="path">README.MD</parameter></invoke></tool_calls>`
+	chunk := `<tool><title>plain xml</title></tool><｜DSML｜tool_calls><｜DSML｜invoke name="read_file"><｜DSML｜parameter name="path">README.MD</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	events := ProcessChunk(&state, chunk, []string{"read_file"})
 	events = append(events, Flush(&state, []string{"read_file"})...)
 
@@ -806,7 +809,7 @@ func TestProcessToolSieveNonToolXMLKeepsSuffixForToolParsing(t *testing.T) {
 	if !strings.Contains(textContent.String(), `<tool><title>plain xml</title></tool>`) {
 		t.Fatalf("expected leading non-tool XML to be preserved, got %q", textContent.String())
 	}
-	if strings.Contains(textContent.String(), `<tool_calls><invoke`) {
+	if strings.Contains(textContent.String(), `<｜DSML｜tool_calls><invoke`) {
 		t.Fatalf("expected invoke tool XML to be intercepted, got %q", textContent.String())
 	}
 	if toolCalls != 1 {
@@ -816,7 +819,7 @@ func TestProcessToolSieveNonToolXMLKeepsSuffixForToolParsing(t *testing.T) {
 
 func TestProcessToolSieveDropsMalformedExecutableXMLBlock(t *testing.T) {
 	var state State
-	chunk := `<tool_calls><invoke name="read_file"><param>{"path":"README.md"}</param></invoke></tool_calls>`
+	chunk := `<｜DSML｜tool_calls><｜DSML｜invoke name="read_file"><param>{"path":"README.md"}</param></｜DSML｜invoke></｜DSML｜tool_calls>`
 	events := ProcessChunk(&state, chunk, []string{"read_file"})
 	events = append(events, Flush(&state, []string{"read_file"})...)
 
@@ -825,7 +828,7 @@ func TestProcessToolSieveDropsMalformedExecutableXMLBlock(t *testing.T) {
 			t.Fatalf("expected malformed executable-looking XML to be hidden for retry, got %#v", events)
 		}
 	}
-	if !strings.Contains(state.MalformedToolFeedback, `<tool_calls>`) {
+	if !strings.Contains(state.MalformedToolFeedback, `<｜DSML｜tool_calls>`) {
 		t.Fatalf("expected malformed executable-looking XML feedback to be retained, got %q", state.MalformedToolFeedback)
 	}
 }
@@ -834,17 +837,17 @@ func TestProcessToolSievePassesThroughFencedXMLToolCallExamples(t *testing.T) {
 	var state State
 	input := strings.Join([]string{
 		"Before first example.\n```",
-		"xml\n<tool_calls><invoke name=\"read_file\"><parameter name=\"path\">README.md</parameter></invoke></tool_calls>\n```\n",
+		"xml\n<｜DSML｜tool_calls><｜DSML｜invoke name=\"read_file\"><｜DSML｜parameter name=\"path\">README.md</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>\n```\n",
 		"Between examples.\n```xml\n",
-		"<tool_calls><invoke name=\"search\"><parameter name=\"q\">golang</parameter></invoke></tool_calls>\n",
+		"<｜DSML｜tool_calls><｜DSML｜invoke name=\"search\"><｜DSML｜parameter name=\"q\">golang</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>\n",
 		"```\nAfter examples.",
 	}, "")
 
 	chunks := []string{
 		"Before first example.\n```",
-		"xml\n<tool_calls><invoke name=\"read_file\"><parameter name=\"path\">README.md</parameter></invoke></tool_calls>\n```\n",
+		"xml\n<｜DSML｜tool_calls><｜DSML｜invoke name=\"read_file\"><｜DSML｜parameter name=\"path\">README.md</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>\n```\n",
 		"Between examples.\n```xml\n",
-		"<tool_calls><invoke name=\"search\"><parameter name=\"q\">golang</parameter></invoke></tool_calls>\n",
+		"<｜DSML｜tool_calls><｜DSML｜invoke name=\"search\"><｜DSML｜parameter name=\"q\">golang</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>\n",
 		"```\nAfter examples.",
 	}
 
@@ -875,13 +878,13 @@ func TestProcessToolSieveKeepsPartialXMLTagInsideFencedExample(t *testing.T) {
 	var state State
 	input := strings.Join([]string{
 		"Example:\n```xml\n<tool_ca",
-		"lls><invoke name=\"read_file\"><parameter name=\"path\">README.md</parameter></invoke></tool_calls>\n```\n",
+		"lls><｜DSML｜invoke name=\"read_file\"><｜DSML｜parameter name=\"path\">README.md</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>\n```\n",
 		"Done.",
 	}, "")
 
 	chunks := []string{
 		"Example:\n```xml\n<tool_ca",
-		"lls><invoke name=\"read_file\"><parameter name=\"path\">README.md</parameter></invoke></tool_calls>\n```\n",
+		"lls><｜DSML｜invoke name=\"read_file\"><｜DSML｜parameter name=\"path\">README.md</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>\n```\n",
 		"Done.",
 	}
 
@@ -933,10 +936,10 @@ func TestFindToolSegmentStartDetectsXMLToolCalls(t *testing.T) {
 		input string
 		want  int
 	}{
-		{"tool_calls_tag", "some text <tool_calls>\n", 10},
-		{"invoke_tag_missing_wrapper", "some text <invoke name=\"read_file\">\n", 10},
+		{"tool_calls_tag", "some text <｜DSML｜tool_calls>\n", 10},
+		{"invoke_tag_missing_wrapper", "some text <｜DSML｜invoke name=\"read_file\">\n", 10},
 		{"bare_tool_call_text", "prefix <tool_call>\n", -1},
-		{"xml_inside_code_fence", "```xml\n<tool_calls><invoke name=\"read_file\"></invoke></tool_calls>\n```", -1},
+		{"xml_inside_code_fence", "```xml\n<｜DSML｜tool_calls><｜DSML｜invoke name=\"read_file\"></｜DSML｜invoke></｜DSML｜tool_calls>\n```", -1},
 		{"no_xml", "just plain text", -1},
 		{"gemini_json_no_detect", `some text {"functionCall":{"name":"search"}}`, -1},
 	}
@@ -963,7 +966,7 @@ func TestFindPartialXMLToolTagStart(t *testing.T) {
 		{"partial_generic_dsml_prefix", "Hello <DSML|too", 6},
 		{"partial_hash_dsml_prefix", "Hello <#DS", 6},
 		{"partial_begin_invoke_prefix", "Hello <｜begin▁of▁inv", 6},
-		{"complete_tag", "Text <tool_calls>done", -1},
+		{"complete_tag", "Text <｜DSML｜tool_calls>done", -1},
 		{"no_lt", "plain text", -1},
 		{"closed_lt", "a < b > c", -1},
 	}
@@ -978,10 +981,10 @@ func TestFindPartialXMLToolTagStart(t *testing.T) {
 }
 
 func TestHasOpenXMLToolTag(t *testing.T) {
-	if !hasOpenXMLToolTag("<tool_calls>\n<invoke name=\"foo\">") {
+	if !hasOpenXMLToolTag("<｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"foo\">") {
 		t.Fatal("should detect open XML tool tag without closing tag")
 	}
-	if hasOpenXMLToolTag("<tool_calls>\n<invoke name=\"foo\"></invoke>\n</tool_calls>") {
+	if hasOpenXMLToolTag("<｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"foo\"></｜DSML｜invoke>\n</｜DSML｜tool_calls>") {
 		t.Fatal("should return false when closing tag is present")
 	}
 	if hasOpenXMLToolTag("plain text without any XML") {
@@ -990,29 +993,29 @@ func TestHasOpenXMLToolTag(t *testing.T) {
 }
 
 // Test the EXACT scenario the user reports: token-by-token streaming where
-// <tool_calls> tag arrives in small pieces.
+// <｜DSML｜tool_calls> tag arrives in small pieces.
 func TestProcessToolSieveTokenByTokenXMLNoLeak(t *testing.T) {
 	var state State
 	// Simulate DeepSeek model generating tokens one at a time.
 	chunks := []string{
 		"<",
-		"tool",
+		"｜DSML｜tool",
 		"_ca",
 		"lls",
 		">\n",
-		"  <in",
+		"  <｜DSML｜in",
 		"voke",
 		` name="`,
 		"read",
 		"_file",
 		`">` + "\n",
-		"    <para",
+		"    <｜DSML｜para",
 		`meter name="path">`,
 		"README.MD",
-		"</parameter>\n",
-		"  </invoke>\n",
+		"</｜DSML｜parameter>\n",
+		"  </｜DSML｜invoke>\n",
 		"</",
-		"tool_calls",
+		"｜DSML｜tool_calls",
 		">",
 	}
 	var events []Event
@@ -1030,7 +1033,7 @@ func TestProcessToolSieveTokenByTokenXMLNoLeak(t *testing.T) {
 		toolCalls += len(evt.ToolCalls)
 	}
 
-	if strings.Contains(textContent, "<invoke ") {
+	if strings.Contains(textContent, "<｜DSML｜invoke ") {
 		t.Fatalf("XML tool call content leaked to text in token-by-token mode: %q", textContent)
 	}
 	if strings.Contains(textContent, "tool_calls>") {
@@ -1044,19 +1047,17 @@ func TestProcessToolSieveTokenByTokenXMLNoLeak(t *testing.T) {
 	}
 }
 
-// Test that Flush on incomplete XML falls back to raw text.
-func TestFlushToolSieveIncompleteXMLFallsBackToText(t *testing.T) {
+func TestFlushToolSieveIncompleteXMLHiddenForRetry(t *testing.T) {
 	var state State
 	// XML block starts but stream ends before completion.
 	chunks := []string{
-		"<tool_calls>\n",
-		"  <invoke name=\"read_file\">\n",
+		"<｜DSML｜tool_calls>\n",
+		"  <｜DSML｜invoke name=\"read_file\">\n",
 	}
 	var events []Event
 	for _, c := range chunks {
 		events = append(events, ProcessChunk(&state, c, []string{"read_file"})...)
 	}
-	// Stream ends abruptly - flush should NOT dump raw XML.
 	events = append(events, Flush(&state, []string{"read_file"})...)
 
 	var textContent string
@@ -1066,24 +1067,24 @@ func TestFlushToolSieveIncompleteXMLFallsBackToText(t *testing.T) {
 		}
 	}
 
-	if textContent != strings.Join(chunks, "") {
-		t.Fatalf("expected incomplete XML to fall back to raw text, got %q", textContent)
+	if textContent != "" || !strings.Contains(state.MalformedToolFeedback, "<｜DSML｜tool_calls>") {
+		t.Fatalf("expected incomplete XML to be hidden for retry, text=%q feedback=%q", textContent, state.MalformedToolFeedback)
 	}
 }
 
-// Test that the opening tag "<tool_calls>\n  " is NOT emitted as text content.
+// Test that the opening tag "<｜DSML｜tool_calls>\n  " is NOT emitted as text content.
 func TestOpeningXMLTagNotLeakedAsContent(t *testing.T) {
 	var state State
 	// First chunk is the opening tag - should be held, not emitted.
-	evts1 := ProcessChunk(&state, "<tool_calls>\n  ", []string{"read_file"})
+	evts1 := ProcessChunk(&state, "<｜DSML｜tool_calls>\n  ", []string{"read_file"})
 	for _, evt := range evts1 {
-		if strings.Contains(evt.Content, "<tool_calls>") {
+		if strings.Contains(evt.Content, "<｜DSML｜tool_calls>") {
 			t.Fatalf("opening tag leaked on first chunk: %q", evt.Content)
 		}
 	}
 
 	// Remaining content arrives.
-	evts2 := ProcessChunk(&state, "<invoke name=\"read_file\">\n    <parameter name=\"path\">README.MD</parameter>\n  </invoke>\n</tool_calls>", []string{"read_file"})
+	evts2 := ProcessChunk(&state, "<｜DSML｜invoke name=\"read_file\">\n    <｜DSML｜parameter name=\"path\">README.MD</｜DSML｜parameter>\n  </｜DSML｜invoke>\n</｜DSML｜tool_calls>", []string{"read_file"})
 	evts2 = append(evts2, Flush(&state, []string{"read_file"})...)
 
 	var textContent string
@@ -1096,7 +1097,7 @@ func TestOpeningXMLTagNotLeakedAsContent(t *testing.T) {
 		toolCalls += len(evt.ToolCalls)
 	}
 
-	if strings.Contains(textContent, "<invoke ") {
+	if strings.Contains(textContent, "<｜DSML｜invoke ") {
 		t.Fatalf("XML content leaked: %q", textContent)
 	}
 	if toolCalls == 0 {
@@ -1138,7 +1139,7 @@ func TestProcessToolSieveFallsBackToRawAttemptCompletion(t *testing.T) {
 
 func TestProcessToolSievePassesThroughBareToolCallAsText(t *testing.T) {
 	var state State
-	chunk := `<invoke name="read_file"><parameter name="path">README.md</parameter></invoke>`
+	chunk := `<｜DSML｜invoke name="read_file"><｜DSML｜parameter name="path">README.md</｜DSML｜parameter></｜DSML｜invoke>`
 	events := ProcessChunk(&state, chunk, []string{"read_file"})
 	events = append(events, Flush(&state, []string{"read_file"})...)
 
@@ -1159,7 +1160,7 @@ func TestProcessToolSievePassesThroughBareToolCallAsText(t *testing.T) {
 
 func TestProcessToolSieveBareInvokeInlineProseDoesNotStall(t *testing.T) {
 	var state State
-	chunk := "Use `<invoke name=\"read_file\">` as plain documentation text."
+	chunk := "Use `<｜DSML｜invoke name=\"read_file\">` as plain documentation text."
 	events := ProcessChunk(&state, chunk, []string{"read_file"})
 
 	var textContent strings.Builder
@@ -1172,19 +1173,19 @@ func TestProcessToolSieveBareInvokeInlineProseDoesNotStall(t *testing.T) {
 	if toolCalls != 0 {
 		t.Fatalf("expected inline invoke prose to remain text, got %d events=%#v", toolCalls, events)
 	}
-	if textContent.String() != chunk {
-		t.Fatalf("expected inline invoke prose to stream immediately, got %q", textContent.String())
+	if textContent.String() != "" {
+		t.Fatalf("expected inline invoke prose to be hidden for retry, got %q", textContent.String())
 	}
-	if state.capturing {
-		t.Fatal("expected inline invoke prose not to leave stream capture open")
+	if state.MalformedToolFeedback == "" {
+		t.Fatal("expected inline invoke prose to retain malformed feedback")
 	}
 }
 
 func TestProcessToolSieveBareInvokeExampleHiddenWhenNotRepairable(t *testing.T) {
 	var state State
 	chunks := []string{
-		`Example: <invoke name="read_file"><parameter name="path">README.md</parameter>`,
-		"</invoke> then continue.",
+		`Example: <｜DSML｜invoke name="read_file"><｜DSML｜parameter name="path">README.md</｜DSML｜parameter>`,
+		"</｜DSML｜invoke> then continue.",
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -1199,7 +1200,7 @@ func TestProcessToolSieveBareInvokeExampleHiddenWhenNotRepairable(t *testing.T) 
 	if state.capturing {
 		t.Fatal("expected non-repairable bare invoke not to leave stream capture open")
 	}
-	if !strings.Contains(state.MalformedToolFeedback, `<invoke name="read_file">`) {
+	if !strings.Contains(state.MalformedToolFeedback, `<｜DSML｜invoke name="read_file">`) || !strings.Contains(state.MalformedToolFeedback, `</｜DSML｜invoke>`) {
 		t.Fatalf("expected non-repairable bare invoke feedback to be retained, got %q", state.MalformedToolFeedback)
 	}
 }
@@ -1207,10 +1208,10 @@ func TestProcessToolSieveBareInvokeExampleHiddenWhenNotRepairable(t *testing.T) 
 func TestProcessToolSieveRepairsMissingOpeningWrapperWithoutLeakingInvokeText(t *testing.T) {
 	var state State
 	chunks := []string{
-		"<invoke name=\"read_file\">\n",
-		"  <parameter name=\"path\">README.md</parameter>\n",
-		"</invoke>\n",
-		"</tool_calls>",
+		"<｜DSML｜invoke name=\"read_file\">\n",
+		"  <｜DSML｜parameter name=\"path\">README.md</｜DSML｜parameter>\n",
+		"</｜DSML｜invoke>\n",
+		"</｜DSML｜tool_calls>",
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -1225,23 +1226,23 @@ func TestProcessToolSieveRepairsMissingOpeningWrapperWithoutLeakingInvokeText(t 
 		toolCalls += len(evt.ToolCalls)
 	}
 
-	if toolCalls != 1 {
-		t.Fatalf("expected repaired missing-wrapper stream to emit one tool call, got %d events=%#v", toolCalls, events)
+	if toolCalls != 0 {
+		t.Fatalf("expected missing-wrapper stream to be rejected, got %d events=%#v", toolCalls, events)
 	}
-	if strings.Contains(textContent.String(), "<invoke") || strings.Contains(textContent.String(), "</tool_calls>") {
-		t.Fatalf("expected repaired missing-wrapper stream not to leak xml text, got %q", textContent.String())
+	if textContent.Len() != 0 || state.MalformedToolFeedback == "" {
+		t.Fatalf("expected missing-wrapper stream to be hidden for retry, text=%q feedback=%q", textContent.String(), state.MalformedToolFeedback)
 	}
 }
 
-// Test fullwidth pipe variant: <｜tool_calls> (U+FF5C) should be buffered and parsed.
+// Test fullwidth pipe variant: <｜DSML｜tool_calls> (U+FF5C) should be buffered and parsed.
 func TestProcessToolSieveFullwidthPipeVariantDoesNotLeak(t *testing.T) {
 	var state State
 	chunks := []string{
-		"<\uff5ctool_calls>\n",
-		"<invoke name=\"execute_command\">\n",
-		"<parameter name=\"command\">git status</parameter>\n",
-		"</invoke>\n",
-		"</\uff5ctool_calls>",
+		"<｜DSML｜tool_calls>\n",
+		"<｜DSML｜invoke name=\"execute_command\">\n",
+		"<｜DSML｜parameter name=\"command\">git status</｜DSML｜parameter>\n",
+		"</｜DSML｜invoke>\n",
+		"</｜DSML｜tool_calls>",
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -1264,22 +1265,22 @@ func TestProcessToolSieveFullwidthPipeVariantDoesNotLeak(t *testing.T) {
 	}
 }
 
-// Test <｜DSML|tool_calls> with DSML invoke/parameter tags should buffer the
+// Test <｜DSML｜tool_calls> with DSML invoke/parameter tags should buffer the
 // wrapper instead of leaking it before the block is complete.
 func TestProcessToolSieveFullwidthDSMLPrefixVariantDoesNotLeak(t *testing.T) {
 	var state State
 	chunks := []string{
-		"<｜DSML|tool",
+		"<｜DSML｜tool",
 		"_calls>\n",
-		"<|DSML|invoke name=\"Bash\">\n",
-		"<|DSML|parameter name=\"command\"><![CDATA[ls -la /Users/aq/Desktop/myproject/ds2api/]]></|DSML|parameter>\n",
-		"<|DSML|parameter name=\"description\"><![CDATA[List project root contents]]></|DSML|parameter>\n",
-		"</|DSML|invoke>\n",
-		"<|DSML|invoke name=\"Bash\">\n",
-		"<|DSML|parameter name=\"command\"><![CDATA[cat /Users/aq/Desktop/myproject/ds2api/package.json 2>/dev/null || echo \"No package.json found\"]]></|DSML|parameter>\n",
-		"<|DSML|parameter name=\"description\"><![CDATA[Check for existing package.json]]></|DSML|parameter>\n",
-		"</|DSML|invoke>\n",
-		"</|DSML|tool_calls>",
+		"<｜DSML｜invoke name=\"Bash\">\n",
+		"<｜DSML｜parameter name=\"command\"><![CDATA[ls -la /Users/aq/Desktop/myproject/ds2api/]]></｜DSML｜parameter>\n",
+		"<｜DSML｜parameter name=\"description\"><![CDATA[List project root contents]]></｜DSML｜parameter>\n",
+		"</｜DSML｜invoke>\n",
+		"<｜DSML｜invoke name=\"Bash\">\n",
+		"<｜DSML｜parameter name=\"command\"><![CDATA[cat /Users/aq/Desktop/myproject/ds2api/package.json 2>/dev/null || echo \"No package.json found\"]]></｜DSML｜parameter>\n",
+		"<｜DSML｜parameter name=\"description\"><![CDATA[Check for existing package.json]]></｜DSML｜parameter>\n",
+		"</｜DSML｜invoke>\n",
+		"</｜DSML｜tool_calls>",
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -1309,15 +1310,15 @@ func TestProcessToolSieveFullwidthDSMLPrefixVariantDoesNotLeak(t *testing.T) {
 	}
 }
 
-// Test <DSML|tool_calls> with <|DSML|invoke> (DSML prefix without leading pipe on wrapper).
+// Test <｜DSML｜tool_calls> with <|DSML|invoke> (DSML prefix without leading pipe on wrapper).
 func TestProcessToolSieveDSMLPrefixVariantDoesNotLeak(t *testing.T) {
 	var state State
 	chunks := []string{
-		"<DSML|tool_calls>\n",
-		"  <|DSML|invoke name=\"execute_command\">\n",
-		"    <|DSML|parameter name=\"command\"><![CDATA[git status]]></|DSML|parameter>\n",
-		"  </|DSML|invoke>\n",
-		"</DSML|tool_calls>",
+		"<｜DSML｜tool_calls>\n",
+		"  <｜DSML｜invoke name=\"execute_command\">\n",
+		"    <｜DSML｜parameter name=\"command\"><![CDATA[git status]]></｜DSML｜parameter>\n",
+		"  </｜DSML｜invoke>\n",
+		"</｜DSML｜tool_calls>",
 	}
 	var events []Event
 	for _, c := range chunks {
@@ -1340,15 +1341,15 @@ func TestProcessToolSieveDSMLPrefixVariantDoesNotLeak(t *testing.T) {
 	}
 }
 
-// Test <DSML|tool_calls> with <DSML|invoke> (no pipe anywhere) should be buffered and parsed.
+// Test <｜DSML｜tool_calls> with <DSML|invoke> (no pipe anywhere) should be buffered and parsed.
 func TestProcessToolSieveDSMLBarePrefixVariantDoesNotLeak(t *testing.T) {
 	var state State
 	chunks := []string{
-		"<DSML|tool_calls>\n",
-		"<DSML|invoke name=\"execute_command\">\n",
-		"<DSML|parameter name=\"command\"><![CDATA[git status]]></DSML|parameter>\n",
-		"</DSML|invoke>\n",
-		"</DSML|tool_calls>",
+		"<｜DSML｜tool_calls>\n",
+		"<｜DSML｜invoke name=\"execute_command\">\n",
+		"<｜DSML｜parameter name=\"command\"><![CDATA[git status]]></｜DSML｜parameter>\n",
+		"</｜DSML｜invoke>\n",
+		"</｜DSML｜tool_calls>",
 	}
 	var events []Event
 	for _, c := range chunks {

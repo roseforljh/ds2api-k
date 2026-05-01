@@ -13,18 +13,18 @@ func TestRegression_RobustXMLAndCDATA(t *testing.T) {
 	}{
 		{
 			name:     "Standard JSON scalar parameters (Regression)",
-			text:     `<tool_calls><invoke name="foo"><parameter name="a">1</parameter></invoke></tool_calls>`,
+			text:     `<｜DSML｜tool_calls><｜DSML｜invoke name="foo"><｜DSML｜parameter name="a">1</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`,
 			expected: []ParsedToolCall{{Name: "foo", Input: map[string]any{"a": float64(1)}}},
 		},
 		{
 			name:     "XML tags parameters (Regression)",
-			text:     `<tool_calls><invoke name="foo"><parameter name="arg1">hello</parameter></invoke></tool_calls>`,
+			text:     `<｜DSML｜tool_calls><｜DSML｜invoke name="foo"><｜DSML｜parameter name="arg1">hello</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`,
 			expected: []ParsedToolCall{{Name: "foo", Input: map[string]any{"arg1": "hello"}}},
 		},
 		{
 			name: "CDATA parameters (New Feature)",
-			text: `<tool_calls><invoke name="write_file"><parameter name="content"><![CDATA[line 1
-line 2 with <tags> and & symbols]]></parameter></invoke></tool_calls>`,
+			text: `<｜DSML｜tool_calls><｜DSML｜invoke name="write_file"><｜DSML｜parameter name="content"><![CDATA[line 1
+line 2 with <tags> and & symbols]]></｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`,
 			expected: []ParsedToolCall{{
 				Name:  "write_file",
 				Input: map[string]any{"content": "line 1\nline 2 with <tags> and & symbols"},
@@ -32,9 +32,9 @@ line 2 with <tags> and & symbols]]></parameter></invoke></tool_calls>`,
 		},
 		{
 			name: "Nested XML with repeated parameters (New Feature)",
-			text: `<tool_calls><invoke name="write_file"><parameter name="path">script.sh</parameter><parameter name="content"><![CDATA[#!/bin/bash
+			text: `<｜DSML｜tool_calls><｜DSML｜invoke name="write_file"><｜DSML｜parameter name="path">script.sh</｜DSML｜parameter><｜DSML｜parameter name="content"><![CDATA[#!/bin/bash
 echo "hello"
-]]></parameter><parameter name="item">first</parameter><parameter name="item">second</parameter></invoke></tool_calls>`,
+]]></｜DSML｜parameter><｜DSML｜parameter name="item">first</｜DSML｜parameter><｜DSML｜parameter name="item">second</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`,
 			expected: []ParsedToolCall{{
 				Name: "write_file",
 				Input: map[string]any{
@@ -46,7 +46,7 @@ echo "hello"
 		},
 		{
 			name: "Dirty XML with unescaped symbols (Robustness Improvement)",
-			text: `<tool_calls><invoke name="bash"><parameter name="command">echo "hello" > out.txt && cat out.txt</parameter></invoke></tool_calls>`,
+			text: `<｜DSML｜tool_calls><｜DSML｜invoke name="bash"><｜DSML｜parameter name="command">echo "hello" > out.txt && cat out.txt</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`,
 			expected: []ParsedToolCall{{
 				Name:  "bash",
 				Input: map[string]any{"command": "echo \"hello\" > out.txt && cat out.txt"},
@@ -54,7 +54,7 @@ echo "hello"
 		},
 		{
 			name: "Mixed JSON inside CDATA (New Hybrid Case)",
-			text: `<tool_calls><invoke name="foo"><parameter name="json_param"><![CDATA[works]]></parameter></invoke></tool_calls>`,
+			text: `<｜DSML｜tool_calls><｜DSML｜invoke name="foo"><｜DSML｜parameter name="json_param"><![CDATA[works]]></｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`,
 			expected: []ParsedToolCall{{
 				Name:  "foo",
 				Input: map[string]any{"json_param": "works"},

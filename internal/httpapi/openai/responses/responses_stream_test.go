@@ -122,8 +122,8 @@ func TestHandleResponsesStreamEmitsDistinctToolCallIDsAcrossSeparateToolBlocks(t
 		return "data: " + string(b) + "\n"
 	}
 
-	streamBody := sseLine("前置文本\n<tool_calls>\n  <invoke name=\"read_file\">\n    <parameter name=\"path\">README.MD</parameter>\n  </invoke>\n</tool_calls>") +
-		sseLine("中间文本\n<tool_calls>\n  <invoke name=\"search\">\n    <parameter name=\"q\">golang</parameter>\n  </invoke>\n</tool_calls>") +
+	streamBody := sseLine("前置文本\n<｜DSML｜tool_calls>\n  <｜DSML｜invoke name=\"read_file\">\n    <｜DSML｜parameter name=\"path\">README.MD</｜DSML｜parameter>\n  </｜DSML｜invoke>\n</｜DSML｜tool_calls>") +
+		sseLine("中间文本\n<｜DSML｜tool_calls>\n  <｜DSML｜invoke name=\"search\">\n    <｜DSML｜parameter name=\"q\">golang</｜DSML｜parameter>\n  </｜DSML｜invoke>\n</｜DSML｜tool_calls>") +
 		"data: [DONE]\n"
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
@@ -272,7 +272,7 @@ func TestHandleResponsesStreamPromotesThinkingToolCallsOnFinalizeWithoutMidstrea
 		return "data: " + string(b) + "\n"
 	}
 
-	streamBody := sseLine("response/thinking_content", `<tool_calls><invoke name="read_file"><parameter name="path">README.MD</parameter></invoke></tool_calls>`) + "data: [DONE]\n"
+	streamBody := sseLine("response/thinking_content", `<｜DSML｜tool_calls><｜DSML｜invoke name="read_file"><｜DSML｜parameter name="path">README.MD</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`) + "data: [DONE]\n"
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(strings.NewReader(streamBody)),
@@ -305,7 +305,7 @@ func TestHandleResponsesStreamPromotesHiddenThinkingDSMLToolCallsOnFinalize(t *t
 		return "data: " + string(b) + "\n"
 	}
 
-	streamBody := sseLine("response/thinking_content", `<|DSML|tool_calls><|DSML|invoke name="read_file"><|DSML|parameter name="path">README.MD</|DSML|parameter></|DSML|invoke></|DSML|tool_calls>`) + "data: [DONE]\n"
+	streamBody := sseLine("response/thinking_content", `<｜DSML｜tool_calls><｜DSML｜invoke name="read_file"><｜DSML｜parameter name="path">README.MD</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`) + "data: [DONE]\n"
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(strings.NewReader(streamBody)),
@@ -454,7 +454,7 @@ func TestHandleResponsesNonStreamPromotesThinkingToolCallsWhenTextEmpty(t *testi
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body: io.NopCloser(strings.NewReader(
-			`data: {"p":"response/thinking_content","v":"<tool_calls><invoke name=\"read_file\"><parameter name=\"path\">README.MD</parameter></invoke></tool_calls>"}` + "\n" +
+			`data: {"p":"response/thinking_content","v":"<｜DSML｜tool_calls><｜DSML｜invoke name=\"read_file\"><｜DSML｜parameter name=\"path\">README.MD</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>"}` + "\n" +
 				`data: [DONE]` + "\n",
 		)),
 	}
@@ -480,7 +480,7 @@ func TestHandleResponsesNonStreamPromotesHiddenThinkingDSMLToolCallsWhenTextEmpt
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body: io.NopCloser(strings.NewReader(
-			`data: {"p":"response/thinking_content","v":"<|DSML|tool_calls><|DSML|invoke name=\"read_file\"><|DSML|parameter name=\"path\">README.MD</|DSML|parameter></|DSML|invoke></|DSML|tool_calls>"}` + "\n" +
+			`data: {"p":"response/thinking_content","v":"<｜DSML｜tool_calls><｜DSML｜invoke name=\"read_file\"><｜DSML｜parameter name=\"path\">README.MD</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>"}` + "\n" +
 				`data: [DONE]` + "\n",
 		)),
 	}

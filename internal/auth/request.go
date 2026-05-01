@@ -162,8 +162,6 @@ func (r *Resolver) RefreshToken(ctx context.Context, a *RequestAuth) bool {
 	if !a.UseConfigToken || a.AccountID == "" {
 		return false
 	}
-	_ = r.Store.UpdateAccountToken(a.AccountID, "")
-	a.Account.Token = ""
 	if err := r.loginAndPersist(ctx, a); err != nil {
 		config.Logger.Error("[refresh_token] failed", "account", a.AccountID, "error", err)
 		return false
@@ -193,7 +191,7 @@ func (r *Resolver) SwitchAccount(ctx context.Context, a *RequestAuth) bool {
 		r.Pool.Release(a.AccountID)
 	}
 	for {
-		acc, ok := r.Pool.Acquire("", a.TriedAccounts)
+		acc, ok := r.Pool.AcquireWait(ctx, "", a.TriedAccounts)
 		if !ok {
 			return false
 		}

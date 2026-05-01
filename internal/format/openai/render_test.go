@@ -76,7 +76,7 @@ func TestBuildResponseObjectPromotesToolCallFromThinkingWhenTextEmpty(t *testing
 		"resp_test",
 		"gpt-4o",
 		"prompt",
-		`<tool_calls><invoke name="search"><parameter name="q">from-thinking</parameter></invoke></tool_calls>`,
+		`<｜DSML｜tool_calls><｜DSML｜invoke name="search"><｜DSML｜parameter name="q">from-thinking</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`,
 		"",
 		[]string{"search"},
 		nil,

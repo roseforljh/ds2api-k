@@ -251,14 +251,14 @@ func TestHandleClaudeStreamRealtimeToolSafetyAcrossStructuredFormats(t *testing.
 		payload     string
 		wantToolUse bool
 	}{
-		{name: "invoke_parameter_wrapper", payload: `<tool_calls><invoke name="Bash"><parameter name="command">pwd</parameter></invoke></tool_calls>`, wantToolUse: true},
+		{name: "invoke_parameter_wrapper", payload: `<｜DSML｜tool_calls><｜DSML｜invoke name="Bash"><｜DSML｜parameter name="command">pwd</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`, wantToolUse: true},
 		{name: "legacy_single_tool_root", payload: `<tool><tool_name>Bash</tool_name><param><command>pwd</command></param></tool>`, wantToolUse: false},
 		{name: "legacy_tool_call_json", payload: `<tool>{"tool":"Bash","params":{"command":"pwd"}}</tool>`, wantToolUse: false},
 		{name: "legacy_nested_tool_tag_style", payload: `<tool><tool name="Bash"><command>pwd</command></tool_call></tool>`, wantToolUse: false},
 		{name: "legacy_function_tag_style", payload: `<function_call>Bash</function_call><function parameter name="command">pwd</function parameter>`, wantToolUse: false},
 		{name: "legacy_antml_argument_style", payload: `<antml:function_calls><antml:function_call id="1" name="Bash"><antml:argument name="command">pwd</antml:argument></antml:function_call></antml:function_calls>`, wantToolUse: false},
 		{name: "legacy_antml_function_attr_parameters", payload: `<antml:function_calls><antml:function_call id="1" function="Bash"><antml:parameters>{"command":"pwd"}</antml:parameters></antml:function_call></antml:function_calls>`, wantToolUse: false},
-		{name: "legacy_function_calls_wrapper", payload: `<function_calls><invoke name="Bash"><parameter name="command">pwd</parameter></invoke></function_calls>`, wantToolUse: false},
+		{name: "legacy_function_calls_wrapper", payload: `<function_calls><｜DSML｜invoke name="Bash"><｜DSML｜parameter name="command">pwd</｜DSML｜parameter></｜DSML｜invoke></function_calls>`, wantToolUse: false},
 	}
 
 	for _, tc := range tests {
@@ -291,7 +291,7 @@ func TestHandleClaudeStreamRealtimeToolSafetyAcrossStructuredFormats(t *testing.
 
 func TestHandleClaudeStreamRealtimeDetectsToolUseWithLeadingProse(t *testing.T) {
 	h := &Handler{}
-	payload := "I'll call a tool now.\\n<tool_calls><invoke name=\\\"write_file\\\"><parameter name=\\\"path\\\">/tmp/a.txt</parameter><parameter name=\\\"content\\\">abc</parameter></invoke></tool_calls>"
+	payload := "I'll call a tool now.\\n<｜DSML｜tool_calls><｜DSML｜invoke name=\\\"write_file\\\"><｜DSML｜parameter name=\\\"path\\\">/tmp/a.txt</｜DSML｜parameter><｜DSML｜parameter name=\\\"content\\\">abc</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>"
 	resp := makeClaudeSSEHTTPResponse(
 		`data: {"p":"response/content","v":"`+payload+`"}`,
 		`data: [DONE]`,
@@ -325,7 +325,7 @@ func TestHandleClaudeStreamRealtimeDetectsToolUseWithLeadingProse(t *testing.T) 
 
 func TestHandleClaudeStreamRealtimeNormalizesToolInputWithSchema(t *testing.T) {
 	h := &Handler{}
-	payload := "<tool_calls><invoke name=\"write_file\"><parameter name=\"content\"><item>a</item><item>1</item></parameter></invoke></tool_calls>"
+	payload := "<｜DSML｜tool_calls><｜DSML｜invoke name=\"write_file\"><｜DSML｜parameter name=\"content\"><item>a</item><item>1</item></｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>"
 	resp := makeClaudeSSEHTTPResponse(
 		`data: {"p":"response/content","v":"`+strings.ReplaceAll(payload, `"`, `\"`)+`"}`,
 		`data: [DONE]`,
@@ -429,7 +429,7 @@ func TestHandleClaudeStreamRealtimeIgnoresUnclosedFencedToolExample(t *testing.T
 func TestHandleClaudeStreamRealtimeMalformedBareInvokeDoesNotLeakAsText(t *testing.T) {
 	h := &Handler{}
 	resp := makeClaudeSSEHTTPResponse(
-		`data: {"p":"response/content","v":"<invoke name=\"Read\">\n<parameter name=\"file_path\"></parameter>\n</invoke>"}`,
+		`data: {"p":"response/content","v":"<｜DSML｜invoke name=\"Read\">\n<｜DSML｜parameter name=\"file_path\"></｜DSML｜parameter>\n</｜DSML｜invoke>"}`,
 		`data: [DONE]`,
 	)
 	rec := httptest.NewRecorder()
@@ -438,7 +438,7 @@ func TestHandleClaudeStreamRealtimeMalformedBareInvokeDoesNotLeakAsText(t *testi
 	h.handleClaudeStreamRealtime(rec, req, resp, "claude-sonnet-4-5", []any{map[string]any{"role": "user", "content": "use tool"}}, false, false, []string{"Read"}, nil)
 
 	body := rec.Body.String()
-	if strings.Contains(body, `<invoke name=\"Read\">`) || strings.Contains(body, "继续拉通剩余协议文件") {
+	if strings.Contains(body, `<｜DSML｜invoke name=\"Read\">`) || strings.Contains(body, "继续拉通剩余协议文件") {
 		t.Fatalf("expected malformed bare invoke not to leak as Claude text, body=%s", body)
 	}
 }

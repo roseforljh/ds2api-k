@@ -43,7 +43,7 @@ func TestFormatOpenAIToolCallsParsesObjectSchemaStringArguments(t *testing.T) {
 }
 
 func TestParseToolCallsSupportsToolCallsWrapper(t *testing.T) {
-	text := `<tool_calls><invoke name="Bash"><parameter name="command">pwd</parameter><parameter name="description">show cwd</parameter></invoke></tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="Bash"><｜DSML｜parameter name="command">pwd</｜DSML｜parameter><｜DSML｜parameter name="description">show cwd</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"bash"})
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 call, got %#v", calls)
@@ -57,7 +57,7 @@ func TestParseToolCallsSupportsToolCallsWrapper(t *testing.T) {
 }
 
 func TestParseToolCallsSupportsDSMLShell(t *testing.T) {
-	text := `<|DSML|tool_calls><|DSML|invoke name="Bash"><|DSML|parameter name="command"><![CDATA[pwd]]></|DSML|parameter></|DSML|invoke></|DSML|tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="Bash"><｜DSML｜parameter name="command"><![CDATA[pwd]]></｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"Bash"})
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 DSML call, got %#v", calls)
@@ -68,7 +68,7 @@ func TestParseToolCallsSupportsDSMLShell(t *testing.T) {
 }
 
 func TestParseToolCallsSupportsMixedFullwidthDSMLSeparators(t *testing.T) {
-	text := `<|DSML｜tool_calls><|DSML｜invoke name="Bash"><|DSML｜parameter name="command"><![CDATA[pwd]]></|DSML｜parameter></|DSML｜invoke></|DSML｜tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="Bash"><｜DSML｜parameter name="command"><![CDATA[pwd]]></｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"Bash"})
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 mixed-separator DSML call, got %#v", calls)
@@ -79,7 +79,7 @@ func TestParseToolCallsSupportsMixedFullwidthDSMLSeparators(t *testing.T) {
 }
 
 func TestParseToolCallsSupportsDSMFullwidthAlias(t *testing.T) {
-	text := `<DSM｜tool_calls><DSM｜invoke name="Bash"><DSM｜parameter name="command"><![CDATA[pwd]]></DSM｜parameter><DSM｜parameter name="description"><![CDATA[show cwd]]></DSM｜parameter></DSM｜invoke></DSM｜tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="Bash"><｜DSML｜parameter name="command"><![CDATA[pwd]]></｜DSML｜parameter><｜DSML｜parameter name="description"><![CDATA[show cwd]]></｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"Bash"})
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 DSM alias call, got %#v", calls)
@@ -90,7 +90,7 @@ func TestParseToolCallsSupportsDSMFullwidthAlias(t *testing.T) {
 }
 
 func TestParseToolCallsSupportsBracketDSMLAlias(t *testing.T) {
-	text := `<⌜DSML⌝tool_calls><⌜DSML⌝invoke name="Bash"><⌜DSML⌝parameter name="command"><![CDATA[pwd]]><⌜/DSML⌝parameter><⌜/DSML⌝invoke><⌜/DSML⌝tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="Bash"><｜DSML｜parameter name="command"><![CDATA[pwd]]></｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"Bash"})
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 bracket DSML alias call, got %#v", calls)
@@ -101,7 +101,7 @@ func TestParseToolCallsSupportsBracketDSMLAlias(t *testing.T) {
 }
 
 func TestParseToolCallsRejectsReadWithEmptyFilePath(t *testing.T) {
-	text := `<⌜DSML⌝tool_calls><⌜DSML⌝invoke name="Read"><⌜DSML⌝parameter name="file_path"><⌜/DSML⌝parameter><⌜/DSML⌝invoke><⌜/DSML⌝tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="Read"><｜DSML｜parameter name="file_path"></｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	res := ParseToolCallsDetailed(text, []string{"Read"})
 	if !res.SawToolCallSyntax {
 		t.Fatalf("expected malformed-empty Read call to be recognized as tool syntax")
@@ -112,7 +112,7 @@ func TestParseToolCallsRejectsReadWithEmptyFilePath(t *testing.T) {
 }
 
 func TestParseToolCallsMarksUnparseableReadFilePathForHiddenRetry(t *testing.T) {
-	text := `<⌜DSML⌝tool_calls><⌜DSML⌝invoke name="Read"><⌜DSML⌝parameter name="file_path">C:\Users\me\repo\README.md`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="Read"><｜DSML｜parameter name="file_path">C:\Users\me\repo\README.md`
 	res := ParseToolCallsDetailed(text, []string{"Read"})
 	if !res.SawToolCallSyntax {
 		t.Fatalf("expected malformed Read.file_path call to be recognized as tool syntax")
@@ -126,7 +126,7 @@ func TestParseToolCallsMarksUnparseableReadFilePathForHiddenRetry(t *testing.T) 
 }
 
 func TestParseToolCallsMarksBareReadMissingFilePathForHiddenRetry(t *testing.T) {
-	text := `<invoke name="Read"><parameter name="limit"><![CDATA[30]]>`
+	text := `<｜DSML｜invoke name="Read"><｜DSML｜parameter name="limit"><![CDATA[30]]>`
 	res := ParseToolCallsDetailed(text, []string{"Read"})
 	if !res.SawToolCallSyntax {
 		t.Fatalf("expected malformed bare Read call to be recognized as tool syntax")
@@ -140,13 +140,10 @@ func TestParseToolCallsMarksBareReadMissingFilePathForHiddenRetry(t *testing.T) 
 }
 
 func TestParseToolCallsDoesNotMarkBareInvokeMentionAsHiddenRetry(t *testing.T) {
-	text := `<invoke name="Read"> as documentation only`
+	text := `<｜DSML｜invoke name="Read"> as documentation only`
 	res := ParseToolCallsDetailed(text, []string{"Read"})
-	if res.RejectedInvalid {
-		t.Fatalf("expected bare invoke prose mention to remain text, got %#v", res)
-	}
-	if res.SawToolCallSyntax {
-		t.Fatalf("expected bare invoke prose mention not to count as tool syntax, got %#v", res)
+	if !res.SawToolCallSyntax || !res.RejectedInvalid {
+		t.Fatalf("expected bare official invoke prose mention to be rejected for retry, got %#v", res)
 	}
 	if len(res.Calls) != 0 {
 		t.Fatalf("expected no calls from bare invoke prose mention, got %#v", res.Calls)
@@ -213,11 +210,11 @@ func TestParseToolCallsMarksSentenceBareReadForHiddenRetry(t *testing.T) {
 	text := `● <｜begin▁of▁sentence｜>Read
 reasoningReading the file at the insertion point to get precise content for the Edit tool.
 I need to read the file around the insertion point to get exact content for matching.
-</|DSML|parameter>
-</|DSML|parameter>
-</|DSML|parameter>
-</|DSML|parameter>
-</|DSML|invoke>`
+</｜DSML｜parameter>
+</｜DSML｜parameter>
+</｜DSML｜parameter>
+</｜DSML｜parameter>
+</｜DSML｜invoke>`
 	res := ParseToolCallsDetailed(text, []string{"Read"})
 	if !res.SawToolCallSyntax {
 		t.Fatalf("expected sentence/bare Read call to be recognized as tool syntax")
@@ -247,7 +244,7 @@ func TestParseToolCallsMarksMalformedSkillCallForHiddenRetry(t *testing.T) {
 }
 
 func TestParseToolCallsMarksUnparseableBashCommandForHiddenRetry(t *testing.T) {
-	text := `<⌜DSML⌝tool_calls><⌜DSML⌝invoke name="Bash"><⌜DSML⌝parameter name="command">pwd`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="Bash"><｜DSML｜parameter name="command">pwd`
 	res := ParseToolCallsDetailed(text, []string{"Bash"})
 	if !res.SawToolCallSyntax {
 		t.Fatalf("expected malformed Bash.command call to be recognized as tool syntax")
@@ -294,13 +291,13 @@ func TestParseToolCallsMarksDSMLCallsAliasForHiddenRetry(t *testing.T) {
 
 func TestParseToolCallsSkipsProseMentionOfMixedFullwidthDSMLWrapper(t *testing.T) {
 	text := strings.Join([]string{
-		"Summary: support mixed <|DSML｜tool_calls> wrappers.",
+		"Summary: support mixed <｜DSML｜tool_calls> wrappers.",
 		"",
-		"<|DSML｜tool_calls>",
-		"<|DSML｜invoke name=\"Bash\">",
-		"<|DSML｜parameter name=\"command\"><![CDATA[pwd]]></|DSML｜parameter>",
-		"</|DSML｜invoke>",
-		"</|DSML｜tool_calls>",
+		"<｜DSML｜tool_calls>",
+		"<｜DSML｜invoke name=\"Bash\">",
+		"<｜DSML｜parameter name=\"command\"><![CDATA[pwd]]></｜DSML｜parameter>",
+		"</｜DSML｜invoke>",
+		"</｜DSML｜tool_calls>",
 	}, "\n")
 	res := ParseToolCallsDetailed(text, []string{"Bash"})
 	if len(res.Calls) != 1 {
@@ -312,8 +309,8 @@ func TestParseToolCallsSkipsProseMentionOfMixedFullwidthDSMLWrapper(t *testing.T
 }
 
 func TestParseToolCallsSupportsDSMLShellWithCanonicalExampleInCDATA(t *testing.T) {
-	content := `<tool_calls><invoke name="demo"><parameter name="value">x</parameter></invoke></tool_calls>`
-	text := `<|DSML|tool_calls><|DSML|invoke name="Write"><|DSML|parameter name="file_path">notes.md</|DSML|parameter><|DSML|parameter name="content"><![CDATA[` + content + `]]></|DSML|parameter></|DSML|invoke></|DSML|tool_calls>`
+	content := `<｜DSML｜tool_calls><｜DSML｜invoke name="demo"><｜DSML｜parameter name="value">x</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="Write"><｜DSML｜parameter name="file_path">notes.md</｜DSML｜parameter><｜DSML｜parameter name="content"><![CDATA[` + content + `]]></｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"Write"})
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 DSML call with XML-looking CDATA, got %#v", calls)
@@ -378,7 +375,7 @@ func TestParseToolCallsRejectsUnavailableToolName(t *testing.T) {
 }
 
 func TestParseToolCallsPreservesSimpleCDATAInlineMarkupAsText(t *testing.T) {
-	text := `<tool_calls><invoke name="Write"><parameter name="description"><![CDATA[<b>urgent</b>]]></parameter></invoke></tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="Write"><｜DSML｜parameter name="description"><![CDATA[<b>urgent</b>]]></｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"Write"})
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 call, got %#v", calls)
@@ -393,21 +390,17 @@ func TestParseToolCallsPreservesSimpleCDATAInlineMarkupAsText(t *testing.T) {
 }
 
 func TestParseToolCallsTreatsUnclosedCDATAAsText(t *testing.T) {
-	text := `<tool_calls><invoke name="Write"><parameter name="content"><![CDATA[hello world</parameter></invoke></tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="Write"><｜DSML｜parameter name="content"><![CDATA[hello world</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	res := ParseToolCallsDetailed(text, []string{"Write"})
-	if len(res.Calls) != 1 {
-		t.Fatalf("expected unclosed CDATA to still parse via outer wrapper, got %#v", res.Calls)
-	}
-	got, _ := res.Calls[0].Input["content"].(string)
-	if got != "hello world" {
-		t.Fatalf("expected recovered CDATA payload, got %q", got)
+	if len(res.Calls) != 0 || !res.RejectedInvalid {
+		t.Fatalf("expected unclosed CDATA to be rejected for retry, got %#v", res)
 	}
 }
 
 func TestParseToolCallsNormalizesMixedDSMLAndCanonicalToolTags(t *testing.T) {
 	// Models commonly mix DSML wrapper tags with canonical inner tags.
 	// These should be normalized and parsed, not rejected.
-	text := `<|DSML|tool_calls><invoke name="Bash"><|DSML|parameter name="command">pwd</|DSML|parameter></invoke></|DSML|tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="Bash"><｜DSML｜parameter name="command">pwd</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"Bash"})
 	if len(calls) != 1 {
 		t.Fatalf("expected mixed DSML/XML tool tags to be normalized and parsed, got %#v", calls)
@@ -418,9 +411,9 @@ func TestParseToolCallsNormalizesMixedDSMLAndCanonicalToolTags(t *testing.T) {
 }
 
 func TestParseToolCallsSupportsStandaloneToolWithMultilineCDATAAndRepeatedXMLTags(t *testing.T) {
-	text := `<tool_calls><invoke name="write_file"><parameter name="path">script.sh</parameter><parameter name="content"><![CDATA[#!/bin/bash
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="write_file"><｜DSML｜parameter name="path">script.sh</｜DSML｜parameter><｜DSML｜parameter name="content"><![CDATA[#!/bin/bash
 echo "hello"
-]]></parameter><parameter name="item">first</parameter><parameter name="item">second</parameter></invoke></tool_calls>`
+]]></｜DSML｜parameter><｜DSML｜parameter name="item">first</｜DSML｜parameter><｜DSML｜parameter name="item">second</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"write_file"})
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 call, got %#v", calls)
@@ -446,14 +439,14 @@ func TestParseToolCallsKeepsToolSyntaxInsideCDATAAsParameterText(t *testing.T) {
 		"# Release notes",
 		"",
 		"```xml",
-		"<tool_calls>",
-		"  <invoke name=\"demo\">",
-		"    <parameter name=\"value\">x</parameter>",
-		"  </invoke>",
-		"</tool_calls>",
+		"<｜DSML｜tool_calls>",
+		"  <｜DSML｜invoke name=\"demo\">",
+		"    <｜DSML｜parameter name=\"value\">x</｜DSML｜parameter>",
+		"  </｜DSML｜invoke>",
+		"</｜DSML｜tool_calls>",
 		"```",
 	}, "\n")
-	text := `<tool_calls><invoke name="Write"><parameter name="content"><![CDATA[` + payload + `]]></parameter><parameter name="file_path">DS2API-4.0-Release-Notes.md</parameter></invoke></tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="Write"><｜DSML｜parameter name="content"><![CDATA[` + payload + `]]></｜DSML｜parameter><｜DSML｜parameter name="file_path">DS2API-4.0-Release-Notes.md</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"Write"})
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 call, got %#v", calls)
@@ -468,7 +461,7 @@ func TestParseToolCallsKeepsToolSyntaxInsideCDATAAsParameterText(t *testing.T) {
 }
 
 func TestParseToolCallsSupportsInvokeParameters(t *testing.T) {
-	text := `<tool_calls><invoke name="get_weather"><parameter name="city">beijing</parameter><parameter name="unit">c</parameter></invoke></tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="get_weather"><｜DSML｜parameter name="city">beijing</｜DSML｜parameter><｜DSML｜parameter name="unit">c</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"get_weather"})
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 call, got %#v", calls)
@@ -482,7 +475,7 @@ func TestParseToolCallsSupportsInvokeParameters(t *testing.T) {
 }
 
 func TestParseToolCallsSupportsJSONScalarParameters(t *testing.T) {
-	text := `<tool_calls><invoke name="configure"><parameter name="count">123</parameter><parameter name="max_tokens"><![CDATA[256]]></parameter><parameter name="enabled">true</parameter></invoke></tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="configure"><｜DSML｜parameter name="count">123</｜DSML｜parameter><｜DSML｜parameter name="max_tokens"><![CDATA[256]]></｜DSML｜parameter><｜DSML｜parameter name="enabled">true</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"configure"})
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 call, got %#v", calls)
@@ -500,9 +493,9 @@ func TestParseToolCallsSupportsJSONScalarParameters(t *testing.T) {
 
 func TestParseToolCallsTreatsItemOnlyParameterBodyAsArray(t *testing.T) {
 	text := strings.Join([]string{
-		`<|DSML|tool_calls>`,
-		`<|DSML|invoke name="AskUserQuestion">`,
-		`<|DSML|parameter name="questions">`,
+		`<｜DSML｜tool_calls>`,
+		`<｜DSML｜invoke name="AskUserQuestion">`,
+		`<｜DSML｜parameter name="questions">`,
 		`<item>`,
 		`<question><![CDATA[What would you like to do next?]]></question>`,
 		`<header><![CDATA[Next step]]></header>`,
@@ -512,9 +505,9 @@ func TestParseToolCallsTreatsItemOnlyParameterBodyAsArray(t *testing.T) {
 		`</options>`,
 		`<multiSelect>false</multiSelect>`,
 		`</item>`,
-		`</|DSML|parameter>`,
-		`</|DSML|invoke>`,
-		`</|DSML|tool_calls>`,
+		`</｜DSML｜parameter>`,
+		`</｜DSML｜invoke>`,
+		`</｜DSML｜tool_calls>`,
 	}, "\n")
 	calls := ParseToolCalls(text, []string{"AskUserQuestion"})
 	if len(calls) != 1 {
@@ -539,7 +532,7 @@ func TestParseToolCallsTreatsItemOnlyParameterBodyAsArray(t *testing.T) {
 
 func TestParseToolCallsTreatsCDATAItemOnlyBodyAsArray(t *testing.T) {
 	todos := `<br>  <item><br>    <activeForm>Testing EnterWorktree tool</activeForm><br>    <content>Test EnterWorktree tool</content><br>    <status>in_progress</status><br>  </item><br>  <item><br>    <activeForm>Testing TodoWrite tool</activeForm><br>    <content>Test TodoWrite tool</content><br>    <status>completed</status><br>  </item><br>`
-	text := `<|DSML|tool_calls><|DSML|invoke name="TodoWrite"><|DSML|parameter name="todos"><![CDATA[` + todos + `]]></|DSML|parameter></|DSML|invoke></|DSML|tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="TodoWrite"><｜DSML｜parameter name="todos"><![CDATA[` + todos + `]]></｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"TodoWrite"})
 	if len(calls) != 1 {
 		t.Fatalf("expected one TodoWrite call, got %#v", calls)
@@ -558,7 +551,7 @@ func TestParseToolCallsTreatsCDATAItemOnlyBodyAsArray(t *testing.T) {
 }
 
 func TestParseToolCallsTreatsSingleItemCDATAAsArray(t *testing.T) {
-	text := `<tool_calls><invoke name="TodoWrite"><parameter name="todos"><![CDATA[<item>one</item>]]></parameter></invoke></tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="TodoWrite"><｜DSML｜parameter name="todos"><![CDATA[<item>one</item>]]></｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"TodoWrite"})
 	if len(calls) != 1 {
 		t.Fatalf("expected one TodoWrite call, got %#v", calls)
@@ -574,7 +567,7 @@ func TestParseToolCallsTreatsSingleItemCDATAAsArray(t *testing.T) {
 
 func TestParseToolCallsTreatsCDATAObjectFragmentAsObject(t *testing.T) {
 	payload := `<question><![CDATA[Pick one]]></question><options><item><label><![CDATA[A]]></label></item><item><label><![CDATA[B]]></label></item></options>`
-	text := `<tool_calls><invoke name="AskUserQuestion"><parameter name="questions"><![CDATA[` + payload + `]]></parameter></invoke></tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="AskUserQuestion"><｜DSML｜parameter name="questions"><![CDATA[` + payload + `]]></｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"AskUserQuestion"})
 	if len(calls) != 1 {
 		t.Fatalf("expected one AskUserQuestion call, got %#v", calls)
@@ -590,7 +583,7 @@ func TestParseToolCallsTreatsCDATAObjectFragmentAsObject(t *testing.T) {
 }
 
 func TestParseToolCallsPreservesRawMalformedParams(t *testing.T) {
-	text := `<tool_calls><invoke name="execute_command"><parameter name="command">cd /root && git status</parameter></invoke></tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="execute_command"><｜DSML｜parameter name="command">cd /root && git status</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"execute_command"})
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 call, got %#v", calls)
@@ -608,7 +601,7 @@ func TestParseToolCallsPreservesRawMalformedParams(t *testing.T) {
 }
 
 func TestParseToolCallsSupportsParamsJSONWithAmpersandCommand(t *testing.T) {
-	text := `<tool_calls><invoke name="execute_command"><parameter name="command">sshpass -p 'xxx' ssh -o StrictHostKeyChecking=no -p 1111 root@111.111.111.111 'cd /root && git clone https://github.com/ericc-ch/copilot-api.git'</parameter><parameter name="cwd"></parameter><parameter name="timeout"></parameter></invoke></tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="execute_command"><｜DSML｜parameter name="command">sshpass -p 'xxx' ssh -o StrictHostKeyChecking=no -p 1111 root@111.111.111.111 'cd /root && git clone https://github.com/ericc-ch/copilot-api.git'</｜DSML｜parameter><｜DSML｜parameter name="cwd"></｜DSML｜parameter><｜DSML｜parameter name="timeout"></｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"execute_command"})
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 call, got %#v", calls)
@@ -623,7 +616,7 @@ func TestParseToolCallsSupportsParamsJSONWithAmpersandCommand(t *testing.T) {
 }
 
 func TestParseToolCallsDoesNotTreatParamsNameTagAsToolName(t *testing.T) {
-	text := `<tool_calls><invoke name="execute_command"><parameter name="tool_name">file.txt</parameter><parameter name="command">pwd</parameter></invoke></tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="execute_command"><｜DSML｜parameter name="tool_name">file.txt</｜DSML｜parameter><｜DSML｜parameter name="command">pwd</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"execute_command"})
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 call, got %#v", calls)
@@ -637,7 +630,7 @@ func TestParseToolCallsDoesNotTreatParamsNameTagAsToolName(t *testing.T) {
 }
 
 func TestParseToolCallsDetailedMarksToolCallsSyntax(t *testing.T) {
-	text := `<tool_calls><invoke name="Bash"><parameter name="command">pwd</parameter></invoke></tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="Bash"><｜DSML｜parameter name="command">pwd</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	res := ParseToolCallsDetailed(text, []string{"bash"})
 	if !res.SawToolCallSyntax {
 		t.Fatalf("expected SawToolCallSyntax=true, got %#v", res)
@@ -648,7 +641,7 @@ func TestParseToolCallsDetailedMarksToolCallsSyntax(t *testing.T) {
 }
 
 func TestParseToolCallsSupportsInlineJSONToolObject(t *testing.T) {
-	text := `<tool_calls><invoke name="Bash">{"input":{"command":"pwd","description":"show cwd"}}</invoke></tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="Bash">{"input":{"command":"pwd","description":"show cwd"}}</｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"bash"})
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 call, got %#v", calls)
@@ -662,7 +655,7 @@ func TestParseToolCallsSupportsInlineJSONToolObject(t *testing.T) {
 }
 
 func TestParseToolCallsDoesNotAcceptMismatchedMarkupTags(t *testing.T) {
-	text := `<tool_calls><invoke name="read_file"><parameter name="path">README.md</function></invoke></tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="read_file"><｜DSML｜parameter name="path">README.md</function></｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"read_file"})
 	if len(calls) != 0 {
 		t.Fatalf("expected mismatched tags to be rejected, got %#v", calls)
@@ -670,7 +663,7 @@ func TestParseToolCallsDoesNotAcceptMismatchedMarkupTags(t *testing.T) {
 }
 
 func TestParseToolCallsDoesNotTreatNameInsideParamsAsToolName(t *testing.T) {
-	text := `<tool_calls><invoke><parameter name="path">README.md</parameter></invoke></tool_calls>`
+	text := `<｜DSML｜tool_calls><invoke><｜DSML｜parameter name="path">README.md</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"read_file"})
 	if len(calls) != 0 {
 		t.Fatalf("expected no tool call when name appears only under params, got %#v", calls)
@@ -686,7 +679,7 @@ func TestParseToolCallsRejectsLegacyToolsWrapper(t *testing.T) {
 }
 
 func TestParseToolCallsRejectsBareInvokeWithoutToolCallsWrapper(t *testing.T) {
-	text := `<invoke name="read_file"><parameter name="path">README.md</parameter></invoke>`
+	text := `<｜DSML｜invoke name="read_file"><｜DSML｜parameter name="path">README.md</｜DSML｜parameter></｜DSML｜invoke>`
 	res := ParseToolCallsDetailed(text, []string{"read_file"})
 	if len(res.Calls) != 0 {
 		t.Fatalf("expected bare invoke to be rejected, got %#v", res.Calls)
@@ -698,8 +691,8 @@ func TestParseToolCallsRejectsBareInvokeWithoutToolCallsWrapper(t *testing.T) {
 
 func TestParseToolCallsRepairsMissingOpeningToolCallsWrapperWhenClosingTagExists(t *testing.T) {
 	text := `Before tool call
-<invoke name="read_file"><parameter name="path">README.md</parameter></invoke>
-</tool_calls>
+<｜DSML｜invoke name="read_file"><｜DSML｜parameter name="path">README.md</｜DSML｜parameter></｜DSML｜invoke>
+</｜DSML｜tool_calls>
 after`
 	res := ParseToolCallsDetailed(text, []string{"read_file"})
 	if len(res.Calls) != 1 {
@@ -717,7 +710,7 @@ after`
 }
 
 func TestParseToolCallsRejectsLegacyCanonicalBody(t *testing.T) {
-	text := `<tool_calls><invoke name="read_file"><tool_name>read_file</tool_name><param>{"path":"README.md"}</param></invoke></tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="read_file"><tool_name>read_file</tool_name><param>{"path":"README.md"}</param></｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"read_file"})
 	if len(calls) != 0 {
 		t.Fatalf("expected legacy canonical body to be rejected, got %#v", calls)
@@ -867,7 +860,7 @@ func TestRepairLooseJSONWithNestedObjects(t *testing.T) {
 }
 
 func TestParseToolCallsUnescapesHTMLEntityArguments(t *testing.T) {
-	text := `<tool_calls><invoke name="Bash"><parameter name="command">echo a &gt; out.txt</parameter></invoke></tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="Bash"><｜DSML｜parameter name="command">echo a &gt; out.txt</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"bash"})
 	if len(calls) != 1 {
 		t.Fatalf("expected one call, got %#v", calls)
@@ -879,7 +872,7 @@ func TestParseToolCallsUnescapesHTMLEntityArguments(t *testing.T) {
 }
 
 func TestParseToolCallsParsesLooseObjectListParameterAsArray(t *testing.T) {
-	text := `<tool_calls><invoke name="TodoWrite"><parameter name="todos">{"content":"a","input":{"nested":{"x":1}}}, {"content":"b","input":{"nested":{"x":2}}}</parameter></invoke></tool_calls>`
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="TodoWrite"><｜DSML｜parameter name="todos">{"content":"a","input":{"nested":{"x":1}}}, {"content":"b","input":{"nested":{"x":2}}}</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
 	calls := ParseToolCalls(text, []string{"TodoWrite"})
 	if len(calls) != 1 {
 		t.Fatalf("expected one call, got %#v", calls)
@@ -891,7 +884,7 @@ func TestParseToolCallsParsesLooseObjectListParameterAsArray(t *testing.T) {
 }
 
 func TestParseToolCallsIgnoresXMLInsideFencedCodeBlock(t *testing.T) {
-	text := "Here is an example:\n```xml\n<tool_calls><invoke name=\"read_file\"><parameter name=\"path\">README.md</parameter></invoke></tool_calls>\n```\nDo not execute it."
+	text := "Here is an example:\n```xml\n<｜DSML｜tool_calls><｜DSML｜invoke name=\"read_file\"><｜DSML｜parameter name=\"path\">README.md</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>\n```\nDo not execute it."
 	res := ParseToolCallsDetailed(text, []string{"read_file"})
 	if len(res.Calls) != 0 {
 		t.Fatalf("expected no parsed calls for fenced example, got %#v", res.Calls)
@@ -907,7 +900,7 @@ func TestParseToolCallsIgnoresOfficialDSMLInsideFencedCodeBlock(t *testing.T) {
 }
 
 func TestParseToolCallsParsesOnlyNonFencedXMLToolCall(t *testing.T) {
-	text := "```xml\n<tool_calls><invoke name=\"read_file\"><parameter name=\"path\">README.md</parameter></invoke></tool_calls>\n```\n<tool_calls><invoke name=\"search\"><parameter name=\"q\">golang</parameter></invoke></tool_calls>"
+	text := "```xml\n<｜DSML｜tool_calls><｜DSML｜invoke name=\"read_file\"><｜DSML｜parameter name=\"path\">README.md</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>\n```\n<｜DSML｜tool_calls><｜DSML｜invoke name=\"search\"><｜DSML｜parameter name=\"q\">golang</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>"
 	res := ParseToolCallsDetailed(text, []string{"read_file", "search"})
 	if len(res.Calls) != 1 {
 		t.Fatalf("expected exactly one parsed call outside fence, got %#v", res.Calls)
@@ -918,7 +911,7 @@ func TestParseToolCallsParsesOnlyNonFencedXMLToolCall(t *testing.T) {
 }
 
 func TestParseToolCallsParsesAfterFourBacktickFence(t *testing.T) {
-	text := "````markdown\n```xml\n<tool_calls><invoke name=\"read_file\"><parameter name=\"path\">README.md</parameter></invoke></tool_calls>\n```\n````\n<tool_calls><invoke name=\"search\"><parameter name=\"q\">outside</parameter></invoke></tool_calls>"
+	text := "````markdown\n```xml\n<｜DSML｜tool_calls><｜DSML｜invoke name=\"read_file\"><｜DSML｜parameter name=\"path\">README.md</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>\n```\n````\n<｜DSML｜tool_calls><｜DSML｜invoke name=\"search\"><｜DSML｜parameter name=\"q\">outside</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>"
 	res := ParseToolCallsDetailed(text, []string{"read_file", "search"})
 	if len(res.Calls) != 1 {
 		t.Fatalf("expected exactly one parsed call outside four-backtick fence, got %#v", res.Calls)
@@ -930,11 +923,11 @@ func TestParseToolCallsParsesAfterFourBacktickFence(t *testing.T) {
 
 func TestParseToolCallsToleratesDSMLSpaceSeparatorTypo(t *testing.T) {
 	text := strings.Join([]string{
-		"<|DSML tool_calls>",
-		"<|DSML invoke name=\"Read\">",
-		"<|DSML parameter name=\"file_path\"><![CDATA[/tmp/input.txt]]></|DSML parameter>",
-		"</|DSML invoke>",
-		"</|DSML tool_calls>",
+		"<｜DSML｜tool_calls>",
+		"<｜DSML｜invoke name=\"Read\">",
+		"<｜DSML｜parameter name=\"file_path\"><![CDATA[/tmp/input.txt]]></｜DSML｜parameter>",
+		"</｜DSML｜invoke>",
+		"</｜DSML｜tool_calls>",
 	}, "\n")
 	calls := ParseToolCalls(text, []string{"Read"})
 	if len(calls) != 1 {
@@ -951,9 +944,9 @@ func TestParseToolCallsToleratesDSMLSpaceSeparatorTypo(t *testing.T) {
 func TestParseToolCallsDoesNotAcceptDSMLSpaceLookalikeTagName(t *testing.T) {
 	text := strings.Join([]string{
 		"<|DSML tool_calls_extra>",
-		"<|DSML invoke name=\"Read\">",
-		"<|DSML parameter name=\"file_path\">/tmp/input.txt</|DSML parameter>",
-		"</|DSML invoke>",
+		"<｜DSML｜invoke name=\"Read\">",
+		"<｜DSML｜parameter name=\"file_path\">/tmp/input.txt</｜DSML｜parameter>",
+		"</｜DSML｜invoke>",
 		"</|DSML tool_calls_extra>",
 	}, "\n")
 	calls := ParseToolCalls(text, []string{"Read"})
@@ -973,11 +966,11 @@ func TestParseToolCallsToleratesDSMLCollapsedTagNames(t *testing.T) {
 [x] 给出调查结论`
 	text := strings.Join([]string{
 		"[]",
-		"<DSMLtool_calls>",
-		"<DSMLinvoke name=\"update_todo_list\">",
-		"<DSMLparameter name=\"todos\"><![CDATA[" + todos + "]]></DSMLparameter>",
-		"</DSMLinvoke>",
-		"</DSMLtool_calls>",
+		"<｜DSML｜tool_calls>",
+		"<｜DSML｜invoke name=\"update_todo_list\">",
+		"<｜DSML｜parameter name=\"todos\"><![CDATA[" + todos + "]]></｜DSML｜parameter>",
+		"</｜DSML｜invoke>",
+		"</｜DSML｜tool_calls>",
 	}, "\n")
 	calls := ParseToolCalls(text, []string{"update_todo_list"})
 	if len(calls) != 1 {
@@ -994,9 +987,9 @@ func TestParseToolCallsToleratesDSMLCollapsedTagNames(t *testing.T) {
 func TestParseToolCallsDoesNotAcceptDSMLCollapsedLookalikeTagName(t *testing.T) {
 	text := strings.Join([]string{
 		"<DSMLtool_calls_extra>",
-		"<DSMLinvoke name=\"update_todo_list\">",
-		"<DSMLparameter name=\"todos\">x</DSMLparameter>",
-		"</DSMLinvoke>",
+		"<｜DSML｜invoke name=\"update_todo_list\">",
+		"<｜DSML｜parameter name=\"todos\">x</｜DSML｜parameter>",
+		"</｜DSML｜invoke>",
 		"</DSMLtool_calls_extra>",
 	}, "\n")
 	calls := ParseToolCalls(text, []string{"update_todo_list"})
@@ -1007,13 +1000,13 @@ func TestParseToolCallsDoesNotAcceptDSMLCollapsedLookalikeTagName(t *testing.T) 
 
 func TestParseToolCallsSkipsProseMentionOfSameWrapperVariant(t *testing.T) {
 	text := strings.Join([]string{
-		"Summary: support canonical <tool_calls> and DSML <|DSML|tool_calls> wrappers.",
+		"Summary: support canonical <｜DSML｜tool_calls> and DSML <｜DSML｜tool_calls> wrappers.",
 		"",
-		"<|DSML|tool_calls>",
-		"<|DSML|invoke name=\"Bash\">",
-		"<|DSML|parameter name=\"command\"><![CDATA[git status]]></|DSML|parameter>",
-		"</|DSML|invoke>",
-		"</|DSML|tool_calls>",
+		"<｜DSML｜tool_calls>",
+		"<｜DSML｜invoke name=\"Bash\">",
+		"<｜DSML｜parameter name=\"command\"><![CDATA[git status]]></｜DSML｜parameter>",
+		"</｜DSML｜invoke>",
+		"</｜DSML｜tool_calls>",
 	}, "\n")
 	res := ParseToolCallsDetailed(text, []string{"Bash"})
 	if len(res.Calls) != 1 {

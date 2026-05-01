@@ -11,6 +11,22 @@ const (
 	smlSentinelClose = "</sml_dollar_em_ollar_"
 )
 
+func suppressDSMDLToolLikeFragment(state *State, content string) bool {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return false
+	}
+	lower := strings.ToLower(trimmed)
+	if !strings.Contains(lower, "dsmdl") {
+		return false
+	}
+	if strings.Contains(lower, "tool_calls") || strings.Contains(lower, "invoke") || strings.Contains(lower, "parameter") {
+		state.MalformedToolFeedback = trimmed
+		return true
+	}
+	return false
+}
+
 func ProcessChunk(state *State, chunk string, toolNames []string) []Event {
 	if state == nil {
 		return nil
@@ -51,8 +67,10 @@ func ProcessChunk(state *State, chunk string, toolNames []string) []Event {
 			state.resetIncrementalToolState()
 			if len(calls) > 0 {
 				if prefix != "" {
-					state.noteText(prefix)
-					events = append(events, Event{Content: prefix})
+					if !suppressDSMDLToolLikeFragment(state, prefix) {
+						state.noteText(prefix)
+						events = append(events, Event{Content: prefix})
+					}
 				}
 				_ = captured
 				events = append(events, Event{ToolCalls: calls})
@@ -62,8 +80,10 @@ func ProcessChunk(state *State, chunk string, toolNames []string) []Event {
 				continue
 			}
 			if prefix != "" {
-				state.noteText(prefix)
-				events = append(events, Event{Content: prefix})
+				if !suppressDSMDLToolLikeFragment(state, prefix) {
+					state.noteText(prefix)
+					events = append(events, Event{Content: prefix})
+				}
 			}
 			if suffix != "" {
 				state.pending.WriteString(suffix)
@@ -99,6 +119,9 @@ func ProcessChunk(state *State, chunk string, toolNames []string) []Event {
 		}
 		state.pending.Reset()
 		state.pending.WriteString(hold)
+		if suppressDSMDLToolLikeFragment(state, safe) {
+			continue
+		}
 		state.noteText(safe)
 		events = append(events, Event{Content: safe})
 	}
@@ -130,15 +153,19 @@ func Flush(state *State, toolNames []string) []Event {
 				consumedSuffix = ""
 			}
 			if consumedPrefix != "" {
-				state.noteText(consumedPrefix)
-				events = append(events, Event{Content: consumedPrefix})
+				if !suppressDSMDLToolLikeFragment(state, consumedPrefix) {
+					state.noteText(consumedPrefix)
+					events = append(events, Event{Content: consumedPrefix})
+				}
 			}
 			if len(consumedCalls) > 0 {
 				events = append(events, Event{ToolCalls: consumedCalls})
 			}
 			if consumedSuffix != "" {
-				state.noteText(consumedSuffix)
-				events = append(events, Event{Content: consumedSuffix})
+				if !suppressDSMDLToolLikeFragment(state, consumedSuffix) {
+					state.noteText(consumedSuffix)
+					events = append(events, Event{Content: consumedSuffix})
+				}
 			}
 		} else {
 			content := state.capture.String()
@@ -167,25 +194,37 @@ func Flush(state *State, toolNames []string) []Event {
 				if recovered != content {
 					if prefix, calls, suffix, recoveredReady := consumeXMLToolCapture(recovered, toolNames); recoveredReady && len(calls) > 0 {
 						if prefix != "" {
-							state.noteText(prefix)
-							events = append(events, Event{Content: prefix})
+							if !suppressDSMDLToolLikeFragment(state, prefix) {
+								state.noteText(prefix)
+								events = append(events, Event{Content: prefix})
+							}
 						}
 						events = append(events, Event{ToolCalls: calls})
 						if suffix != "" {
-							state.noteText(suffix)
-							events = append(events, Event{Content: suffix})
+							if !suppressDSMDLToolLikeFragment(state, suffix) {
+								state.noteText(suffix)
+								events = append(events, Event{Content: suffix})
+							}
 						}
 					} else {
-						// If capture never resolved into a real tool call, release
-						// the buffered text instead of swallowing it.
+						if toolcall.LooksLikeMalformedRequiredToolCall(content) {
+							state.MalformedToolFeedback = content
+						} else {
+							// If capture never resolved into a real tool call, release
+							// the buffered text instead of swallowing it.
+							state.noteText(content)
+							events = append(events, Event{Content: content})
+						}
+					}
+				} else {
+					if toolcall.LooksLikeMalformedRequiredToolCall(content) {
+						state.MalformedToolFeedback = content
+					} else {
+						// If capture never resolved into a real tool call, release the
+						// buffered text instead of swallowing it.
 						state.noteText(content)
 						events = append(events, Event{Content: content})
 					}
-				} else {
-					// If capture never resolved into a real tool call, release the
-					// buffered text instead of swallowing it.
-					state.noteText(content)
-					events = append(events, Event{Content: content})
 				}
 			}
 		}
@@ -195,9 +234,15 @@ func Flush(state *State, toolNames []string) []Event {
 	}
 	if state.pending.Len() > 0 {
 		content := state.pending.String()
-		// If pending never resolved into a real tool call, release it as text.
-		state.noteText(content)
-		events = append(events, Event{Content: content})
+		if toolcall.LooksLikeMalformedRequiredToolCall(content) {
+			state.MalformedToolFeedback = content
+		} else {
+			// If pending never resolved into a real tool call, release it as text.
+			if !suppressDSMDLToolLikeFragment(state, content) {
+				state.noteText(content)
+				events = append(events, Event{Content: content})
+			}
+		}
 		state.pending.Reset()
 	}
 	return events

@@ -64,7 +64,7 @@ func (h *Handler) handleNonStreamWithRetry(w http.ResponseWriter, ctx context.Co
 		accumulatedToolDetectionThinking += sse.TrimContinuationOverlap(accumulatedToolDetectionThinking, result.toolDetectionThinking)
 		result.thinking = accumulatedThinking
 		result.toolDetectionThinking = accumulatedToolDetectionThinking
-		detected := detectAssistantToolCalls(result.text, result.thinking, result.toolDetectionThinking, toolNames)
+		detected := detectAssistantToolCalls(result.text, result.text, result.thinking, result.toolDetectionThinking, toolNames)
 		result.detectedCalls = len(detected.Calls)
 		if shouldRetryMalformedToolCall(detected, result.text) {
 			result.malformedToolFeedback = result.text
@@ -114,7 +114,7 @@ func (h *Handler) collectChatNonStreamAttempt(w http.ResponseWriter, resp *http.
 	if searchEnabled {
 		finalText = replaceCitationMarkersWithLinks(finalText, result.CitationLinks)
 	}
-	detected := detectAssistantToolCalls(finalText, finalThinking, finalToolDetectionThinking, toolNames)
+	detected := detectAssistantToolCalls(finalText, finalText, finalThinking, finalToolDetectionThinking, toolNames)
 	respBody := openaifmt.BuildChatCompletionWithToolCalls(completionID, model, usagePrompt, finalThinking, finalText, detected.Calls, toolsRaw)
 	return chatNonStreamResult{
 		thinking:              finalThinking,
@@ -208,18 +208,18 @@ func appendMalformedToolCallRetrySuffix(prompt string, malformedToolFeedback str
 		"Use the tool instructions in the current request, including the current request tool schema and parameter summary.",
 		"Regenerate your reply using the exact required tool-call structure below.",
 		"Tool-call skeleton:",
-		"<|DSML|tool_calls>",
-		"  <|DSML|invoke name=\"VALID_TOOL_NAME_FROM_CURRENT_TOOL_LIST\">",
-		"    <|DSML|parameter name=\"VALID_PARAMETER_NAME\"><![CDATA[NON_EMPTY_VALUE]]></|DSML|parameter>",
-		"  </|DSML|invoke>",
-		"</|DSML|tool_calls>",
+		"<｜DSML｜tool_calls>",
+		"  <｜DSML｜invoke name=\"VALID_TOOL_NAME_FROM_CURRENT_TOOL_LIST\">",
+		"    <｜DSML｜parameter name=\"VALID_PARAMETER_NAME\" string=\"true\"><![CDATA[NON_EMPTY_VALUE]]></｜DSML｜parameter>",
+		"  </｜DSML｜invoke>",
+		"</｜DSML｜tool_calls>",
 		"Rules:",
 		"1) Do not copy placeholder names literally.",
 		"2) The tool name must be one allowed tool name from the current request.",
 		"3) Parameter names must come from that tool's schema in the current request.",
 		"4) Required parameters must be present and non-empty.",
 		"5) Output no explanation, no markdown fences, and no extra text.",
-		"6) If you use a tool, your first non-whitespace characters must be exactly <|DSML|tool_calls>.",
+		"6) If you use a tool, your first non-whitespace characters must be exactly <｜DSML｜tool_calls>.",
 		"Invalid previous reply:",
 		strings.TrimSpace(malformedToolFeedback),
 		"Now output only one corrected tool call and nothing else.",
@@ -245,18 +245,18 @@ func appendToolEmptyOutputRetrySuffix(prompt string, retryHistory []shared.Retry
 		"Regenerate your reply using exactly one of these forms:",
 		"A) Normal answer: plain natural-language answer only.",
 		"B) Tool call skeleton:",
-		"<|DSML|tool_calls>",
-		"  <|DSML|invoke name=\"VALID_TOOL_NAME_FROM_CURRENT_TOOL_LIST\">",
-		"    <|DSML|parameter name=\"VALID_PARAMETER_NAME\"><![CDATA[NON_EMPTY_VALUE]]></|DSML|parameter>",
-		"  </|DSML|invoke>",
-		"</|DSML|tool_calls>",
+		"<｜DSML｜tool_calls>",
+		"  <｜DSML｜invoke name=\"VALID_TOOL_NAME_FROM_CURRENT_TOOL_LIST\">",
+		"    <｜DSML｜parameter name=\"VALID_PARAMETER_NAME\" string=\"true\"><![CDATA[NON_EMPTY_VALUE]]></｜DSML｜parameter>",
+		"  </｜DSML｜invoke>",
+		"</｜DSML｜tool_calls>",
 		"Rules:",
 		"1) Do not copy placeholder names literally.",
 		"2) If using a tool, the tool name must be one allowed tool name from the current request.",
 		"3) Parameter names must come from that tool's schema in the current request.",
 		"4) Required parameters must be present and non-empty.",
 		"5) Output no explanation, no markdown fences, and no extra text.",
-		"6) If you use a tool, your first non-whitespace characters must be exactly <|DSML|tool_calls>.",
+		"6) If you use a tool, your first non-whitespace characters must be exactly <｜DSML｜tool_calls>.",
 		"7) If no tool is needed, answer the user directly instead of returning empty output.",
 		"Now output only the corrected final answer or one valid tool call.",
 	)

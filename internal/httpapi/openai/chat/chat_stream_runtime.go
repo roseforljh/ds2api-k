@@ -139,10 +139,11 @@ func (s *chatStreamRuntime) finalize(finishReason string, deferEmptyOutput bool)
 	s.finalErrorCode = ""
 	finalThinking := s.thinking.String()
 	finalToolDetectionThinking := s.toolDetectionThinking.String()
-	finalText := cleanVisibleOutput(s.text.String(), s.stripReferenceMarkers)
+	rawText := s.text.String()
+	finalText := cleanVisibleOutput(rawText, s.stripReferenceMarkers)
 	s.finalThinking = finalThinking
 	s.finalText = finalText
-	detected := detectAssistantToolCalls(finalText, finalThinking, finalToolDetectionThinking, s.toolNames)
+	detected := detectAssistantToolCalls(rawText, finalText, finalThinking, finalToolDetectionThinking, s.toolNames)
 	if len(detected.Calls) > 0 && !s.toolCallsDoneEmitted {
 		finishReason = "tool_calls"
 		delta := map[string]any{
@@ -394,6 +395,6 @@ func detectSuspiciousTextAlreadyStructuredAsToolCall(text string, toolNames []st
 	if trimmed == "" {
 		return false
 	}
-	detected := detectAssistantToolCalls(trimmed, "", "", toolNames)
+	detected := detectAssistantToolCalls(trimmed, trimmed, "", "", toolNames)
 	return len(detected.Calls) > 0
 }

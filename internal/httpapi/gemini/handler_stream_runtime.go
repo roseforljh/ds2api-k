@@ -67,8 +67,10 @@ type geminiStreamRuntime struct {
 	stripReferenceMarkers bool
 	toolNames             []string
 
-	thinking strings.Builder
-	text     strings.Builder
+	thinking  strings.Builder
+	text      strings.Builder
+	toolSieve toolstream.State
+	toolCalls []toolcall.ParsedToolCall
 }
 
 //nolint:unused // retained for native Gemini stream handling path.
@@ -116,14 +118,6 @@ func (s *geminiStreamRuntime) onParsed(parsed sse.LineResult) streamengine.Parse
 	if parsed.ContentFilter || parsed.ErrorMessage != "" || parsed.Stop {
 		return streamengine.ParsedDecision{Stop: true}
 	}
-	if s.bufferContent {
-		for _, p := range parsed.Parts {
-			if p.Type != "thinking" && toolstream.LooksSuspiciousToolLikeText(p.Text) && len(toolcall.ParseStandaloneToolCalls(strings.TrimSpace(p.Text), s.toolNames)) == 0 {
-				return streamengine.ParsedDecision{ContentSeen: true}
-			}
-		}
-	}
-
 	contentSeen := false
 	for _, p := range parsed.Parts {
 		cleanedText := cleanVisibleOutput(p.Text, s.stripReferenceMarkers)
@@ -149,6 +143,14 @@ func (s *geminiStreamRuntime) onParsed(parsed sse.LineResult) streamengine.Parse
 			continue
 		}
 		if s.bufferContent {
+			for _, evt := range toolstream.ProcessChunk(&s.toolSieve, trimmed, s.toolNames) {
+				if evt.Content != "" {
+					s.text.WriteString(evt.Content)
+				}
+				if len(evt.ToolCalls) > 0 {
+					s.toolCalls = append(s.toolCalls, evt.ToolCalls...)
+				}
+			}
 			continue
 		}
 		s.text.WriteString(trimmed)
@@ -174,7 +176,31 @@ func (s *geminiStreamRuntime) finalize() {
 	finalText := cleanVisibleOutput(s.text.String(), s.stripReferenceMarkers)
 
 	if s.bufferContent {
+		for _, evt := range toolstream.Flush(&s.toolSieve, s.toolNames) {
+			if evt.Content != "" {
+				s.text.WriteString(evt.Content)
+			}
+			if len(evt.ToolCalls) > 0 {
+				s.toolCalls = append(s.toolCalls, evt.ToolCalls...)
+			}
+		}
+		finalText = cleanVisibleOutput(s.text.String(), s.stripReferenceMarkers)
 		parts := buildGeminiPartsFromFinal(finalText, finalThinking, s.toolNames)
+		if len(s.toolCalls) > 0 {
+			parts = make([]map[string]any, 0, len(s.toolCalls))
+			for _, tc := range s.toolCalls {
+				parts = append(parts, map[string]any{
+					"functionCall": map[string]any{
+						"name": tc.Name,
+						"args": tc.Input,
+					},
+				})
+			}
+			finalText = ""
+		} else if strings.TrimSpace(s.toolSieve.MalformedToolFeedback) != "" {
+			parts = []map[string]any{{"text": ""}}
+			finalText = ""
+		}
 		s.sendChunk(map[string]any{
 			"candidates": []map[string]any{
 				{

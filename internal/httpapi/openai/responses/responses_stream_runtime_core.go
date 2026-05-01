@@ -143,13 +143,17 @@ func (s *responsesStreamRuntime) finalize(finishReason string, deferEmptyOutput 
 	s.finalErrorCode = ""
 	finalThinking := s.thinking.String()
 	finalToolDetectionThinking := s.toolDetectionThinking.String()
-	finalText := cleanVisibleOutput(s.text.String(), s.stripReferenceMarkers)
+	rawText := s.text.String()
+	finalText := cleanVisibleOutput(rawText, s.stripReferenceMarkers)
 
 	if s.bufferToolContent {
 		s.processToolStreamEvents(toolstream.Flush(&s.sieve, s.toolNames), true, true)
 	}
+	if strings.TrimSpace(s.sieve.MalformedToolFeedback) != "" {
+		finalText = ""
+	}
 
-	textParsed := detectAssistantToolCalls(finalText, finalThinking, finalToolDetectionThinking, s.toolNames)
+	textParsed := detectAssistantToolCalls(rawText, finalText, finalThinking, finalToolDetectionThinking, s.toolNames)
 	detected := textParsed.Calls
 	detected = toolcall.NormalizeParsedToolCallsForSchemas(detected, s.toolsRaw)
 	s.logToolPolicyRejections(textParsed)

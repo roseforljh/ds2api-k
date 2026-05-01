@@ -349,6 +349,36 @@ func TestHandleNonStreamRetriesUnparseableReadFilePathWithoutClientLeak(t *testi
 	}
 }
 
+func TestHandleNonStreamRetriesDSMDLTypoWithOfficialDSMLGuidance(t *testing.T) {
+	ds := &malformedToolRetryDSStub{}
+	h := &Handler{DS: ds}
+	malformed := `<DSMDLtool_calls><DSMDLinvoke name="Read"><DSMDLparameter name="file_path">README.md</DSMDLparameter></DSMDLinvoke></DSMDLtool_calls>`
+	payload, _ := json.Marshal(map[string]any{"p": "response/content", "v": malformed})
+	resp := makeSSEHTTPResponse("data: "+string(payload), `data: [DONE]`)
+	rec := httptest.NewRecorder()
+
+	h.handleNonStreamWithRetry(rec, context.Background(), &auth.RequestAuth{}, resp, map[string]any{"prompt": "original prompt"}, "pow", "cid-nonstream-dsmdl", "deepseek-v4-flash", "original prompt", false, false, []string{"Read"}, nil, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected hidden retry to recover with 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(ds.payloads) != 1 {
+		t.Fatalf("expected one hidden retry payload, got %d", len(ds.payloads))
+	}
+	retryPrompt, _ := ds.payloads[0]["prompt"].(string)
+	if !strings.Contains(retryPrompt, malformed) {
+		t.Fatalf("expected retry prompt to include malformed DSMDL feedback, got %q", retryPrompt)
+	}
+	if !strings.Contains(retryPrompt, "<｜DSML｜tool_calls>") || strings.Contains(retryPrompt, "<|DSML|tool_calls>") {
+		t.Fatalf("expected retry prompt to use official fullwidth DSML guidance, got %q", retryPrompt)
+	}
+	if strings.Contains(rec.Body.String(), "DSMDL") || strings.Contains(rec.Body.String(), "README.md") {
+		t.Fatalf("DSMDL tool feedback leaked to client: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "final answer after retry") {
+		t.Fatalf("expected final retry output, got %s", rec.Body.String())
+	}
+}
+
 func TestHandleStreamRetriesUnparseableReadFilePathWithToolPromptFeedback(t *testing.T) {
 	ds := &malformedToolRetryDSStub{}
 	h := &Handler{DS: ds}
@@ -397,6 +427,34 @@ func TestHandleStreamRetriesHashDSMLReadFilePathWithToolPromptFeedback(t *testin
 	}
 	if strings.Contains(rec.Body.String(), "#DSML#") || strings.Contains(rec.Body.String(), "settings.rs") {
 		t.Fatalf("hash DSML tool feedback leaked to client: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "final answer after retry") {
+		t.Fatalf("expected final stream retry output, got %s", rec.Body.String())
+	}
+}
+
+func TestHandleStreamRetriesDSMDLTypoWithOfficialDSMLGuidance(t *testing.T) {
+	ds := &malformedToolRetryDSStub{}
+	h := &Handler{DS: ds}
+	malformed := `<DSMDLtool_calls><DSMDLinvoke name="Read"><DSMDLparameter name="file_path">README.md</DSMDLparameter></DSMDLinvoke></DSMDLtool_calls>`
+	payload, _ := json.Marshal(map[string]any{"p": "response/content", "v": malformed})
+	resp := makeSSEHTTPResponse("data: "+string(payload), `data: [DONE]`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	h.handleStreamWithRetry(rec, req, &auth.RequestAuth{}, resp, map[string]any{"prompt": "original prompt"}, "pow", "cid-stream-dsmdl", "deepseek-v4-flash", "original prompt", false, false, []string{"Read"}, nil, nil)
+	if len(ds.payloads) != 1 {
+		t.Fatalf("expected one hidden stream retry payload, got %d body=%s", len(ds.payloads), rec.Body.String())
+	}
+	retryPrompt, _ := ds.payloads[0]["prompt"].(string)
+	if !strings.Contains(retryPrompt, malformed) {
+		t.Fatalf("expected stream retry prompt to include malformed DSMDL feedback, got %q", retryPrompt)
+	}
+	if !strings.Contains(retryPrompt, "<｜DSML｜tool_calls>") || strings.Contains(retryPrompt, "<|DSML|tool_calls>") {
+		t.Fatalf("expected retry prompt to use official fullwidth DSML guidance, got %q", retryPrompt)
+	}
+	if strings.Contains(rec.Body.String(), "DSMDL") || strings.Contains(rec.Body.String(), "README.md") {
+		t.Fatalf("DSMDL tool feedback leaked to client: %s", rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), "final answer after retry") {
 		t.Fatalf("expected final stream retry output, got %s", rec.Body.String())

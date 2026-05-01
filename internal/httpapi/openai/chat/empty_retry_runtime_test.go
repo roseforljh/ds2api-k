@@ -13,9 +13,9 @@ func TestAppendToolEmptyOutputRetrySuffixIncludesSkeletonOnly(t *testing.T) {
 		"Your previous reply was invalid or empty and was not shown to the user.",
 		"A) Normal answer: plain natural-language answer only.",
 		"B) Tool call skeleton:",
-		"<|DSML|tool_calls>",
-		"<|DSML|invoke name=\"VALID_TOOL_NAME_FROM_CURRENT_TOOL_LIST\">",
-		"<|DSML|parameter name=\"VALID_PARAMETER_NAME\"><![CDATA[NON_EMPTY_VALUE]]></|DSML|parameter>",
+		"<｜DSML｜tool_calls>",
+		"<｜DSML｜invoke name=\"VALID_TOOL_NAME_FROM_CURRENT_TOOL_LIST\">",
+		"<｜DSML｜parameter name=\"VALID_PARAMETER_NAME\" string=\"true\"><![CDATA[NON_EMPTY_VALUE]]></｜DSML｜parameter>",
 		"Do not copy placeholder names literally.",
 		"Now output only the corrected final answer or one valid tool call.",
 	} {
@@ -36,9 +36,9 @@ func TestAppendMalformedToolCallRetrySuffixIncludesSkeletonAndInvalidOutput(t *t
 	for _, want := range []string{
 		"Your previous reply included an invalid tool call and was not shown to the user.",
 		"Tool-call skeleton:",
-		"<|DSML|tool_calls>",
-		"<|DSML|invoke name=\"VALID_TOOL_NAME_FROM_CURRENT_TOOL_LIST\">",
-		"<|DSML|parameter name=\"VALID_PARAMETER_NAME\"><![CDATA[NON_EMPTY_VALUE]]></|DSML|parameter>",
+		"<｜DSML｜tool_calls>",
+		"<｜DSML｜invoke name=\"VALID_TOOL_NAME_FROM_CURRENT_TOOL_LIST\">",
+		"<｜DSML｜parameter name=\"VALID_PARAMETER_NAME\" string=\"true\"><![CDATA[NON_EMPTY_VALUE]]></｜DSML｜parameter>",
 		"Parameter names must come from that tool's schema in the current request.",
 		"Invalid previous reply:",
 		malformed,
@@ -51,6 +51,19 @@ func TestAppendMalformedToolCallRetrySuffixIncludesSkeletonAndInvalidOutput(t *t
 	for _, forbidden := range []string{"README.md", "file_path"} {
 		if strings.Contains(got, forbidden) {
 			t.Fatalf("expected malformed retry suffix not to contain concrete example value %q, got %q", forbidden, got)
+		}
+	}
+}
+
+func TestAppendRetrySuffixUsesOfficialFullwidthDSMLSkeleton(t *testing.T) {
+	empty := appendToolEmptyOutputRetrySuffix("BASE PROMPT", nil)
+	malformed := appendMalformedToolCallRetrySuffix("BASE PROMPT", `<DSMDLtool_calls><DSMDLinvoke name="Read"></DSMDLinvoke></DSMDLtool_calls>`, nil)
+	for _, got := range []string{empty, malformed} {
+		if strings.Contains(got, "<|DSML|tool_calls>") {
+			t.Fatalf("expected retry suffix to avoid ASCII DSML skeleton, got %q", got)
+		}
+		if !strings.Contains(got, "<｜DSML｜tool_calls>") {
+			t.Fatalf("expected retry suffix to use official fullwidth DSML skeleton, got %q", got)
 		}
 	}
 }

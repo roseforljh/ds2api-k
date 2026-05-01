@@ -63,6 +63,11 @@ func LooksSuspiciousToolLikeText(text string) bool {
 	if trimmed == "" {
 		return false
 	}
+	if strings.Contains(trimmed, "dsmdl") {
+		if strings.Contains(trimmed, "tool_calls") || strings.Contains(trimmed, "invoke") || strings.Contains(trimmed, "parameter") {
+			return true
+		}
+	}
 	if strings.Contains(trimmed, "<invoke") && strings.Contains(trimmed, "<parameter") {
 		return true
 	}

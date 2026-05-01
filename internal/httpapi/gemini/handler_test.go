@@ -272,6 +272,29 @@ func TestStreamGenerateContentMalformedBareInvokeDoesNotLeakAsText(t *testing.T)
 	}
 }
 
+func TestGeminiStreamRuntimePromotesSplitOfficialDSMLToFunctionCall(t *testing.T) {
+	rec := httptest.NewRecorder()
+	runtime := newGeminiStreamRuntime(rec, http.NewResponseController(rec), false, "gemini-2.5-pro", "prompt", false, false, true, []string{"Read"})
+
+	runtime.onParsed(sse.LineResult{
+		Parsed: true,
+		Parts:  []sse.ContentPart{{Type: "text", Text: "<｜DSML｜tool_calls><｜DSML｜invoke name=\"Read\"><｜DSML｜parameter name=\"file_path\" string=\"true\">README.md"}},
+	})
+	runtime.onParsed(sse.LineResult{
+		Parsed: true,
+		Parts:  []sse.ContentPart{{Type: "text", Text: "</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>"}},
+	})
+	runtime.finalize()
+
+	body := rec.Body.String()
+	if strings.Contains(body, "DSML") || strings.Contains(body, "tool_calls") {
+		t.Fatalf("official DSML leaked in Gemini stream body=%s", body)
+	}
+	if !strings.Contains(body, `"functionCall"`) || !strings.Contains(body, `"name":"Read"`) {
+		t.Fatalf("expected Gemini functionCall for split official DSML, body=%s", body)
+	}
+}
+
 func TestGeminiProxyTranslatesInlineImageToOpenAIDataURL(t *testing.T) {
 	openAI := &geminiOpenAISuccessStub{}
 	h := &Handler{Store: testGeminiConfig{}, OpenAI: openAI}

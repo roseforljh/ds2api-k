@@ -160,6 +160,33 @@ func TestHandleResponsesStreamEmitsDistinctToolCallIDsAcrossSeparateToolBlocks(t
 	}
 }
 
+func TestHandleResponsesStreamRejectsInvalidOfficialDSMLWithoutLeak(t *testing.T) {
+	h := &Handler{}
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	rec := httptest.NewRecorder()
+
+	payload := `<｜DSML｜tool_calls>
+<｜DSML｜invoke name="read_file">
+<｜DSML｜parameter name="path" string="true">README.md</｜DSML｜parameter>
+<｜DSML｜parameter name="limit" string="false">{bad json}</｜DSML｜parameter>
+</｜DSML｜invoke>
+</｜DSML｜tool_calls>`
+	b, _ := json.Marshal(map[string]any{"p": "response/content", "v": payload})
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader("data: " + string(b) + "\n" + "data: [DONE]\n")),
+	}
+
+	h.handleResponsesStream(rec, req, resp, "owner-a", "resp_invalid_dsml", "deepseek-v4-pro", "prompt", false, false, []string{"read_file"}, nil, promptcompat.DefaultToolChoicePolicy(), "")
+	body := rec.Body.String()
+	if strings.Contains(body, "DSML") || strings.Contains(body, "README.md") || strings.Contains(body, "bad json") {
+		t.Fatalf("invalid official DSML leaked in responses stream body=%s", body)
+	}
+	if strings.Contains(body, "response.function_call_arguments.done") {
+		t.Fatalf("invalid official DSML emitted function call body=%s", body)
+	}
+}
+
 func TestHandleResponsesStreamRequiredToolChoiceFailure(t *testing.T) {
 	h := &Handler{}
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)

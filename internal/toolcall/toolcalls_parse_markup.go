@@ -13,6 +13,10 @@ var xmlAttrPattern = regexp.MustCompile(`(?is)\b([a-z0-9_:-]+)\s*=\s*("([^"]*)"|
 var xmlToolCallsClosePattern = regexp.MustCompile(`(?is)</tool_calls>`)
 var xmlInvokeStartPattern = regexp.MustCompile(`(?is)<invoke\b[^>]*\bname\s*=\s*("([^"]*)"|'([^']*)')`)
 var cdataBRSeparatorPattern = regexp.MustCompile(`(?i)<br\s*/?>`)
+
+// invalidJSONValue is a sentinel type returned when string="false" but the
+// value is not valid JSON. filterToolCallsDetailed uses this to reject the call.
+type invalidJSONValue string
 var unicodeEscapePattern = regexp.MustCompile(`\\u([0-9a-fA-F]{4})`)
 
 func unescapeUnicode(s string) string {
@@ -108,7 +112,7 @@ func parseSingleXMLToolCall(block xmlElementBlock) (ParsedToolCall, bool) {
 		if paramName == "" {
 			continue
 		}
-		value := parseInvokeParameterValue(paramName, paramMatch.Body)
+		value := parseInvokeParameterValueWithAttrs(paramName, paramAttrs, paramMatch.Body)
 		appendMarkupValue(input, paramName, value)
 	}
 
@@ -304,6 +308,36 @@ func parseXMLTagAttributes(raw string) map[string]string {
 		out[key] = value
 	}
 	return out
+}
+
+func parseInvokeParameterValueWithAttrs(paramName string, attrs map[string]string, raw string) any {
+	stringFlag := strings.TrimSpace(attrs["string"])
+	switch stringFlag {
+	case "true":
+		// Official DSML: string="true" means raw string, keep as-is
+		trimmed := strings.TrimSpace(raw)
+		if value, ok := extractStandaloneCDATA(trimmed); ok {
+			return unescapeUnicode(value)
+		}
+		return unescapeUnicode(html.UnescapeString(extractRawTagValue(trimmed)))
+	case "false":
+		// Official DSML: string="false" means JSON value
+		trimmed := strings.TrimSpace(raw)
+		var valueStr string
+		if v, ok := extractStandaloneCDATA(trimmed); ok {
+			valueStr = v
+		} else {
+			valueStr = html.UnescapeString(extractRawTagValue(trimmed))
+		}
+		valueStr = strings.TrimSpace(valueStr)
+		if parsed, ok := parseJSONLiteralValue(valueStr); ok {
+			return parsed
+		}
+		// Invalid JSON with string="false" - return sentinel for rejection
+		return invalidJSONValue(valueStr)
+	default:
+		return parseInvokeParameterValue(paramName, raw)
+	}
 }
 
 func parseInvokeParameterValue(paramName, raw string) any {

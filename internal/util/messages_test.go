@@ -35,10 +35,10 @@ func TestMessagesPrepareRoles(t *testing.T) {
 	if !contains(got, "<｜User｜>Hi<｜Assistant｜>Hello<｜end▁of▁sentence｜>") {
 		t.Fatalf("expected user/assistant separation in %q", got)
 	}
-	if !contains(got, "<｜Assistant｜>Hello<｜end▁of▁sentence｜><｜Tool｜>Search results<｜end▁of▁toolresults｜>") {
+	if !contains(got, "<｜Assistant｜>Hello<｜end▁of▁sentence｜><｜User｜><tool_result>Search results</tool_result>") {
 		t.Fatalf("expected assistant/tool separation in %q", got)
 	}
-	if !contains(got, "<｜Tool｜>Search results<｜end▁of▁toolresults｜><｜User｜>How are you") {
+	if !contains(got, "<tool_result>Search results</tool_result>\n\nHow are you") {
 		t.Fatalf("expected tool/user separation in %q", got)
 	}
 	if !contains(got, "<｜Assistant｜>") {
@@ -50,8 +50,8 @@ func TestMessagesPrepareRoles(t *testing.T) {
 	if !contains(got, "<｜User｜>") {
 		t.Fatalf("expected user marker in %q", got)
 	}
-	if !contains(got, "<｜Tool｜>") {
-		t.Fatalf("expected tool marker in %q", got)
+	if !contains(got, "<tool_result>") {
+		t.Fatalf("expected tool result marker in %q", got)
 	}
 }
 

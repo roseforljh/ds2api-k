@@ -38,12 +38,18 @@ func TestStartParsedLinePumpMultipleLines(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(collected) < 3 {
-		t.Fatalf("expected at least 3 results, got %d", len(collected))
+	if len(collected) < 2 {
+		t.Fatalf("expected at least 2 results (batched content + stop), got %d", len(collected))
 	}
-	// First should be thinking
-	if collected[0].Parts[0].Type != "thinking" {
-		t.Fatalf("expected first part thinking, got %q", collected[0].Parts[0].Type)
+	// First batch should contain thinking and/or content parts
+	hasThinking := false
+	for _, p := range collected[0].Parts {
+		if p.Type == "thinking" {
+			hasThinking = true
+		}
+	}
+	if !hasThinking {
+		t.Fatalf("expected first batch to contain thinking part, got %#v", collected[0].Parts)
 	}
 	// Last should be stop
 	last := collected[len(collected)-1]

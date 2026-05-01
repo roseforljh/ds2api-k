@@ -1,29 +1,34 @@
-# AGENTS.md
+# Repository Guidelines
 
-These rules apply to all agent-made changes in this repository.
+## Project Structure & Module Organization
 
-## PR Gate
+This Go 1.26 service includes a React admin UI. Entry points are `cmd/ds2api`, `cmd/ds2api-tests`, and `cmd/pow_solver`. Core packages live under `internal/`: HTTP APIs in `internal/httpapi`, DeepSeek client code in `internal/deepseek`, config/auth/account logic in `internal/config`, `internal/auth`, and `internal/account`, plus stream/tool parsing in `internal/sse`, `internal/toolcall`, and `internal/toolstream`. Serverless entry files are in `api/`. Frontend code is in `webui/src`.
 
-- Before opening or updating a PR, run the same local gates as `.github/workflows/quality-gates.yml`.
-- Required commands:
-  - `./scripts/lint.sh`
-  - `./tests/scripts/check-refactor-line-gate.sh`
-  - `./tests/scripts/run-unit-all.sh`
-  - `npm run build --prefix webui`
+## Build, Test, and Development Commands
 
-## Go Lint Rules
+- `go test ./...`: run all Go package tests.
+- `go build ./cmd/ds2api`: compile the main service binary.
+- `./scripts/lint.sh`: run repository lint checks.
+- `./tests/scripts/run-unit-all.sh`: run the full unit test suite.
+- `npm run build --prefix webui`: build the admin UI assets.
+- `cd webui; npm run dev`: start the Vite dev server.
 
-- Run `gofmt -w` on every changed Go file before commit or push.
-- Do not ignore error returns from I/O-style cleanup calls such as `Close`, `Flush`, `Sync`, or similar methods.
-- If a cleanup error cannot be returned, log it explicitly.
+## Coding Style & Naming Conventions
 
-## Change Scope
+Format changed Go files with `gofmt`; lint configuration lives in `.golangci.yml`. Keep package names short, lowercase, and aligned with directory names. Do not ignore cleanup errors from `Close`, `Flush`, `Sync`, or similar methods; return or log them. Follow patterns such as `handler_*.go`, `*_runtime.go`, and `*_route_test.go`. Frontend code uses React JSX, feature folders under `webui/src/features`, and PascalCase component filenames.
 
-- Keep changes additive and tightly scoped to the requested feature or bugfix.
-- Do not mix unrelated refactors into feature PRs unless they are required to make the change pass gates.
+## Testing Guidelines
 
-## Documentation Sync
+Add or update tests next to the affected package. Prefer focused regression tests for stream parsing, tool calls, HTTP response shapes, and config behavior. Run `go test ./...` for Go changes, `npm run build --prefix webui` for UI changes, and gates before handoff.
 
-- When business logic or user-visible behavior changes, update the corresponding documentation in the same change.
-- `docs/prompt-compatibility.md` is the source-of-truth document for the “API -> pure-text web-chat context” compatibility flow.
-- If a change affects message normalization, tool prompt injection, prompt-visible tool history, file/reference handling, history split, or completion payload assembly, update `docs/prompt-compatibility.md` in the same change.
+## Commit & Pull Request Guidelines
+
+Recent commits are short and imperative, often numeric or Chinese summaries such as `修复前端中断后端还在跑的bug`. Keep commits focused; do not mix unrelated refactors into feature work. Pull requests should describe the change, list validations, link issues when available, and include screenshots only for UI changes.
+
+## Agent-Specific Instructions
+
+Keep changes scoped to the requested feature or bugfix. When business logic or user-visible behavior changes, update matching docs in the same change. `docs/prompt-compatibility.md` is the source of truth for API-to-web-chat compatibility; update it when changing message normalization, tool prompt injection, file/reference handling, history split, or completion payload assembly.
+
+## Security & Configuration Tips
+
+Do not commit real secrets from `.env` or `config.json`; use `.env.example` and `config.example.json` as templates. Mask API keys in logs, tests, screenshots, and UI output.

@@ -260,6 +260,20 @@ func TestParseToolCallsMarksUnparseableBashCommandForHiddenRetry(t *testing.T) {
 	}
 }
 
+func TestParseToolCallsMarksDSMDLTypoForHiddenRetry(t *testing.T) {
+	text := `<DSMDLtool_calls><DSMDLinvoke name="Read"><DSMDLparameter name="file_path">README.md</DSMDLparameter></DSMDLinvoke></DSMDLtool_calls>`
+	res := ParseToolCallsDetailed(text, []string{"Read"})
+	if !res.SawToolCallSyntax {
+		t.Fatalf("expected DSMDL typo to be recognized as tool-like syntax")
+	}
+	if !res.RejectedInvalid {
+		t.Fatalf("expected DSMDL typo to be marked invalid for hidden retry, got %#v", res)
+	}
+	if len(res.Calls) != 0 {
+		t.Fatalf("expected DSMDL typo not to be corrected/executed, got %#v", res.Calls)
+	}
+}
+
 func TestParseToolCallsSkipsProseMentionOfMixedFullwidthDSMLWrapper(t *testing.T) {
 	text := strings.Join([]string{
 		"Summary: support mixed <|DSML｜tool_calls> wrappers.",
@@ -305,6 +319,43 @@ func TestParseToolCallsSupportsOfficialFullwidthDSMLStringFlags(t *testing.T) {
 	}
 	if got, _ := calls[0].Input["limit"].(float64); got != 55 {
 		t.Fatalf("expected numeric limit 55, got %#v", calls[0].Input["limit"])
+	}
+}
+
+func TestParseToolCallsOfficialStringTrueKeepsJSONStringRaw(t *testing.T) {
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="Write"><｜DSML｜parameter name="content" string="true">{"literal":true}</｜DSML｜parameter><｜DSML｜parameter name="metadata" string="false">{"literal":true}</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
+	calls := ParseToolCalls(text, []string{"Write"})
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 official DSML call, got %#v", calls)
+	}
+	if got, _ := calls[0].Input["content"].(string); got != `{"literal":true}` {
+		t.Fatalf("expected string=true parameter to stay raw string, got %#v", calls[0].Input["content"])
+	}
+	metadata, ok := calls[0].Input["metadata"].(map[string]any)
+	if !ok || metadata["literal"] != true {
+		t.Fatalf("expected string=false parameter to parse JSON object, got %#v", calls[0].Input["metadata"])
+	}
+}
+
+func TestParseToolCallsOfficialStringFalseRejectsInvalidJSON(t *testing.T) {
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="Write"><｜DSML｜parameter name="metadata" string="false">{bad json}</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
+	res := ParseToolCallsDetailed(text, []string{"Write"})
+	if len(res.Calls) != 0 {
+		t.Fatalf("expected invalid official string=false JSON to be rejected, got %#v", res.Calls)
+	}
+	if !res.SawToolCallSyntax || !res.RejectedInvalid {
+		t.Fatalf("expected rejected invalid official DSML, got %#v", res)
+	}
+}
+
+func TestParseToolCallsRejectsUnavailableToolName(t *testing.T) {
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="DeleteEverything"><｜DSML｜parameter name="path" string="true">.</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
+	res := ParseToolCallsDetailed(text, []string{"Read"})
+	if len(res.Calls) != 0 {
+		t.Fatalf("expected unavailable tool to be rejected, got %#v", res.Calls)
+	}
+	if !res.SawToolCallSyntax || !res.RejectedByPolicy || len(res.RejectedToolNames) != 1 || res.RejectedToolNames[0] != "DeleteEverything" {
+		t.Fatalf("expected rejected tool name, got %#v", res)
 	}
 }
 
@@ -809,6 +860,14 @@ func TestParseToolCallsIgnoresXMLInsideFencedCodeBlock(t *testing.T) {
 	res := ParseToolCallsDetailed(text, []string{"read_file"})
 	if len(res.Calls) != 0 {
 		t.Fatalf("expected no parsed calls for fenced example, got %#v", res.Calls)
+	}
+}
+
+func TestParseToolCallsIgnoresOfficialDSMLInsideFencedCodeBlock(t *testing.T) {
+	text := "Here is an example:\n```xml\n<｜DSML｜tool_calls><｜DSML｜invoke name=\"Read\"><｜DSML｜parameter name=\"file_path\" string=\"true\">README.md</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>\n```\nDo not execute it."
+	res := ParseToolCallsDetailed(text, []string{"Read"})
+	if len(res.Calls) != 0 {
+		t.Fatalf("expected no parsed calls for fenced official DSML example, got %#v", res.Calls)
 	}
 }
 

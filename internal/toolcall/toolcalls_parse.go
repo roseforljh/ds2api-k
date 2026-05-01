@@ -22,7 +22,7 @@ func ParseToolCalls(text string, availableToolNames []string) []ParsedToolCall {
 }
 
 func ParseToolCallsDetailed(text string, availableToolNames []string) ToolCallParseResult {
-	return parseToolCallsDetailedXMLOnly(text)
+	return parseToolCallsDetailedXMLOnly(text, availableToolNames)
 }
 
 func ParseStandaloneToolCalls(text string, availableToolNames []string) []ParsedToolCall {
@@ -30,7 +30,7 @@ func ParseStandaloneToolCalls(text string, availableToolNames []string) []Parsed
 }
 
 func ParseStandaloneToolCallsDetailed(text string, availableToolNames []string) ToolCallParseResult {
-	return parseToolCallsDetailedXMLOnly(text)
+	return parseToolCallsDetailedXMLOnly(text, availableToolNames)
 }
 
 func ParseAssistantToolCallsDetailed(text, thinking string, availableToolNames []string) ToolCallParseResult {
@@ -48,7 +48,7 @@ func ParseAssistantToolCallsDetailed(text, thinking string, availableToolNames [
 	return textParsed
 }
 
-func parseToolCallsDetailedXMLOnly(text string) ToolCallParseResult {
+func parseToolCallsDetailedXMLOnly(text string, availableToolNames []string) ToolCallParseResult {
 	result := ToolCallParseResult{}
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
@@ -89,7 +89,7 @@ func parseToolCallsDetailedXMLOnly(text string) ToolCallParseResult {
 	}
 
 	result.SawToolCallSyntax = true
-	calls, rejectedNames, rejectedInvalid := filterToolCallsDetailed(parsed)
+	calls, rejectedNames, rejectedInvalid := filterToolCallsDetailed(parsed, availableToolNames)
 	result.Calls = calls
 	result.RejectedToolNames = rejectedNames
 	result.RejectedByPolicy = len(rejectedNames) > 0 && len(calls) == 0
@@ -103,9 +103,14 @@ func looksLikeHashDSMLPseudoToolSyntax(text string) bool {
 		strings.Contains(lower, "<#dsm#") || strings.Contains(lower, "</#dsm#")
 }
 
-func filterToolCallsDetailed(parsed []ParsedToolCall) ([]ParsedToolCall, []string, bool) {
+func filterToolCallsDetailed(parsed []ParsedToolCall, availableToolNames ...[]string) ([]ParsedToolCall, []string, bool) {
 	out := make([]ParsedToolCall, 0, len(parsed))
+	rejectedNames := []string{}
 	rejectedInvalid := false
+	var allowed map[string]struct{}
+	if len(availableToolNames) > 0 && len(availableToolNames[0]) > 0 {
+		allowed = toolNameSet(availableToolNames[0])
+	}
 	for _, tc := range parsed {
 		if tc.Name == "" {
 			continue
@@ -117,9 +122,46 @@ func filterToolCallsDetailed(parsed []ParsedToolCall) ([]ParsedToolCall, []strin
 			rejectedInvalid = true
 			continue
 		}
+		if hasInvalidJSONValue(tc.Input) {
+			rejectedInvalid = true
+			continue
+		}
+		if allowed != nil {
+			if _, ok := allowed[strings.ToLower(strings.TrimSpace(tc.Name))]; !ok {
+				rejectedNames = append(rejectedNames, tc.Name)
+				continue
+			}
+		}
 		out = append(out, tc)
 	}
-	return out, nil, rejectedInvalid
+	return out, rejectedNames, rejectedInvalid
+}
+
+func toolNameSet(names []string) map[string]struct{} {
+	if len(names) == 0 {
+		return nil
+	}
+	out := map[string]struct{}{}
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		out[strings.ToLower(name)] = struct{}{}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func hasInvalidJSONValue(input map[string]any) bool {
+	for _, v := range input {
+		if _, ok := v.(invalidJSONValue); ok {
+			return true
+		}
+	}
+	return false
 }
 
 func hasEmptyRequiredToolParameter(tc ParsedToolCall) bool {
@@ -165,6 +207,13 @@ func LooksLikeMalformedRequiredToolCall(text string) bool {
 	if trimmed == "" {
 		return false
 	}
+	lower := strings.ToLower(trimmed)
+	// DSMDL typo (missing separator between DSML and tag name)
+	if strings.Contains(lower, "dsmdl") {
+		if strings.Contains(lower, "tool_calls") || strings.Contains(lower, "invoke") || strings.Contains(lower, "parameter") {
+			return true
+		}
+	}
 	if looksLikeSentenceInvokeRequiredToolCall(trimmed) {
 		return true
 	}
@@ -178,7 +227,11 @@ func LooksLikeMalformedRequiredToolCall(text string) bool {
 	if !hasDSML && !hasCanonical {
 		return looksLikeBareRequiredToolInvoke(trimmed)
 	}
-	lower := strings.ToLower(trimmed)
+	lower = strings.ToLower(trimmed)
+	// Official fullwidth DSML that didn't normalize
+	if strings.Contains(lower, "<｜dsml｜tool_calls") {
+		return true
+	}
 	requiredPairs := map[string][]string{
 		"read":            {"file_path"},
 		"bash":            {"command"},

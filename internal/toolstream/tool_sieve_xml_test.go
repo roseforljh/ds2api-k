@@ -104,6 +104,78 @@ func TestProcessToolSieveInterceptsOfficialFullwidthDSMLToolCallWithoutLeak(t *t
 	}
 }
 
+func TestProcessToolSieveRejectsOfficialFullwidthDSMLInvalidJSONWithoutLeak(t *testing.T) {
+	var state State
+	chunks := []string{
+		"<｜DSML｜tool_calls>\n",
+		`  <｜DSML｜invoke name="Read">` + "\n",
+		`    <｜DSML｜parameter name="file_path" string="true">README.md</｜DSML｜parameter>` + "\n",
+		`    <｜DSML｜parameter name="limit" string="false">{bad json}</｜DSML｜parameter>` + "\n",
+		"  </｜DSML｜invoke>\n",
+		"</｜DSML｜tool_calls>",
+	}
+	var events []Event
+	for _, c := range chunks {
+		events = append(events, ProcessChunk(&state, c, []string{"Read"})...)
+	}
+	events = append(events, Flush(&state, []string{"Read"})...)
+
+	var textContent strings.Builder
+	var toolCalls int
+	for _, evt := range events {
+		textContent.WriteString(evt.Content)
+		toolCalls += len(evt.ToolCalls)
+	}
+	if textContent.Len() != 0 {
+		t.Fatalf("expected invalid official DSML not to leak as text, got %q", textContent.String())
+	}
+	if toolCalls != 0 {
+		t.Fatalf("expected no tool calls for invalid official DSML, got %d events=%#v", toolCalls, events)
+	}
+	if !strings.Contains(state.MalformedToolFeedback, "<｜DSML｜tool_calls>") {
+		t.Fatalf("expected malformed feedback to retain rejected DSML, got %q", state.MalformedToolFeedback)
+	}
+}
+
+func TestProcessToolSieveHoldsSplitOfficialDSMLTagPrefix(t *testing.T) {
+	var state State
+	events := ProcessChunk(&state, "hello <｜DS", []string{"Read"})
+	if len(events) != 1 || events[0].Content != "hello " {
+		t.Fatalf("expected only safe prefix before split official DSML tag, got %#v", events)
+	}
+	events = ProcessChunk(&state, `ML｜tool_calls><｜DSML｜invoke name="Read"><｜DSML｜parameter name="file_path" string="true">README.md</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`, []string{"Read"})
+	events = append(events, Flush(&state, []string{"Read"})...)
+
+	var textContent strings.Builder
+	var calls []toolcall.ParsedToolCall
+	for _, evt := range events {
+		textContent.WriteString(evt.Content)
+		calls = append(calls, evt.ToolCalls...)
+	}
+	if strings.Contains(textContent.String(), "DSML") || strings.Contains(textContent.String(), "README.md") {
+		t.Fatalf("split official DSML leaked to text: %q events=%#v", textContent.String(), events)
+	}
+	if len(calls) != 1 || calls[0].Name != "Read" {
+		t.Fatalf("expected one Read call after split official DSML tag, got %#v", calls)
+	}
+}
+
+func TestProcessToolSievePrefersDSMLBlockOverEarlierCanonicalBlock(t *testing.T) {
+	var state State
+	chunk := `<tool_calls><invoke name="Read"><parameter name="file_path">legacy.md</parameter></invoke></tool_calls>` +
+		`<｜DSML｜tool_calls><｜DSML｜invoke name="Read"><｜DSML｜parameter name="file_path" string="true">official.md</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
+	events := ProcessChunk(&state, chunk, []string{"Read"})
+	events = append(events, Flush(&state, []string{"Read"})...)
+
+	var calls []toolcall.ParsedToolCall
+	for _, evt := range events {
+		calls = append(calls, evt.ToolCalls...)
+	}
+	if len(calls) != 1 || calls[0].Input["file_path"] != "official.md" {
+		t.Fatalf("expected DSML block to be preferred over earlier canonical block, got %#v events=%#v", calls, events)
+	}
+}
+
 func TestProcessToolSieveInterceptsDSMLDSEPToolCallWithoutLeak(t *testing.T) {
 	state := State{}
 	chunks := []string{

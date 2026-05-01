@@ -144,6 +144,7 @@ func (s *claudeStreamRuntime) onParsed(parsed sse.LineResult) streamengine.Parse
 			continue
 		}
 		if s.bufferToolContent {
+			s.text.WriteString(trimmed)
 			if hasUnclosedCodeFence(s.text.String()) {
 				continue
 			}

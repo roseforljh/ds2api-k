@@ -244,12 +244,23 @@ func appendChunkValueContent(v any, partType string, newType *string, parts *[]C
 		}
 		*parts = append(*parts, pp...)
 	case map[string]any:
-		appendWrappedFragments(val, partType, newType, parts)
+		appendObjectContent(val, partType, newType, parts, path)
 	}
 	return false
 }
 
-func appendWrappedFragments(val map[string]any, partType string, newType *string, parts *[]ContentPart) {
+func appendObjectContent(val map[string]any, partType string, newType *string, parts *[]ContentPart, path string) {
+	// Direct text/content keys (object-shaped SSE content from PR #375)
+	if path == "response/content" || path == "response/thinking_content" {
+		if text, ok := val["text"].(string); ok && text != "" {
+			appendContentPart(parts, text, partType)
+			return
+		}
+		if content, ok := val["content"].(string); ok && content != "" {
+			appendContentPart(parts, content, partType)
+			return
+		}
+	}
 	resp := val
 	if wrapped, ok := val["response"].(map[string]any); ok {
 		resp = wrapped

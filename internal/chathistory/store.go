@@ -319,8 +319,12 @@ func (s *Store) Update(id string, params UpdateParams) (Entry, error) {
 	if params.Status != "" {
 		item.Status = params.Status
 	}
-	item.ReasoningContent = params.ReasoningContent
-	item.Content = params.Content
+	if params.ReasoningContent != "" {
+		item.ReasoningContent = params.ReasoningContent
+	}
+	if params.Content != "" {
+		item.Content = params.Content
+	}
 	item.Error = strings.TrimSpace(params.Error)
 	item.StatusCode = params.StatusCode
 	item.ElapsedMs = params.ElapsedMs

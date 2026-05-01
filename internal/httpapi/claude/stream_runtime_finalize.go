@@ -47,9 +47,9 @@ func (s *claudeStreamRuntime) finalize(stopReason string) {
 	finalText := cleanVisibleOutput(s.text.String(), s.stripReferenceMarkers)
 
 	if s.bufferToolContent {
-		detected := toolcall.ParseStandaloneToolCalls(finalText, s.toolNames)
+		detected := toolcall.ParseToolCalls(finalText, s.toolNames)
 		if len(detected) == 0 && finalText == "" && finalThinking != "" {
-			detected = toolcall.ParseStandaloneToolCalls(finalThinking, s.toolNames)
+			detected = toolcall.ParseToolCalls(finalThinking, s.toolNames)
 		}
 		detected = toolcall.NormalizeParsedToolCallsForSchemas(detected, s.toolsRaw)
 		if len(detected) > 0 {

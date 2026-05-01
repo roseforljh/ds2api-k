@@ -54,7 +54,7 @@ func (h *Handler) handleResponsesNonStreamWithRetry(w http.ResponseWriter, ctx c
 		accumulatedToolDetectionThinking += sse.TrimContinuationOverlap(accumulatedToolDetectionThinking, result.toolDetectionThinking)
 		result.thinking = accumulatedThinking
 		result.toolDetectionThinking = accumulatedToolDetectionThinking
-		result.parsed = detectAssistantToolCalls(result.text, result.thinking, result.toolDetectionThinking, toolNames)
+		result.parsed = detectAssistantToolCalls(result.text, result.text, result.thinking, result.toolDetectionThinking, toolNames)
 		result.body = openaifmt.BuildResponseObjectWithToolCalls(responseID, model, usagePrompt, result.thinking, result.text, result.parsed.Calls, toolsRaw)
 
 		if !shouldRetryResponsesNonStream(result, attempts, retryStartedAt, time.Now()) {
@@ -100,7 +100,7 @@ func (h *Handler) collectResponsesNonStreamAttempt(w http.ResponseWriter, resp *
 	if searchEnabled {
 		sanitizedText = replaceCitationMarkersWithLinks(sanitizedText, result.CitationLinks)
 	}
-	textParsed := detectAssistantToolCalls(sanitizedText, sanitizedThinking, toolDetectionThinking, toolNames)
+	textParsed := detectAssistantToolCalls(result.Text, sanitizedText, sanitizedThinking, toolDetectionThinking, toolNames)
 	responseObj := openaifmt.BuildResponseObjectWithToolCalls(responseID, model, usagePrompt, sanitizedThinking, sanitizedText, textParsed.Calls, toolsRaw)
 	return responsesNonStreamResult{
 		thinking:              sanitizedThinking,

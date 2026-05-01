@@ -3,6 +3,7 @@ import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 
 import { getAttachedFileAccountIds } from './fileAccountBinding'
+import { stripMalformedToolProtocolLeak } from './useChatStreamClient'
 
 const AUTO_SCROLL_BOTTOM_THRESHOLD = 24
 
@@ -133,7 +134,7 @@ export default function ChatPanel({
     const attachmentAccountIds = getAttachedFileAccountIds(attachedFiles)
     const attachmentAccountId = attachmentAccountIds.length === 1 ? attachmentAccountIds[0] : ''
     const reasoningText = streamingThinking || response?.choices?.[0]?.message?.reasoning_content || ''
-    const assistantText = streamingContent || response?.choices?.[0]?.message?.content || ''
+    const assistantText = stripMalformedToolProtocolLeak(streamingContent || response?.choices?.[0]?.message?.content || '')
     const responseResetKey = loading && isStreaming && !response ? 'active-stream' : 'settled'
     return (
         <div className="lg:col-span-9 flex flex-col bg-card border border-border rounded-xl shadow-sm overflow-hidden min-h-0 flex-1 relative">

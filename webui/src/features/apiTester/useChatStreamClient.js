@@ -4,6 +4,19 @@ import { getAttachedFileAccountIds } from './fileAccountBinding'
 
 const STREAM_CONTENT_FLUSH_MS = 120
 
+export function stripMalformedToolProtocolLeak(text) {
+    if (typeof text !== 'string' || !text) {
+        return ''
+    }
+    const normalized = text.toLowerCase()
+    const hasDsmdlProtocol = normalized.includes('dsmdl') && (
+        normalized.includes('tool_calls') ||
+        normalized.includes('invoke') ||
+        normalized.includes('parameter')
+    )
+    return hasDsmdlProtocol ? '' : text
+}
+
 export function useChatStreamClient({
     t,
     onMessage,
@@ -111,7 +124,7 @@ export function useChatStreamClient({
             if (pendingStreamContent) {
                 visibleStreamContent += pendingStreamContent
                 pendingStreamContent = ''
-                setStreamingContent(visibleStreamContent)
+                setStreamingContent(stripMalformedToolProtocolLeak(visibleStreamContent))
             }
             if (pendingStreamThinking) {
                 visibleStreamThinking += pendingStreamThinking
@@ -274,7 +287,7 @@ export function useChatStreamClient({
                         index: 0,
                         message: {
                             role: 'assistant',
-                            content: accumulatedContent,
+                            content: stripMalformedToolProtocolLeak(accumulatedContent),
                             reasoning_content: accumulatedThinking,
                         },
                     }],

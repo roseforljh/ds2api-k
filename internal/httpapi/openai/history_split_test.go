@@ -97,7 +97,7 @@ func TestBuildOpenAICurrentInputContextTranscriptUsesNormalFileContent(t *testin
 	if !strings.Contains(transcript, "[reasoning_content]") || !strings.Contains(transcript, "hidden reasoning") {
 		t.Fatalf("expected reasoning block preserved, got %q", transcript)
 	}
-	if !strings.Contains(transcript, "<|DSML|tool_calls>") {
+	if !strings.Contains(transcript, "<｜DSML｜tool_calls>") {
 		t.Fatalf("expected tool calls preserved, got %q", transcript)
 	}
 }
@@ -241,10 +241,10 @@ func TestBuildOpenAICurrentInputContextTranscriptContinuesAssistantToolCall(t *t
 		"Mode:\n- continue_agent_tail",
 		"Latest assistant/tool tail:",
 		"[Assistant]\n我来搜索最新资料。",
-		"<|DSML|tool_calls>",
-		`<|DSML|invoke name="search">`,
-		`<|DSML|parameter name="query"><![CDATA[最新资料]]></|DSML|parameter>`,
-		"Status:\n- Waiting for tool result",
+		"<｜DSML｜tool_calls>",
+		`<｜DSML｜invoke name="search">`,
+		`<｜DSML｜parameter name="query"><![CDATA[最新资料]]></｜DSML｜parameter>`,
+		"Status:\n- In progress",
 	} {
 		if !strings.Contains(transcript, want) {
 			t.Fatalf("expected active assistant tool-call transcript to contain %q, got %q", want, transcript)
@@ -950,10 +950,10 @@ func TestApplyCurrentInputFileInlinesToolPromptWhenEnabled(t *testing.T) {
 	for _, want := range []string{
 		"=== TOOL INSTRUCTIONS, MUST FOLLOW ===",
 		"=== END TOOL INSTRUCTIONS ===",
-		"<|DSML|tool_calls>",
-		"Tool-call tags must use ASCII punctuation only",
-		"Never use fullwidth or localized punctuation in tool-call tags",
-		"Forbidden in tool-call tags: ｜ 〈 〉 ！ ／ “ ”",
+		"<｜DSML｜tool_calls>",
+		`string="true|false"`,
+		`String parameters should be specified as raw text with string="true".`,
+		`For numbers, booleans, arrays, and objects, pass JSON with string="false".`,
 		"no_active_working",
 	} {
 		if !strings.Contains(out.FinalPrompt, want) {

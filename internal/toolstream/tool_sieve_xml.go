@@ -10,6 +10,7 @@ func consumeXMLToolCapture(captured string, toolNames []string) (prefix string, 
 	anyOpenFound := false
 	type candidate struct {
 		start  int
+		dsml   bool
 		prefix string
 		calls  []toolcall.ParsedToolCall
 		suffix string
@@ -47,10 +48,12 @@ func consumeXMLToolCapture(captured string, toolNames []string) (prefix string, 
 		parseResult := toolcall.ParseToolCallsDetailed(xmlBlock, toolNames)
 		if len(parseResult.Calls) > 0 {
 			prefixPart, suffixPart = trimWrappingJSONFence(prefixPart, suffixPart)
-			if best == nil || tag.Start < best.start {
-				best = &candidate{start: tag.Start, prefix: prefixPart, calls: parseResult.Calls, suffix: suffixPart}
+			if best == nil || (tag.DSMLLike && !best.dsml) || (tag.DSMLLike == best.dsml && tag.Start < best.start) {
+				best = &candidate{start: tag.Start, dsml: tag.DSMLLike, prefix: prefixPart, calls: parseResult.Calls, suffix: suffixPart}
 			}
-			break
+			if tag.DSMLLike {
+				break
+			}
 		}
 		if parseResult.RejectedInvalid {
 			return prefixPart, nil, suffixPart, true

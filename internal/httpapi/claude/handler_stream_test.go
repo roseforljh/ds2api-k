@@ -359,6 +359,35 @@ func TestHandleClaudeStreamRealtimeNormalizesToolInputWithSchema(t *testing.T) {
 	t.Fatalf("expected tool input delta, body=%s", rec.Body.String())
 }
 
+func TestHandleClaudeStreamRealtimeRejectsInvalidOfficialDSMLWithoutLeak(t *testing.T) {
+	h := &Handler{}
+	payload := `<｜DSML｜tool_calls>
+<｜DSML｜invoke name="Read">
+<｜DSML｜parameter name="file_path" string="true">README.md</｜DSML｜parameter>
+<｜DSML｜parameter name="limit" string="false">{bad json}</｜DSML｜parameter>
+</｜DSML｜invoke>
+</｜DSML｜tool_calls>`
+	resp := makeClaudeSSEHTTPResponse(
+		`data: {"p":"response/content","v":"`+strings.ReplaceAll(strings.ReplaceAll(payload, "\n", `\n`), `"`, `\"`)+`"}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", nil)
+
+	h.handleClaudeStreamRealtime(rec, req, resp, "claude-sonnet-4-5", []any{map[string]any{"role": "user", "content": "use tool"}}, false, false, []string{"Read"}, nil)
+
+	body := rec.Body.String()
+	if strings.Contains(body, "DSML") || strings.Contains(body, "README.md") || strings.Contains(body, "bad json") {
+		t.Fatalf("invalid official DSML leaked in Claude stream body=%s", body)
+	}
+	for _, f := range findClaudeFrames(parseClaudeFrames(t, body), "content_block_start") {
+		contentBlock, _ := f.Payload["content_block"].(map[string]any)
+		if contentBlock["type"] == "tool_use" {
+			t.Fatalf("invalid official DSML emitted tool_use body=%s", body)
+		}
+	}
+}
+
 func TestHandleClaudeStreamRealtimeIgnoresUnclosedFencedToolExample(t *testing.T) {
 	h := &Handler{}
 	resp := makeClaudeSSEHTTPResponse(

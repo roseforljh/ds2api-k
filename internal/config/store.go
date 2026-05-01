@@ -90,9 +90,14 @@ func loadConfig() (Config, bool, error) {
 
 	cfg, err := loadConfigFromFile(ConfigPath())
 	if err != nil {
+		if shouldTryLegacyContainerConfigPath() {
+			legacyPath := legacyContainerConfigPath()
+			if legacyCfg, legacyErr := loadConfigFromFile(legacyPath); legacyErr == nil {
+				Logger.Info("[config] loaded legacy container config path", "path", legacyPath)
+				return legacyCfg, false, nil
+			}
+		}
 		if IsVercel() {
-			// Vercel one-click deploy may start without a writable/present config file.
-			// Keep an in-memory config so users can bootstrap via WebUI then sync env.
 			return Config{}, true, nil
 		}
 		return Config{}, false, err

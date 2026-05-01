@@ -461,6 +461,35 @@ func TestHandleStreamRetriesDSMDLTypoWithOfficialDSMLGuidance(t *testing.T) {
 	}
 }
 
+func TestHandleStreamRetriesDoubleUnderscoreDSMLWithEmptyParameters(t *testing.T) {
+	ds := &malformedToolRetryDSStub{}
+	h := &Handler{DS: ds}
+	malformed := `<DSML__tool_calls>
+<DSML__invoke name="Read">
+  <DSML__parameter name="file_path"></DSML__parameter>
+</DSML__invoke>
+</DSML__tool_calls>`
+	payload, _ := json.Marshal(map[string]any{"p": "response/content", "v": malformed})
+	resp := makeSSEHTTPResponse("data: "+string(payload), `data: [DONE]`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	h.handleStreamWithRetry(rec, req, &auth.RequestAuth{}, resp, map[string]any{"prompt": "original prompt"}, "pow", "cid-stream-dsml-underscore", "deepseek-v4-flash", "original prompt", false, false, []string{"Read"}, nil, nil)
+	if len(ds.payloads) != 1 {
+		t.Fatalf("expected one hidden stream retry payload, got %d body=%s", len(ds.payloads), rec.Body.String())
+	}
+	retryPrompt, _ := ds.payloads[0]["prompt"].(string)
+	if !strings.Contains(retryPrompt, malformed) {
+		t.Fatalf("expected retry prompt to include malformed DSML__ feedback, got %q", retryPrompt)
+	}
+	if strings.Contains(rec.Body.String(), "DSML__") || strings.Contains(rec.Body.String(), "file_path") {
+		t.Fatalf("DSML__ tool feedback leaked to client: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "final answer after retry") {
+		t.Fatalf("expected final stream retry output, got %s", rec.Body.String())
+	}
+}
+
 func TestHandleStreamRetriesToolEmptyOutputWithToolPromptGuidance(t *testing.T) {
 	ds := &malformedToolRetryDSStub{}
 	h := &Handler{DS: ds}
@@ -537,6 +566,86 @@ func TestHandleStreamToolsPlainTextStreamsBeforeFinish(t *testing.T) {
 	}
 	if streamFinishReason(frames) != "stop" {
 		t.Fatalf("expected finish_reason=stop, body=%s", rec.Body.String())
+	}
+}
+
+func TestHandleStreamShortSnapshotReplayPreservesExactText(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`data: {"p":"response/content","v":"你好"}`,
+		`data: {"p":"response/content","v":"你好，"}`,
+		`data: {"p":"response/content","v":"你好，有什么"}`,
+		`data: {"p":"response/content","v":"你好，有什么要做的？"}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	h.handleStream(rec, req, resp, "cid-short-snapshot", "deepseek-v4-flash", "prompt", false, false, []string{"search"}, nil, nil)
+
+	frames, done := parseSSEDataFrames(t, rec.Body.String())
+	if !done {
+		t.Fatalf("expected [DONE], body=%s", rec.Body.String())
+	}
+	for _, frame := range frames {
+		choices, _ := frame["choices"].([]any)
+		if len(choices) > 1 {
+			t.Fatalf("expected at most one choice per stream frame for client compatibility, got %d body=%s", len(choices), rec.Body.String())
+		}
+	}
+	content := strings.Builder{}
+	for _, frame := range frames {
+		choices, _ := frame["choices"].([]any)
+		for _, item := range choices {
+			choice, _ := item.(map[string]any)
+			delta, _ := choice["delta"].(map[string]any)
+			if c, ok := delta["content"].(string); ok {
+				content.WriteString(c)
+			}
+		}
+	}
+	if got, want := content.String(), "你好，有什么要做的？"; got != want {
+		t.Fatalf("expected exact streamed content %q, got %q body=%s", want, got, rec.Body.String())
+	}
+}
+
+func TestHandleStreamObjectValueSnapshotReplayPreservesExactText(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`data: {"p":"response/content","v":{"value":"你好"}}`,
+		`data: {"p":"response/content","v":{"value":"你好，"}}`,
+		`data: {"p":"response/content","v":{"value":"你好，有什么"}}`,
+		`data: {"p":"response/content","v":{"value":"你好，有什么要做的？"}}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	h.handleStream(rec, req, resp, "cid-object-value-snapshot", "deepseek-v4-flash", "prompt", false, false, []string{"search"}, nil, nil)
+
+	frames, done := parseSSEDataFrames(t, rec.Body.String())
+	if !done {
+		t.Fatalf("expected [DONE], body=%s", rec.Body.String())
+	}
+	for _, frame := range frames {
+		choices, _ := frame["choices"].([]any)
+		if len(choices) > 1 {
+			t.Fatalf("expected at most one choice per stream frame for client compatibility, got %d body=%s", len(choices), rec.Body.String())
+		}
+	}
+	content := strings.Builder{}
+	for _, frame := range frames {
+		choices, _ := frame["choices"].([]any)
+		for _, item := range choices {
+			choice, _ := item.(map[string]any)
+			delta, _ := choice["delta"].(map[string]any)
+			if c, ok := delta["content"].(string); ok {
+				content.WriteString(c)
+			}
+		}
+	}
+	if got, want := content.String(), "你好，有什么要做的？"; got != want {
+		t.Fatalf("expected exact streamed content %q, got %q body=%s", want, got, rec.Body.String())
 	}
 }
 

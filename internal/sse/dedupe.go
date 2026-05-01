@@ -14,7 +14,7 @@ func TrimContinuationOverlap(existing, incoming string) string {
 	if existing == "" {
 		return incoming
 	}
-	if len(incoming) >= minContinuationSnapshotLen && strings.HasPrefix(incoming, existing) {
+	if len(incoming) > len(existing) && strings.HasPrefix(incoming, existing) {
 		return incoming[len(existing):]
 	}
 	if len(incoming) >= minContinuationSnapshotLen && strings.HasPrefix(existing, incoming) {

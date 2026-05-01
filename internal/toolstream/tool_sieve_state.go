@@ -74,10 +74,16 @@ func LooksSuspiciousToolLikeText(text string) bool {
 	if strings.Contains(trimmed, "<｜dsml｜invoke") && strings.Contains(trimmed, "<｜dsml｜parameter") {
 		return true
 	}
+	if strings.Contains(trimmed, "<dsml__invoke") && strings.Contains(trimmed, "<dsml__parameter") {
+		return true
+	}
 	if strings.Contains(trimmed, "<tool_calls") && strings.Contains(trimmed, "<invoke") {
 		return true
 	}
 	if strings.Contains(trimmed, "<｜dsml｜tool_calls") && strings.Contains(trimmed, "<｜dsml｜invoke") {
+		return true
+	}
+	if strings.Contains(trimmed, "<dsml__tool_calls") && strings.Contains(trimmed, "<dsml__invoke") {
 		return true
 	}
 	return false

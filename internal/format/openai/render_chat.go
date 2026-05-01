@@ -29,7 +29,7 @@ func BuildChatCompletionWithToolCalls(completionID, model, finalPrompt, finalThi
 		"created": time.Now().Unix(),
 		"model":   model,
 		"choices": []map[string]any{{"index": 0, "message": messageObj, "finish_reason": finishReason}},
-		"usage":   BuildChatUsage(finalPrompt, finalThinking, finalText),
+		"usage":   BuildChatUsageForModel(model, finalPrompt, finalThinking, finalText),
 	}
 }
 

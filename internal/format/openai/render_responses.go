@@ -70,7 +70,7 @@ func BuildResponseObjectFromItems(responseID, model, finalPrompt, finalThinking,
 		"model":       model,
 		"output":      output,
 		"output_text": outputText,
-		"usage":       BuildResponsesUsage(finalPrompt, finalThinking, finalText),
+		"usage":       BuildResponsesUsageForModel(model, finalPrompt, finalThinking, finalText),
 	}
 }
 

@@ -10,6 +10,7 @@ type StandardRequest struct {
 	Messages                []any
 	OriginalMessages        []any
 	HistoryText             string
+	PromptTokenText         string
 	ToolPromptText          string
 	CurrentInputFileApplied bool
 	ToolsRaw                any

@@ -20,7 +20,7 @@ async function loadChatHistoryModule() {
       async load(id) {
         if (id === sourcePath) {
           const source = await readFile(sourcePath, 'utf8');
-          return `${source}\nexport { DetailConversation };\n`;
+          return `${source}\nexport { DetailConversation, buildListModeMessages };\n`;
         }
       },
     }],
@@ -64,6 +64,30 @@ test('chat history detail renders assistant reasoning before final content', asy
     assert.match(html, /先分析用户问题/);
     assert.match(html, /最终答案/);
     assert.ok(html.indexOf('先分析用户问题') < html.indexOf('最终答案'));
+  } finally {
+    await cleanup();
+  }
+});
+
+test('chat history list mode expands current input file history placeholder', async () => {
+  const { mod, cleanup } = await loadChatHistoryModule();
+
+  try {
+    const historyText = [
+      '<｜User｜>第一轮问题<｜end▁of▁sentence｜>',
+      '<｜Assistant｜>第一轮回答<｜end▁of▁sentence｜>',
+      '<｜User｜>最新问题<｜end▁of▁sentence｜>',
+    ].join('');
+    const result = mod.buildListModeMessages({
+      history_text: historyText,
+      messages: [{
+        role: 'user',
+        content: 'The current request and prior conversation context have already been provided. Answer the latest user request directly.',
+      }],
+    }, key => key);
+
+    assert.equal(result.historyMerged, true);
+    assert.deepEqual(result.messages.map(message => message.content), ['第一轮问题', '第一轮回答', '最新问题']);
   } finally {
     await cleanup();
   }

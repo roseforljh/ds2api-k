@@ -84,6 +84,7 @@ func (s Service) ApplyCurrentInputFile(ctx context.Context, a *auth.RequestAuth,
 	stdReq.RefFileIDs = prependUniqueRefFileID(currentRequestRefFileIDs, fileID)
 	finalPrompt, builtToolNames := promptcompat.BuildOpenAIPrompt(messages, toolsRawForPrompt, "", stdReq.ToolChoice, stdReq.Thinking)
 	stdReq.FinalPrompt = finalPrompt
+	stdReq.PromptTokenText = fileText + "\n" + finalPrompt
 	if toolPromptText != "" {
 		stdReq.ToolNames = toolNames
 	} else {

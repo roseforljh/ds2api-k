@@ -251,14 +251,19 @@ func appendChunkValueContent(v any, partType string, newType *string, parts *[]C
 
 func appendObjectContent(val map[string]any, partType string, newType *string, parts *[]ContentPart, path string) {
 	// Direct text/content keys (object-shaped SSE content from PR #375)
-	if path == "response/content" || path == "response/thinking_content" {
-		if text, ok := val["text"].(string); ok && text != "" {
-			appendContentPart(parts, text, partType)
-			return
-		}
-		if content, ok := val["content"].(string); ok && content != "" {
-			appendContentPart(parts, content, partType)
-			return
+	if path == "" || path == "response/content" || path == "response/thinking_content" {
+		for _, key := range []string{"content", "v", "text", "value"} {
+			if text, ok := val[key].(string); ok && text != "" {
+				appendContentPart(parts, text, partType)
+				return
+			}
+			if nested, ok := val[key].(map[string]any); ok {
+				before := len(*parts)
+				appendObjectContent(nested, partType, newType, parts, path)
+				if len(*parts) > before {
+					return
+				}
+			}
 		}
 	}
 	resp := val

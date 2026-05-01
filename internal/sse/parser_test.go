@@ -39,6 +39,31 @@ func TestParseSSEChunkForContentThinking(t *testing.T) {
 	}
 }
 
+func TestParseSSEChunkForObjectValueContent(t *testing.T) {
+	parts, finished, _ := ParseSSEChunkForContent(map[string]any{
+		"p": "response/content",
+		"v": map[string]any{"value": "你好，有什么要做的？"},
+	}, false, "text")
+	if finished {
+		t.Fatal("expected unfinished")
+	}
+	if len(parts) != 1 || parts[0].Text != "你好，有什么要做的？" || parts[0].Type != "text" {
+		t.Fatalf("unexpected parts: %#v", parts)
+	}
+}
+
+func TestParseSSEChunkForObjectValueWithoutPath(t *testing.T) {
+	parts, finished, _ := ParseSSEChunkForContent(map[string]any{
+		"v": map[string]any{"value": "你好，有什么要做的？"},
+	}, false, "text")
+	if finished {
+		t.Fatal("expected unfinished")
+	}
+	if len(parts) != 1 || parts[0].Text != "你好，有什么要做的？" || parts[0].Type != "text" {
+		t.Fatalf("unexpected parts: %#v", parts)
+	}
+}
+
 func TestIsCitation(t *testing.T) {
 	if !IsCitation("[citation:1] abc") {
 		t.Fatal("expected citation true")

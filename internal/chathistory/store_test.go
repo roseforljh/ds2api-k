@@ -700,3 +700,42 @@ func TestStoreWritesOnlyChangedDetailFiles(t *testing.T) {
 		t.Fatalf("expected untouched detail file to remain byte-identical")
 	}
 }
+
+func TestUpdatePreservesContentWhenNewContentIsEmpty(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "chat_history.json")
+	store := New(path)
+
+	started, err := store.Start(StartParams{
+		CallerID:  "caller:abc",
+		Model:     "deepseek-v4-flash",
+		Stream:    true,
+		UserInput: "hello",
+	})
+	if err != nil {
+		t.Fatalf("start entry failed: %v", err)
+	}
+
+	if _, err := store.Update(started.ID, UpdateParams{
+		Status:           "streaming",
+		ReasoningContent: "let me think",
+		Content:          "I'll help you with that.",
+	}); err != nil {
+		t.Fatalf("progress update failed: %v", err)
+	}
+
+	updated, err := store.Update(started.ID, UpdateParams{
+		Status:    "success",
+		Content:   "",
+		Completed: true,
+	})
+	if err != nil {
+		t.Fatalf("success update failed: %v", err)
+	}
+
+	if updated.Content != "I'll help you with that." {
+		t.Fatalf("expected content to be preserved, got %q", updated.Content)
+	}
+	if updated.ReasoningContent != "let me think" {
+		t.Fatalf("expected reasoning content to be preserved, got %q", updated.ReasoningContent)
+	}
+}

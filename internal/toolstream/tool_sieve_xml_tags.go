@@ -46,6 +46,8 @@ var xmlToolTagsToDetect = []string{
 	"<dsmdlinvoke ", "<dsmdlinvoke\n", "<dsmdlinvoke\t", "<dsmdlinvoke\r",
 	"<dsml tool_calls>", "<dsml tool_calls\n", "<dsml tool_calls ",
 	"<dsml invoke ", "<dsml invoke\n", "<dsml invoke\t", "<dsml invoke\r",
+	"<dsml__tool_calls>", "<dsml__tool_calls\n", "<dsml__tool_calls ",
+	"<dsml__invoke ", "<dsml__invoke\n", "<dsml__invoke\t", "<dsml__invoke\r",
 	"<dsml_dsep_tool_calls>", "<dsml_dsep_tool_calls\n", "<dsml_dsep_tool_calls ",
 	"<dsml_dsep_invoke ", "<dsml_dsep_invoke\n", "<dsml_dsep_invoke\t", "<dsml_dsep_invoke\r",
 	"<｜tool_calls>", "<｜tool_calls\n", "<｜tool_calls ",

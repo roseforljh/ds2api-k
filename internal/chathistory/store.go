@@ -319,10 +319,10 @@ func (s *Store) Update(id string, params UpdateParams) (Entry, error) {
 	if params.Status != "" {
 		item.Status = params.Status
 	}
-	if params.ReasoningContent != "" {
+	if params.ReasoningContent != "" || item.ReasoningContent == "" {
 		item.ReasoningContent = params.ReasoningContent
 	}
-	if params.Content != "" {
+	if params.Content != "" || item.Content == "" {
 		item.Content = params.Content
 	}
 	item.Error = strings.TrimSpace(params.Error)

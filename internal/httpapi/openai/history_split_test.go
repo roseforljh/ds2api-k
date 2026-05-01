@@ -951,9 +951,9 @@ func TestApplyCurrentInputFileInlinesToolPromptWhenEnabled(t *testing.T) {
 		"=== TOOL INSTRUCTIONS, MUST FOLLOW ===",
 		"=== END TOOL INSTRUCTIONS ===",
 		"<｜DSML｜tool_calls>",
-		`string="true|false"`,
-		`String parameters should be specified as raw text with string="true".`,
-		`For numbers, booleans, arrays, and objects, pass JSON with string="false".`,
+		`<![CDATA[PARAMETER_VALUE]]>`,
+		`All string values must use <![CDATA[...]]>`,
+		`Numbers, booleans, and null stay plain text.`,
 		"no_active_working",
 	} {
 		if !strings.Contains(out.FinalPrompt, want) {

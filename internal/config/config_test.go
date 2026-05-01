@@ -32,6 +32,14 @@ func TestLoadStoreClearsTokensFromConfigInput(t *testing.T) {
 	}
 }
 
+func TestConfigPathPrefersDataPathInAppContainer(t *testing.T) {
+	t.Setenv("DS2API_CONFIG_PATH", "")
+	got := configPathForBase("/app")
+	if got != "/data/config.json" {
+		t.Fatalf("expected /data/config.json for /app container base, got %q", got)
+	}
+}
+
 func TestLoadStorePreservesProxiesAndAccountProxyAssignment(t *testing.T) {
 	t.Setenv("DS2API_CONFIG_JSON", `{
 		"proxies":[

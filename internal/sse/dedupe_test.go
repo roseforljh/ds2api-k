@@ -29,6 +29,15 @@ func TestTrimContinuationOverlapPreservesNormalIncrement(t *testing.T) {
 	}
 }
 
+func TestTrimContinuationOverlapReturnsSuffixForShortChineseSnapshotReplay(t *testing.T) {
+	existing := "你好，有什么"
+	incoming := "你好，有什么要做的？"
+	got := TrimContinuationOverlap(existing, incoming)
+	if got != "要做的？" {
+		t.Fatalf("expected short snapshot suffix only, got %q", got)
+	}
+}
+
 func TestTrimContinuationOverlapKeepsShortPrefixLikeNormalToken(t *testing.T) {
 	existing := "我们被问到"
 	incoming := "我们"

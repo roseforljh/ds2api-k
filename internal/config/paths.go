@@ -30,7 +30,29 @@ func ResolvePath(envKey, defaultRel string) string {
 }
 
 func ConfigPath() string {
-	return ResolvePath("DS2API_CONFIG_PATH", "config.json")
+	return configPathForBase(BaseDir())
+}
+
+func configPathForBase(base string) string {
+	raw := strings.TrimSpace(os.Getenv("DS2API_CONFIG_PATH"))
+	if raw == "" && base == "/app" {
+		return "/data/config.json"
+	}
+	if raw != "" {
+		if filepath.IsAbs(raw) {
+			return raw
+		}
+		return filepath.Join(base, raw)
+	}
+	return filepath.Join(base, "config.json")
+}
+
+func legacyContainerConfigPath() string {
+	return "/app/config.json"
+}
+
+func shouldTryLegacyContainerConfigPath() bool {
+	return strings.TrimSpace(os.Getenv("DS2API_CONFIG_PATH")) == "" && BaseDir() == "/app"
 }
 
 func RawStreamSampleRoot() string {

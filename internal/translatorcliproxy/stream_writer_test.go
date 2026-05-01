@@ -51,6 +51,48 @@ func TestOpenAIStreamTranslatorWriterGemini(t *testing.T) {
 	}
 }
 
+func TestOpenAIStreamTranslatorWriterGeminiPreservesChinesePunctuation(t *testing.T) {
+	original := []byte(`{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}`)
+	translated := []byte(`{"model":"gemini-2.5-pro","messages":[{"role":"user","content":"hi"}],"stream":true}`)
+
+	rec := httptest.NewRecorder()
+	w := NewOpenAIStreamTranslatorWriter(rec, sdktranslator.FormatGemini, "gemini-2.5-pro", original, translated)
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.WriteHeader(200)
+	for _, content := range []string{"你好", "，", "有什么", "要", "做的", "？"} {
+		_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl_1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gemini-2.5-pro\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"" + content + "\"},\"finish_reason\":null}]}\n\n"))
+	}
+	_, _ = w.Write([]byte("data: [DONE]\n\n"))
+
+	body := rec.Body.String()
+	for _, want := range []string{"你好", "，", "有什么", "要", "做的", "？"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected translated Gemini stream to preserve %q, got: %s", want, body)
+		}
+	}
+}
+
+func TestOpenAIStreamTranslatorWriterClaudePreservesChinesePunctuation(t *testing.T) {
+	original := []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hi"}],"stream":true}`)
+	translated := []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hi"}],"stream":true}`)
+
+	rec := httptest.NewRecorder()
+	w := NewOpenAIStreamTranslatorWriter(rec, sdktranslator.FormatClaude, "claude-sonnet-4-5", original, translated)
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.WriteHeader(200)
+	for _, content := range []string{"你好", "，", "有什么", "要", "做的", "？"} {
+		_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl_1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"claude-sonnet-4-5\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"" + content + "\"},\"finish_reason\":null}]}\n\n"))
+	}
+	_, _ = w.Write([]byte("data: [DONE]\n\n"))
+
+	body := rec.Body.String()
+	for _, want := range []string{"你好", "，", "有什么", "要", "做的", "？"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected translated Claude stream to preserve %q, got: %s", want, body)
+		}
+	}
+}
+
 func TestOpenAIStreamTranslatorWriterPreservesKeepAliveComment(t *testing.T) {
 	rec := httptest.NewRecorder()
 	w := NewOpenAIStreamTranslatorWriter(rec, sdktranslator.FormatGemini, "gemini-2.5-pro", []byte(`{}`), []byte(`{}`))

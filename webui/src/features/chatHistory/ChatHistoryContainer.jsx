@@ -5,6 +5,15 @@ import clsx from 'clsx'
 import { useI18n } from '../../i18n'
 
 const LOCKED_LIMIT = 1
+const BEGIN_SENTENCE_MARKER = '<｜begin▁of▁sentence｜>'
+const SYSTEM_MARKER = '<｜System｜>'
+const USER_MARKER = '<｜User｜>'
+const ASSISTANT_MARKER = '<｜Assistant｜>'
+const TOOL_MARKER = '<｜Tool｜>'
+const END_INSTRUCTIONS_MARKER = '<｜end▁of▁instructions｜>'
+const END_SENTENCE_MARKER = '<｜end▁of▁sentence｜>'
+const END_TOOL_RESULTS_MARKER = '<｜end▁of▁toolresults｜>'
+const CURRENT_INPUT_FILE_PROMPT = 'The current request and prior conversation context have already been provided. Answer the latest user request directly.'
 function formatDateTime(value, lang) {
     if (!value) return '-'
     try {
@@ -124,6 +133,123 @@ function TextFileCard({ filename, text, t, onMessage }) {
     )
 }
 
+function skipWhitespace(text, start) {
+    let cursor = start
+    while (cursor < text.length && /\s/.test(text[cursor])) {
+        cursor += 1
+    }
+    return cursor
+}
+
+function parseStrictHistoryMessages(historyText) {
+    const transcript = String(historyText || '')
+        .replaceAll(BEGIN_SENTENCE_MARKER, '')
+        .trim()
+    if (!transcript) return null
+
+    const parsed = []
+    let cursor = 0
+    let expectedRole = null
+
+    while (cursor < transcript.length) {
+        cursor = skipWhitespace(transcript, cursor)
+        if (expectedRole === null) {
+            if (transcript.startsWith(SYSTEM_MARKER, cursor)) {
+                expectedRole = 'system'
+            } else if (transcript.startsWith(USER_MARKER, cursor)) {
+                expectedRole = 'user'
+            } else if (transcript.startsWith(ASSISTANT_MARKER, cursor)) {
+                expectedRole = 'assistant'
+            } else if (transcript.startsWith(TOOL_MARKER, cursor)) {
+                expectedRole = 'tool'
+            } else {
+                return null
+            }
+        }
+
+        if (transcript.startsWith(SYSTEM_MARKER, cursor)) {
+            if (expectedRole !== 'system') return null
+            cursor += SYSTEM_MARKER.length
+            const end = transcript.indexOf(END_INSTRUCTIONS_MARKER, cursor)
+            if (end < 0) return null
+            parsed.push({ role: 'system', content: transcript.slice(cursor, end) })
+            cursor = end + END_INSTRUCTIONS_MARKER.length
+            expectedRole = 'user'
+            continue
+        }
+
+        if (transcript.startsWith(USER_MARKER, cursor)) {
+            if (!['user', 'user_or_tool', 'assistant_or_user'].includes(expectedRole)) return null
+            cursor += USER_MARKER.length
+            const nextAssistant = transcript.indexOf(ASSISTANT_MARKER, cursor)
+            const nextTool = transcript.indexOf(TOOL_MARKER, cursor)
+            const nextSentenceEnd = transcript.indexOf(END_SENTENCE_MARKER, cursor)
+            let nextRoleIndex = nextAssistant
+            if (nextRoleIndex < 0 || (nextTool >= 0 && nextTool < nextRoleIndex)) {
+                nextRoleIndex = nextTool
+            }
+            if (nextSentenceEnd >= 0 && (nextRoleIndex < 0 || nextSentenceEnd < nextRoleIndex)) {
+                parsed.push({ role: 'user', content: transcript.slice(cursor, nextSentenceEnd) })
+                cursor = nextSentenceEnd + END_SENTENCE_MARKER.length
+                expectedRole = 'assistant_or_user'
+                continue
+            }
+            if (nextRoleIndex < 0) return null
+            parsed.push({ role: 'user', content: transcript.slice(cursor, nextRoleIndex) })
+            cursor = nextRoleIndex
+            expectedRole = transcript.startsWith(TOOL_MARKER, cursor) ? 'tool' : 'assistant'
+            continue
+        }
+
+        if (transcript.startsWith(ASSISTANT_MARKER, cursor)) {
+            if (!['assistant', 'assistant_or_user'].includes(expectedRole)) return null
+            cursor += ASSISTANT_MARKER.length
+            const end = transcript.indexOf(END_SENTENCE_MARKER, cursor)
+            if (end < 0) return null
+            parsed.push({ role: 'assistant', content: transcript.slice(cursor, end) })
+            cursor = end + END_SENTENCE_MARKER.length
+            expectedRole = 'user_or_tool'
+            continue
+        }
+
+        if (transcript.startsWith(TOOL_MARKER, cursor)) {
+            if (!['tool', 'user', 'user_or_tool'].includes(expectedRole)) return null
+            cursor += TOOL_MARKER.length
+            const end = transcript.indexOf(END_TOOL_RESULTS_MARKER, cursor)
+            if (end < 0) return null
+            parsed.push({ role: 'tool', content: transcript.slice(cursor, end) })
+            cursor = end + END_TOOL_RESULTS_MARKER.length
+            expectedRole = 'assistant_or_user'
+            continue
+        }
+
+        if (parsed.length && ['user', 'user_or_tool', 'assistant_or_user'].includes(expectedRole)) break
+        if (transcript.slice(cursor).trim() === '') break
+        return null
+    }
+
+    return parsed.length > 0 ? parsed : null
+}
+
+function buildListModeMessages(item, t) {
+    const liveMessages = Array.isArray(item?.messages) && item.messages.length > 0
+        ? item.messages
+        : [{ role: 'user', content: item?.user_input || t('chatHistory.emptyUserInput') }]
+    const historyMessages = parseStrictHistoryMessages(item?.history_text)
+    if (!historyMessages?.length) {
+        return { messages: liveMessages, historyMerged: false }
+    }
+
+    const placeholderOnly = liveMessages.length === 1
+        && String(liveMessages[0]?.role || '').trim().toLowerCase() === 'user'
+        && String(liveMessages[0]?.content || '').trim() === CURRENT_INPUT_FILE_PROMPT
+    if (placeholderOnly) {
+        return { messages: historyMessages, historyMerged: true }
+    }
+
+    return { messages: [...historyMessages, ...liveMessages], historyMerged: true }
+}
+
 function RequestMessages({ item, t, messages, onMessage }) {
     const requestMessages = Array.isArray(messages) && messages.length > 0
         ? messages
@@ -191,13 +317,17 @@ function HistoryTextView({ item, t, onMessage }) {
 function UpstreamRequestView({ item, t, onMessage }) {
     const livePrompt = String(item?.final_prompt || '').trim()
     const userText = String(item?.user_input || t('chatHistory.emptyUserInput')).trim()
-    const messages = [{ role: 'user', content: livePrompt || userText }]
+    const listModeState = buildListModeMessages({
+        ...item,
+        messages: [{ role: 'user', content: livePrompt || userText }],
+    }, t)
+    const messages = listModeState.messages
     const hasHistory = Boolean(String(item?.history_text || '').trim())
 
     return (
         <div className="space-y-4">
             <RequestMessages item={item} t={t} messages={messages} onMessage={onMessage} />
-            {hasHistory && (
+            {hasHistory && !listModeState.historyMerged && (
                 <div className="space-y-3">
                     <HistoryTextView item={item} t={t} onMessage={onMessage} />
                 </div>

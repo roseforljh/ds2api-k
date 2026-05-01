@@ -121,11 +121,19 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if stdReq.Stream {
-		terminal := h.handleStreamWithRetry(w, r, a, resp, payload, pow, sessionID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, stdReq.ToolsRaw, historySession)
+		usagePrompt := stdReq.PromptTokenText
+		if strings.TrimSpace(usagePrompt) == "" {
+			usagePrompt = stdReq.FinalPrompt
+		}
+		terminal := h.handleStreamWithRetry(w, r, a, resp, payload, pow, sessionID, stdReq.ResponseModel, usagePrompt, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, stdReq.ToolsRaw, historySession)
 		h.markRemoteSessionTerminal(r.Context(), a, sessionID, terminal)
 		return
 	}
-	terminal := h.handleNonStreamWithRetry(w, r.Context(), a, resp, payload, pow, sessionID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, stdReq.ToolsRaw, historySession)
+	usagePrompt := stdReq.PromptTokenText
+	if strings.TrimSpace(usagePrompt) == "" {
+		usagePrompt = stdReq.FinalPrompt
+	}
+	terminal := h.handleNonStreamWithRetry(w, r.Context(), a, resp, payload, pow, sessionID, stdReq.ResponseModel, usagePrompt, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, stdReq.ToolsRaw, historySession)
 	h.markRemoteSessionTerminal(r.Context(), a, sessionID, terminal)
 }
 
@@ -237,7 +245,7 @@ func (h *Handler) handleNonStream(w http.ResponseWriter, resp *http.Response, co
 		}
 	}
 	if historySession != nil {
-		historySession.success(http.StatusOK, finalThinking, finalText, finishReason, openaifmt.BuildChatUsage(finalPrompt, finalThinking, finalText))
+		historySession.success(http.StatusOK, finalThinking, finalText, finishReason, openaifmt.BuildChatUsageForModel(model, finalPrompt, finalThinking, finalText))
 	}
 	writeJSON(w, http.StatusOK, respBody)
 }

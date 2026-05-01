@@ -35,11 +35,14 @@ func TestAppendMalformedToolCallRetrySuffixIncludesSkeletonAndInvalidOutput(t *t
 	got := appendMalformedToolCallRetrySuffix("BASE PROMPT", malformed, nil)
 	for _, want := range []string{
 		"Your previous reply included an invalid tool call and was not shown to the user.",
+		"The server discarded that malformed tool-call text before it reached the user.",
 		"Tool-call skeleton:",
 		"<｜DSML｜tool_calls>",
 		"<｜DSML｜invoke name=\"VALID_TOOL_NAME_FROM_CURRENT_TOOL_LIST\">",
 		"<｜DSML｜parameter name=\"VALID_PARAMETER_NAME\" string=\"true\"><![CDATA[NON_EMPTY_VALUE]]></｜DSML｜parameter>",
 		"Parameter names must come from that tool's schema in the current request.",
+		"Do not reuse malformed tag variants such as DSML double-underscore tags, duplicated leading angle brackets, DSMDL typo tags, ASCII-pipe DSML tags, or bare tool_calls tags.",
+		"Every opened <｜DSML｜tool_calls>, <｜DSML｜invoke>, and <｜DSML｜parameter> tag must be closed.",
 		"Invalid previous reply:",
 		malformed,
 		"Now output only one corrected tool call and nothing else.",

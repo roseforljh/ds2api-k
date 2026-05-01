@@ -200,6 +200,7 @@ func appendMalformedToolCallRetrySuffix(prompt string, malformedToolFeedback str
 	prompt = strings.TrimRight(prompt, "\r\n\t ")
 	parts := []string{
 		"Your previous reply included an invalid tool call and was not shown to the user.",
+		"The server discarded that malformed tool-call text before it reached the user.",
 	}
 	if historyText := shared.RenderRetryFeedbackWindow(retryHistory); strings.TrimSpace(historyText) != "" {
 		parts = append(parts, historyText)
@@ -220,6 +221,8 @@ func appendMalformedToolCallRetrySuffix(prompt string, malformedToolFeedback str
 		"4) Required parameters must be present and non-empty.",
 		"5) Output no explanation, no markdown fences, and no extra text.",
 		"6) If you use a tool, your first non-whitespace characters must be exactly <｜DSML｜tool_calls>.",
+		"7) Do not reuse malformed tag variants such as DSML double-underscore tags, duplicated leading angle brackets, DSMDL typo tags, ASCII-pipe DSML tags, or bare tool_calls tags.",
+		"8) Every opened <｜DSML｜tool_calls>, <｜DSML｜invoke>, and <｜DSML｜parameter> tag must be closed.",
 		"Invalid previous reply:",
 		strings.TrimSpace(malformedToolFeedback),
 		"Now output only one corrected tool call and nothing else.",

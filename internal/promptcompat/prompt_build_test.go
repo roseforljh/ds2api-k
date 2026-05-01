@@ -114,6 +114,8 @@ func TestBuildOpenAIFinalPromptInjectsToolPromptIntoLatestUserMessage(t *testing
 		"<｜User｜>请调用工具",
 		"=== TOOL INSTRUCTIONS, MUST FOLLOW ===",
 		"You have access to these tools:",
+		"Forbidden malformed tag variants: DSML double-underscore tags, duplicated leading angle brackets, DSMDL typo tags, ASCII-pipe DSML tags, and bare tool_calls tags.",
+		"If you call a tool, output exactly one complete <｜DSML｜tool_calls> block and no explanation text before or after it.",
 		"=== END TOOL INSTRUCTIONS ===",
 	} {
 		if !strings.Contains(finalPrompt, want) {

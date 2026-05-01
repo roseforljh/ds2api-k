@@ -114,6 +114,40 @@ func TestMessagesPrepareInjectsOfficialDSMLToolsIntoSystemPrompt(t *testing.T) {
 	}
 }
 
+func TestMessagesPrepareToolPromptForbidsMalformedToolTagVariants(t *testing.T) {
+	messages := []map[string]any{
+		{
+			"role":    "system",
+			"content": "You are helper",
+			"tools": []any{
+				map[string]any{
+					"type": "function",
+					"function": map[string]any{
+						"name":        "Read",
+						"description": "Read file",
+						"parameters": map[string]any{
+							"type":       "object",
+							"properties": map[string]any{},
+						},
+					},
+				},
+			},
+		},
+		{"role": "user", "content": "read file"},
+	}
+	got := MessagesPrepare(messages)
+	for _, want := range []string{
+		"The only valid tool-call tag family is <｜DSML｜tool_calls>",
+		"Do not output markdown fences around tool calls.",
+		"Forbidden malformed tag variants: DSML double-underscore tags, duplicated leading angle brackets, DSMDL typo tags, ASCII-pipe DSML tags, and bare tool_calls tags.",
+		"If you call a tool, output exactly one complete DSML block and no explanation text before or after it.",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected tightened tool prompt to contain %q, got %q", want, got)
+		}
+	}
+}
+
 func TestMessagesPrepareMergesToolRoleIntoUserToolResultBlock(t *testing.T) {
 	messages := []map[string]any{
 		{

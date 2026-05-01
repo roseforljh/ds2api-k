@@ -26,7 +26,7 @@ const (
 
 const dsmlToolsTemplate = `## Tools
 
-You have access to a set of tools to help answer the user's question. You can invoke tools by writing a "<｜DSML｜tool_calls>" block like the following:
+You have access to a set of tools to help answer the user's question. The only valid tool-call tag family is <｜DSML｜tool_calls>. You can invoke tools by writing a "<｜DSML｜tool_calls>" block like the following:
 
 <｜DSML｜tool_calls>
 <｜DSML｜invoke name="$TOOL_NAME">
@@ -41,6 +41,12 @@ You have access to a set of tools to help answer the user's question. You can in
 String parameters should be specified as is and set ` + "`string=\"true\"`" + `. For all other types (numbers, booleans, arrays, objects), pass the value in JSON format and set ` + "`string=\"false\"`" + `.
 
 If thinking_mode is enabled, you MUST output your complete reasoning before any tool calls or final response.
+
+Tool-call formatting rules:
+1) Do not output markdown fences around tool calls.
+2) Forbidden malformed tag variants: DSML double-underscore tags, duplicated leading angle brackets, DSMDL typo tags, ASCII-pipe DSML tags, and bare tool_calls tags.
+3) Every opened <｜DSML｜tool_calls>, <｜DSML｜invoke>, and <｜DSML｜parameter> tag must be closed.
+4) If you call a tool, output exactly one complete DSML block and no explanation text before or after it.
 
 ### Available Tool Schemas
 

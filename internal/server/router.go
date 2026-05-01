@@ -27,6 +27,7 @@ import (
 	"ds2api/internal/httpapi/openai/files"
 	"ds2api/internal/httpapi/openai/responses"
 	"ds2api/internal/httpapi/openai/shared"
+	"ds2api/internal/httpapi/requestbody"
 	"ds2api/internal/webui"
 )
 
@@ -75,6 +76,7 @@ func NewApp() (*App, error) {
 	r.Use(filteredLogger())
 	r.Use(middleware.Recoverer)
 	r.Use(cors)
+	r.Use(requestbody.ValidateJSONUTF8)
 	r.Use(timeout(0))
 
 	healthzHandler := func(w http.ResponseWriter, _ *http.Request) {

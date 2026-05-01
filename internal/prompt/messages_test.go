@@ -35,7 +35,7 @@ func TestMessagesPrepareUsesTurnSuffixes(t *testing.T) {
 	if !strings.HasPrefix(got, "<｜begin▁of▁sentence｜>") {
 		t.Fatalf("expected begin-of-sentence marker, got %q", got)
 	}
-	if !strings.Contains(got, "<｜System｜>System rule<｜end▁of▁instructions｜>") {
+	if !strings.Contains(got, "System rule<｜end▁of▁instructions｜>") {
 		t.Fatalf("expected system instructions suffix, got %q", got)
 	}
 	if !strings.Contains(got, "<｜User｜>Question") {
@@ -46,6 +46,16 @@ func TestMessagesPrepareUsesTurnSuffixes(t *testing.T) {
 	}
 	if strings.Contains(got, "<think>") || strings.Contains(got, "</think>") {
 		t.Fatalf("did not expect think tags in prompt, got %q", got)
+	}
+}
+
+func TestMessagesPreparePrependsOutputIntegrityGuard(t *testing.T) {
+	got := MessagesPrepare([]map[string]any{{"role": "user", "content": "Question"}})
+	if !strings.Contains(got, outputIntegrityGuardMarker) {
+		t.Fatalf("expected output integrity guard, got %q", got)
+	}
+	if strings.Count(got, outputIntegrityGuardMarker) != 1 {
+		t.Fatalf("expected one output integrity guard, got %q", got)
 	}
 }
 

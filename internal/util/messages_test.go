@@ -12,7 +12,7 @@ func TestMessagesPrepareBasic(t *testing.T) {
 	if got == "" {
 		t.Fatal("expected non-empty prompt")
 	}
-	if got != "<｜begin▁of▁sentence｜><｜User｜>Hello<｜Assistant｜>" {
+	if !contains(got, "<｜User｜>Hello<｜Assistant｜>") || !contains(got, "Output integrity guard:") {
 		t.Fatalf("unexpected prompt: %q", got)
 	}
 }
@@ -26,7 +26,7 @@ func TestMessagesPrepareRoles(t *testing.T) {
 		{"role": "user", "content": "How are you"},
 	}
 	got := MessagesPrepare(messages)
-	if !contains(got, "<｜System｜>You are helper<｜end▁of▁instructions｜><｜User｜>Hi") {
+	if !contains(got, "You are helper<｜end▁of▁instructions｜><｜User｜>Hi") {
 		t.Fatalf("expected system/user separation in %q", got)
 	}
 	if !contains(got, "<｜begin▁of▁sentence｜>") {
@@ -77,7 +77,7 @@ func TestMessagesPrepareArrayTextVariants(t *testing.T) {
 		},
 	}
 	got := MessagesPrepare(messages)
-	if got != "<｜begin▁of▁sentence｜><｜User｜>line1\nline2<｜Assistant｜>" {
+	if !contains(got, "<｜User｜>line1\nline2<｜Assistant｜>") || !contains(got, "Output integrity guard:") {
 		t.Fatalf("unexpected content from text variants: %q", got)
 	}
 }

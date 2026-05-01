@@ -158,6 +158,9 @@ func findPartialXMLToolTagStart(s string) int {
 		return -1
 	}
 	lowerTail := strings.ToLower(tail)
+	if toolcall.IsPartialToolMarkupTagPrefix(lowerTail) {
+		return lastLT
+	}
 	for _, tag := range []string{
 		"<｜begin▁of▁sentence", "<｜begin▁of▁invoke", "<｜begin▁of▁parameter",
 		"<skill", "<|dsml|skill_calls", "</|dsml|skill_calls",

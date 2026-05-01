@@ -126,6 +126,13 @@ func scanToolMarkupTagAt(text string, start int) (ToolMarkupTag, bool) {
 	if start < 0 || start >= len(text) || text[start] != '<' {
 		return ToolMarkupTag{}, false
 	}
+	tagStart := start
+	if start+1 < len(text) && text[start+1] == '<' {
+		if tag, ok := scanToolMarkupTagAt(text, start+1); ok {
+			tag.Start = tagStart
+			return tag, true
+		}
+	}
 	lower := strings.ToLower(text)
 	i := start + 1
 	closing := false
@@ -170,16 +177,20 @@ func scanToolMarkupTagAt(text string, start int) (ToolMarkupTag, bool) {
 		return ToolMarkupTag{}, false
 	}
 	nameEnd := i + nameLen
-	if !hasToolMarkupBoundary(text, nameEnd) {
+	boundaryIdx := nameEnd
+	if next, ok := consumeToolMarkupPipe(text, boundaryIdx); ok {
+		boundaryIdx = next
+	}
+	if !hasToolMarkupBoundary(text, boundaryIdx) {
 		return ToolMarkupTag{}, false
 	}
-	end := findXMLTagEnd(text, nameEnd)
+	end := findXMLTagEnd(text, boundaryIdx)
 	if end < 0 {
 		return ToolMarkupTag{}, false
 	}
-	trimmed := strings.TrimSpace(text[start : end+1])
+	trimmed := strings.TrimSpace(text[tagStart : end+1])
 	return ToolMarkupTag{
-		Start:       start,
+		Start:       tagStart,
 		End:         end,
 		NameStart:   i,
 		NameEnd:     nameEnd,
@@ -284,4 +295,52 @@ func hasToolMarkupBoundary(text string, idx int) bool {
 	default:
 		return false
 	}
+}
+
+func IsPartialToolMarkupTagPrefix(text string) bool {
+	if text == "" || !strings.HasPrefix(text, "<") || strings.Contains(text, ">") {
+		return false
+	}
+	body := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(text, "<")))
+	if body == "" || body == "/" {
+		return true
+	}
+	body = strings.TrimPrefix(body, "/")
+	for _, prefix := range []string{
+		"｜begin▁of▁sentence", "｜begin▁of▁invoke", "｜begin▁of▁parameter",
+		"skill", "|dsml|skill_calls", "｜dsml｜skill_calls",
+		"tool_calls", "invoke", "parameter",
+		"#dsml#", "#dsm#", "⌜dsml⌝", "⌜dsm⌝",
+	} {
+		if strings.HasPrefix(prefix, body) {
+			return true
+		}
+	}
+	normalized := normalizePartialToolMarkupBody(body)
+	for _, prefix := range []string{
+		"dsmltoolcalls", "dsmlinvoke", "dsmlparameter",
+		"dsmdseptoolcalls", "dsmdsepinvoke", "dsmdsepparameter",
+		"dsmtoolcalls", "dsminvoke", "dsmparameter",
+	} {
+		if strings.HasPrefix(prefix, normalized) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizePartialToolMarkupBody(body string) string {
+	var b strings.Builder
+	for i := 0; i < len(body); {
+		switch {
+		case body[i] == '|' || body[i] == '_' || body[i] == ' ' || body[i] == '\t' || body[i] == '\r' || body[i] == '\n':
+			i++
+		case strings.HasPrefix(body[i:], "｜"):
+			i += len("｜")
+		default:
+			b.WriteByte(body[i])
+			i++
+		}
+	}
+	return b.String()
 }

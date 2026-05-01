@@ -833,6 +833,11 @@ func TestRepairLooseJSONWithNestedObjects(t *testing.T) {
 			input:    `"tasks": {"id":1}, {"id":2}, {"id":3}, {"id":4}, {"id":5}`,
 			expected: `"tasks": [{"id":1}, {"id":2}, {"id":3}, {"id":4}, {"id":5}]`,
 		},
+		{
+			name:     "多层嵌套对象",
+			input:    `"items": {"a": {"b": {"c": 1}}}, {"a": {"b": {"c": 2}}}`,
+			expected: `"items": [{"a": {"b": {"c": 1}}}, {"a": {"b": {"c": 2}}}]`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -852,6 +857,18 @@ func TestParseToolCallsUnescapesHTMLEntityArguments(t *testing.T) {
 	cmd, _ := calls[0].Input["command"].(string)
 	if cmd != "echo a > out.txt" {
 		t.Fatalf("expected html entities to be unescaped in command, got %q", cmd)
+	}
+}
+
+func TestParseToolCallsParsesLooseObjectListParameterAsArray(t *testing.T) {
+	text := `<tool_calls><invoke name="TodoWrite"><parameter name="todos">{"content":"a","input":{"nested":{"x":1}}}, {"content":"b","input":{"nested":{"x":2}}}</parameter></invoke></tool_calls>`
+	calls := ParseToolCalls(text, []string{"TodoWrite"})
+	if len(calls) != 1 {
+		t.Fatalf("expected one call, got %#v", calls)
+	}
+	items, ok := calls[0].Input["todos"].([]any)
+	if !ok || len(items) != 2 {
+		t.Fatalf("expected loose object list to parse as array, got %#v", calls[0].Input["todos"])
 	}
 }
 

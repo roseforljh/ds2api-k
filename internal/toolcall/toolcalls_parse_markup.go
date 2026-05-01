@@ -17,6 +17,7 @@ var cdataBRSeparatorPattern = regexp.MustCompile(`(?i)<br\s*/?>`)
 // invalidJSONValue is a sentinel type returned when string="false" but the
 // value is not valid JSON. filterToolCallsDetailed uses this to reject the call.
 type invalidJSONValue string
+
 var unicodeEscapePattern = regexp.MustCompile(`\\u([0-9a-fA-F]{4})`)
 
 func unescapeUnicode(s string) string {
@@ -333,6 +334,9 @@ func parseInvokeParameterValueWithAttrs(paramName string, attrs map[string]strin
 		if parsed, ok := parseJSONLiteralValue(valueStr); ok {
 			return parsed
 		}
+		if parsed, ok := parseLooseJSONArrayValue(valueStr, paramName); ok {
+			return parsed
+		}
 		// Invalid JSON with string="false" - return sentinel for rejection
 		return invalidJSONValue(valueStr)
 	default:
@@ -387,6 +391,9 @@ func parseInvokeParameterValue(paramName, raw string) any {
 		}
 	}
 	if parsed, ok := parseJSONLiteralValue(decoded); ok {
+		return parsed
+	}
+	if parsed, ok := parseLooseJSONArrayValue(decoded, paramName); ok {
 		return parsed
 	}
 	return decoded

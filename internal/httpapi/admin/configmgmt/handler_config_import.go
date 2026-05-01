@@ -49,8 +49,6 @@ func (h *Handler) configImport(w http.ResponseWriter, r *http.Request) {
 		if mode == "replace" {
 			next = incoming.Clone()
 			next.Accounts = normalizeAndDedupeAccounts(next.Accounts)
-			next.VercelSyncHash = c.VercelSyncHash
-			next.VercelSyncTime = c.VercelSyncTime
 			importedKeys = len(next.APIKeys)
 			importedAccounts = len(next.Accounts)
 		} else {

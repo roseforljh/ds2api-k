@@ -392,6 +392,47 @@ func TestProcessToolSieveDropsHashDSMLReadFilePathWithoutLeak(t *testing.T) {
 	}
 }
 
+func TestProcessToolSieveDropsDSMLCallsAliasWithoutLeak(t *testing.T) {
+	var state State
+	chunk := `<dsml_calls>
+<dsml_invoke name="Read">
+<dsml_parameter name="file_path"><![CDATA[C:\Users\me\repo\README.md]]></dsml_parameter>
+</dsml_invoke>
+</dsml_calls>`
+	events := ProcessChunk(&state, chunk, []string{"Read"})
+	events = append(events, Flush(&state, []string{"Read"})...)
+	for _, evt := range events {
+		if evt.Content != "" || len(evt.ToolCalls) > 0 {
+			t.Fatalf("expected dsml_calls alias to be hidden from client and not emitted, got %#v", events)
+		}
+	}
+	if !strings.Contains(state.MalformedToolFeedback, "<dsml_calls>") {
+		t.Fatalf("expected dsml_calls malformed feedback to be retained for retry, got %q", state.MalformedToolFeedback)
+	}
+}
+
+func TestProcessToolSieveDropsUnknownStructuredToolIntentWithoutLeak(t *testing.T) {
+	var state State
+	chunk := `<action name="Read"><arg name="file_path"><![CDATA[C:\Users\me\repo\README.md]]></arg></action>`
+	events := ProcessChunk(&state, chunk, []string{"Read"})
+	events = append(events, Flush(&state, []string{"Read"})...)
+	for _, evt := range events {
+		if evt.Content != "" || len(evt.ToolCalls) > 0 {
+			t.Fatalf("expected unknown structured Read call to be hidden and retried, got %#v", events)
+		}
+	}
+	if !strings.Contains(state.MalformedToolFeedback, `<action name="Read">`) {
+		t.Fatalf("expected unknown structured tool feedback to be retained, got %q", state.MalformedToolFeedback)
+	}
+}
+
+func TestFindToolSegmentStartDetectsDSMLCallsAlias(t *testing.T) {
+	got := findToolSegmentStart(nil, "prefix <dsml_calls>", []string{"Read"})
+	if got != len("prefix ") {
+		t.Fatalf("expected dsml_calls alias start at %d, got %d", len("prefix "), got)
+	}
+}
+
 func TestProcessToolSieveDropsLocalizedPunctuationReadCallWithoutLeak(t *testing.T) {
 	var state State
 	chunk := `● <｜tool_calls＞
@@ -746,24 +787,19 @@ func TestProcessToolSieveNonToolXMLKeepsSuffixForToolParsing(t *testing.T) {
 	}
 }
 
-func TestProcessToolSievePassesThroughMalformedExecutableXMLBlock(t *testing.T) {
+func TestProcessToolSieveDropsMalformedExecutableXMLBlock(t *testing.T) {
 	var state State
 	chunk := `<tool_calls><invoke name="read_file"><param>{"path":"README.md"}</param></invoke></tool_calls>`
 	events := ProcessChunk(&state, chunk, []string{"read_file"})
 	events = append(events, Flush(&state, []string{"read_file"})...)
 
-	var textContent strings.Builder
-	toolCalls := 0
 	for _, evt := range events {
-		textContent.WriteString(evt.Content)
-		toolCalls += len(evt.ToolCalls)
+		if evt.Content != "" || len(evt.ToolCalls) > 0 {
+			t.Fatalf("expected malformed executable-looking XML to be hidden for retry, got %#v", events)
+		}
 	}
-
-	if toolCalls != 0 {
-		t.Fatalf("expected malformed executable-looking XML to stay text, got %d events=%#v", toolCalls, events)
-	}
-	if textContent.String() != chunk {
-		t.Fatalf("expected malformed executable-looking XML to pass through unchanged, got %q", textContent.String())
+	if !strings.Contains(state.MalformedToolFeedback, `<tool_calls>`) {
+		t.Fatalf("expected malformed executable-looking XML feedback to be retained, got %q", state.MalformedToolFeedback)
 	}
 }
 
@@ -879,7 +915,7 @@ func TestFindToolSegmentStartDetectsXMLToolCalls(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := findToolSegmentStart(nil, tc.input)
+			got := findToolSegmentStart(nil, tc.input, []string{"read_file"})
 			if got != tc.want {
 				t.Fatalf("findToolSegmentStart(%q) = %d, want %d", tc.input, got, tc.want)
 			}
@@ -1117,7 +1153,7 @@ func TestProcessToolSieveBareInvokeInlineProseDoesNotStall(t *testing.T) {
 	}
 }
 
-func TestProcessToolSieveBareInvokeExampleReleasesWhenNotRepairable(t *testing.T) {
+func TestProcessToolSieveBareInvokeExampleHiddenWhenNotRepairable(t *testing.T) {
 	var state State
 	chunks := []string{
 		`Example: <invoke name="read_file"><parameter name="path">README.md</parameter>`,
@@ -1128,21 +1164,16 @@ func TestProcessToolSieveBareInvokeExampleReleasesWhenNotRepairable(t *testing.T
 		events = append(events, ProcessChunk(&state, c, []string{"read_file"})...)
 	}
 
-	var textContent strings.Builder
-	toolCalls := 0
 	for _, evt := range events {
-		textContent.WriteString(evt.Content)
-		toolCalls += len(evt.ToolCalls)
-	}
-
-	if toolCalls != 0 {
-		t.Fatalf("expected non-repairable bare invoke to remain text, got %d events=%#v", toolCalls, events)
-	}
-	if textContent.String() != strings.Join(chunks, "") {
-		t.Fatalf("expected non-repairable bare invoke to pass through, got %q", textContent.String())
+		if evt.Content != "" || len(evt.ToolCalls) > 0 {
+			t.Fatalf("expected non-repairable bare invoke to be hidden for retry, got %#v", events)
+		}
 	}
 	if state.capturing {
 		t.Fatal("expected non-repairable bare invoke not to leave stream capture open")
+	}
+	if !strings.Contains(state.MalformedToolFeedback, `<invoke name="read_file">`) {
+		t.Fatalf("expected non-repairable bare invoke feedback to be retained, got %q", state.MalformedToolFeedback)
 	}
 }
 

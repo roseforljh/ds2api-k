@@ -14,6 +14,8 @@ type ToolMarkupTag struct {
 	SelfClosing bool
 	DSMLLike    bool
 	Canonical   bool
+	Official    bool
+	CallsAlias  bool
 }
 
 func ContainsToolMarkupSyntaxOutsideIgnored(text string) (hasDSML, hasCanonical bool) {
@@ -172,7 +174,7 @@ func scanToolMarkupTagAt(text string, start int) (ToolMarkupTag, bool) {
 			i = next
 		}
 	}
-	name, nameLen := matchToolMarkupName(lower, i)
+	name, nameLen, callsAlias := matchToolMarkupName(lower, i, dsmlLike)
 	if nameLen == 0 {
 		return ToolMarkupTag{}, false
 	}
@@ -199,16 +201,63 @@ func scanToolMarkupTagAt(text string, start int) (ToolMarkupTag, bool) {
 		SelfClosing: strings.HasSuffix(trimmed, "/>"),
 		DSMLLike:    dsmlLike,
 		Canonical:   !dsmlLike,
+		Official:    isOfficialFullwidthDSMLToolTag(text, tagStart, closing),
+		CallsAlias:  callsAlias,
 	}, true
 }
 
-func matchToolMarkupName(lower string, start int) (string, int) {
+func matchToolMarkupName(lower string, start int, dsmlLike bool) (string, int, bool) {
 	for _, name := range toolMarkupNames {
 		if strings.HasPrefix(lower[start:], name) {
-			return name, len(name)
+			return name, len(name), false
 		}
 	}
-	return "", 0
+	if dsmlLike && strings.HasPrefix(lower[start:], "calls") {
+		return "tool_calls", len("calls"), true
+	}
+	return "", 0, false
+}
+
+func isOfficialFullwidthDSMLToolTag(text string, tagStart int, closing bool) bool {
+	if tagStart < 0 || tagStart >= len(text) || text[tagStart] != '<' {
+		return false
+	}
+	idx := tagStart + 1
+	if closing {
+		if idx >= len(text) || text[idx] != '/' {
+			return false
+		}
+		idx++
+	}
+	return strings.HasPrefix(text[idx:], "｜DSML｜")
+}
+
+func ContainsNonOfficialToolMarkupSyntaxOutsideIgnored(text string) bool {
+	for searchFrom := 0; searchFrom < len(text); {
+		tag, ok := FindToolMarkupTagOutsideIgnored(text, searchFrom)
+		if !ok {
+			return false
+		}
+		if !tag.Official {
+			return true
+		}
+		searchFrom = tag.End + 1
+	}
+	return false
+}
+
+func ContainsDSMLCallsAliasOutsideIgnored(text string) bool {
+	for searchFrom := 0; searchFrom < len(text); {
+		tag, ok := FindToolMarkupTagOutsideIgnored(text, searchFrom)
+		if !ok {
+			return false
+		}
+		if tag.CallsAlias {
+			return true
+		}
+		searchFrom = tag.End + 1
+	}
+	return false
 }
 
 func consumeToolMarkupPipe(text string, idx int) (int, bool) {
@@ -319,6 +368,7 @@ func IsPartialToolMarkupTagPrefix(text string) bool {
 	normalized := normalizePartialToolMarkupBody(body)
 	for _, prefix := range []string{
 		"dsmltoolcalls", "dsmlinvoke", "dsmlparameter",
+		"dsmlcalls",
 		"dsmdseptoolcalls", "dsmdsepinvoke", "dsmdsepparameter",
 		"dsmtoolcalls", "dsminvoke", "dsmparameter",
 	} {

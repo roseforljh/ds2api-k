@@ -14,10 +14,6 @@ func BaseDir() string {
 	return cwd
 }
 
-func IsVercel() bool {
-	return strings.TrimSpace(os.Getenv("VERCEL")) != "" || strings.TrimSpace(os.Getenv("NOW_REGION")) != ""
-}
-
 func ResolvePath(envKey, defaultRel string) string {
 	raw := strings.TrimSpace(os.Getenv(envKey))
 	if raw != "" {

@@ -19,7 +19,6 @@ export default function AppRoutes() {
         authChecking,
         message,
         isAdminRoute,
-        isVercel,
         showMessage,
         handleLogin,
         handleLogout,
@@ -56,7 +55,6 @@ export default function AppRoutes() {
                         showMessage={showMessage}
                         message={message}
                         onForceLogout={handleLogout}
-                        isVercel={isVercel}
                     />
                 ) : (
                     <div className="min-h-screen flex flex-col bg-background relative overflow-hidden">

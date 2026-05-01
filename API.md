@@ -31,7 +31,6 @@
 | Base URL | `http://localhost:5001` 或你的部署域名 |
 | 默认 Content-Type | `application/json` |
 | 健康检查 | `GET /healthz`、`GET /readyz` |
-| CORS | 已启用（统一覆盖 `/v1/*`、`/anthropic/*`、`/v1beta/models/*`、`/admin/*`；浏览器有 `Origin` 时回显该 Origin，否则为 `*`；默认允许 `Content-Type`, `Authorization`, `X-API-Key`, `X-Ds2-Target-Account`, `X-Ds2-Source`, `X-Vercel-Protection-Bypass`, `X-Goog-Api-Key`, `Anthropic-Version`, `Anthropic-Beta`，并会放行预检里声明的第三方请求头，如 `x-stainless-*`；Vercel 上 `/v1/chat/completions` 的 Node Runtime 也对齐相同行为；内部专用头 `X-Ds2-Internal-Token` 仍被拦截） |
 
 ### 3.0 接口适配层说明
 
@@ -54,13 +53,11 @@ cp config.example.json config.json
 按部署方式使用：
 
 - 本地运行：直接读取 `config.json`
-- Docker / Vercel：从 `config.json` 生成 Base64，填入 `DS2API_CONFIG_JSON`，也可以直接填原始 JSON
 
 ```bash
 DS2API_CONFIG_JSON="$(base64 < config.json | tr -d '\n')"
 ```
 
-Vercel 一键部署可先只填 `DS2API_ADMIN_KEY`，部署后在 `/admin` 导入配置，再通过 “Vercel 同步” 写回环境变量。
 
 ---
 
@@ -122,7 +119,6 @@ Gemini 兼容客户端还可以使用 `x-goog-api-key`、`?key=` 或 `?api_key=`
 | POST | `/v1/models/{model}:streamGenerateContent` | 业务 | Gemini 流式兼容路径 |
 | POST | `/admin/login` | 无 | 管理登录 |
 | GET | `/admin/verify` | JWT | 校验管理 JWT |
-| GET | `/admin/vercel/config` | Admin | 读取 Vercel 预配置 |
 | GET | `/admin/config` | Admin | 读取配置（脱敏） |
 | POST | `/admin/config` | Admin | 更新配置 |
 | GET | `/admin/settings` | Admin | 读取运行时设置 |
@@ -152,9 +148,6 @@ Gemini 兼容客户端还可以使用 `x-goog-api-key`、`?key=` 或 `?api_key=`
 | POST | `/admin/dev/raw-samples/capture` | Admin | 直接发起一次请求并保存为 raw sample |
 | GET | `/admin/dev/raw-samples/query` | Admin | 按问题关键词查询当前内存抓包链 |
 | POST | `/admin/dev/raw-samples/save` | Admin | 把命中的内存抓包链保存为 raw sample |
-| POST | `/admin/vercel/sync` | Admin | 同步配置到 Vercel |
-| GET | `/admin/vercel/status` | Admin | Vercel 同步状态 |
-| POST | `/admin/vercel/status` | Admin | Vercel 同步状态 / 草稿对比 |
 | GET | `/admin/export` | Admin | 导出配置 JSON/Base64 |
 | GET | `/admin/dev/captures` | Admin | 查看本地抓包记录 |
 | DELETE | `/admin/dev/captures` | Admin | 清空本地抓包记录 |
@@ -648,9 +641,7 @@ data: {"type":"message_stop"}
 }
 ```
 
-### `GET /admin/vercel/config`
 
-返回 Vercel 预配置状态。
 
 ```json
 {
@@ -728,7 +719,6 @@ data: {"type":"message_stop"}
 - `auto_delete`（`mode`：默认 `retention`，请求前清空旧 DS 官方 Web 会话、仅保留本次新会话并在 10 分钟后删除；也支持 `none` / `single` / `all`；旧配置 `sessions=true` 仍按 `all` 处理）
 - `current_input_file`（`enabled` 默认返回 `true`、`min_chars`）
 - `model_aliases`
-- `env_backed`、`needs_vercel_sync`
 - `toolcall` 策略已固定为 `feature_match + high`，不再通过 settings 返回或修改
 
 ### `PUT /admin/settings`
@@ -767,7 +757,6 @@ data: {"type":"message_stop"}
 
 请求可直接传配置对象，或使用 `{"config": {...}, "mode":"merge"}` 包裹格式。
 也支持在查询参数里传 `?mode=merge` / `?mode=replace`。
-`replace` 模式会按完整配置结构替换（保留 Vercel 同步元信息）；`merge` 模式会合并 `keys`、`api_keys`、`accounts`、`model_aliases`，并覆盖 `admin`、`runtime`、`responses`、`embeddings` 中的非空字段。`compat`、`auto_delete`、`current_input_file` 建议通过 `/admin/settings` 或配置文件管理；`history_split` 仅保留为旧配置兼容字段；`toolcall` 相关字段会被忽略。
 
 > 注意：`merge` 模式不会更新 `compat`、`auto_delete`、`current_input_file`。
 
@@ -778,7 +767,6 @@ data: {"type":"message_stop"}
 响应示例：
 
 
-> 注：`_vercel_sync_hash` 和 `_vercel_sync_time` 为内部同步元数据字段，用于 Vercel 配置漂移检测。
 
 ### `POST /admin/keys`
 
@@ -1084,13 +1072,9 @@ data: {"type":"message_stop"}
 
 成功响应会返回 `sample_id`、`dir`、`meta_path`、`upstream_path`。
 
-### `POST /admin/vercel/sync`
 
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
-| `vercel_token` | ❌ | 空或 `__USE_PRECONFIG__` 则读环境变量 |
-| `project_id` | ❌ | 空则读 `VERCEL_PROJECT_ID` |
-| `team_id` | ❌ | 空则读 `VERCEL_TEAM_ID` |
 | `auto_validate` | ❌ | 默认 `true` |
 | `save_credentials` | ❌ | 默认 `true` |
 
@@ -1111,14 +1095,11 @@ data: {"type":"message_stop"}
 {
   "success": true,
   "validated_accounts": 3,
-  "message": "配置已同步到 Vercel，请手动触发重新部署",
   "manual_deploy_required": true
 }
 ```
 
-失败校验的账号会通过 `failed_accounts` 返回；成功保存到 Vercel 的凭据会通过 `saved_credentials` 返回。
 
-### `GET /admin/vercel/status`
 
 ```json
 {
@@ -1133,7 +1114,6 @@ data: {"type":"message_stop"}
 }
 ```
 
-`POST /admin/vercel/status` 还可以携带 `config_override`，用于对比“草稿配置”和当前已同步配置。
 
 ### `GET /admin/export`
 

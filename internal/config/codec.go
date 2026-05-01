@@ -54,12 +54,6 @@ func (c Config) MarshalJSON() ([]byte, error) {
 	if c.ThinkingInjection.Enabled != nil || strings.TrimSpace(c.ThinkingInjection.Prompt) != "" {
 		m["thinking_injection"] = c.ThinkingInjection
 	}
-	if c.VercelSyncHash != "" {
-		m["_vercel_sync_hash"] = c.VercelSyncHash
-	}
-	if c.VercelSyncTime != 0 {
-		m["_vercel_sync_time"] = c.VercelSyncTime
-	}
 	return json.Marshal(m)
 }
 
@@ -132,14 +126,6 @@ func (c *Config) UnmarshalJSON(b []byte) error {
 			if err := json.Unmarshal(v, &c.ThinkingInjection); err != nil {
 				return fmt.Errorf("invalid field %q: %w", k, err)
 			}
-		case "_vercel_sync_hash":
-			if err := json.Unmarshal(v, &c.VercelSyncHash); err != nil {
-				return fmt.Errorf("invalid field %q: %w", k, err)
-			}
-		case "_vercel_sync_time":
-			if err := json.Unmarshal(v, &c.VercelSyncTime); err != nil {
-				return fmt.Errorf("invalid field %q: %w", k, err)
-			}
 		default:
 			var anyVal any
 			if err := json.Unmarshal(v, &anyVal); err == nil {
@@ -180,8 +166,6 @@ func (c Config) Clone() Config {
 			Enabled: cloneBoolPtr(c.ThinkingInjection.Enabled),
 			Prompt:  c.ThinkingInjection.Prompt,
 		},
-		VercelSyncHash:   c.VercelSyncHash,
-		VercelSyncTime:   c.VercelSyncTime,
 		AdditionalFields: map[string]any{},
 	}
 	for k, v := range c.AdditionalFields {

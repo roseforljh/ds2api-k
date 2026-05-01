@@ -1,8 +1,11 @@
 package chat
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"ds2api/internal/httpapi/openai/shared"
 )
@@ -86,5 +89,47 @@ func TestAppendRetrySuffixIncludesOnlyLatestTwoRetryFailures(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected retry window text to contain %q, got %q", want, got)
 		}
+	}
+}
+
+func TestShouldRetryChatNonStreamMalformedToolCallDespiteContentFilter(t *testing.T) {
+	result := chatNonStreamResult{
+		contentFilter:         true,
+		detectedCalls:         0,
+		malformedToolFeedback: `<dsml-tool-calls><dsml-invoke name="Read"></dsml-invoke></dsml-tool-calls>`,
+	}
+	if !shouldRetryChatNonStream(result, 0, time.Now(), time.Now().Add(time.Second)) {
+		t.Fatal("expected malformed tool call to retry even when upstream marks content_filter")
+	}
+}
+
+func TestChatStreamFinalizeDefersMalformedToolCallDespiteContentFilter(t *testing.T) {
+	rec := httptest.NewRecorder()
+	runtime := newChatStreamRuntime(
+		rec,
+		http.NewResponseController(rec),
+		false,
+		"chatcmpl-test",
+		1,
+		"deepseek-chat",
+		"prompt",
+		false,
+		false,
+		false,
+		[]string{"Read"},
+		nil,
+		true,
+		false,
+	)
+	runtime.toolSieve.MalformedToolFeedback = `<dsml-tool-calls><dsml-invoke name="Read"></dsml-invoke></dsml-tool-calls>`
+
+	if runtime.finalize("content_filter", true) {
+		t.Fatal("expected malformed tool call to defer terminal write so retry can run")
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("expected no stream output before retry, got %q", rec.Body.String())
+	}
+	if runtime.malformedToolFeedback == "" {
+		t.Fatal("expected malformed feedback to be preserved for retry prompt")
 	}
 }

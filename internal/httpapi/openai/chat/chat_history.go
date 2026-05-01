@@ -138,13 +138,7 @@ func stripInlineToolInstructionsForHistory(text string) string {
 }
 
 func shouldCaptureChatHistory(r *http.Request) bool {
-	if r == nil {
-		return false
-	}
-	if isVercelStreamPrepareRequest(r) || isVercelStreamReleaseRequest(r) {
-		return false
-	}
-	return true
+	return r != nil
 }
 
 func extractSingleUserInput(messages []any) string {

@@ -8,6 +8,7 @@ import (
 
 	"ds2api/internal/auth"
 	"ds2api/internal/chathistory"
+	"ds2api/internal/config"
 	dsclient "ds2api/internal/deepseek/client"
 	"ds2api/internal/httpapi/openai/shared"
 )
@@ -66,10 +67,12 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	if contentType == "" && len(data) > 0 {
 		contentType = http.DetectContentType(data)
 	}
+	modelType := resolveUploadModelType(h.Store, r)
 	result, err := h.DS.UploadFile(r.Context(), a, dsclient.UploadFileRequest{
 		Filename:    header.Filename,
 		ContentType: contentType,
 		Purpose:     strings.TrimSpace(r.FormValue("purpose")),
+		ModelType:   modelType,
 		Data:        data,
 	}, 3)
 	if err != nil {
@@ -80,6 +83,32 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		result.AccountID = a.AccountID
 	}
 	shared.WriteJSON(w, http.StatusOK, buildOpenAIFileObject(result))
+}
+
+func resolveUploadModelType(store shared.ConfigReader, r *http.Request) string {
+	for _, candidate := range []string{r.FormValue("model_type"), r.Header.Get("X-Model-Type")} {
+		if modelType := normalizeUploadModelType(candidate); modelType != "" {
+			return modelType
+		}
+	}
+	requestedModel := strings.TrimSpace(r.FormValue("model"))
+	if requestedModel != "" {
+		if resolvedModel, ok := config.ResolveModel(store, requestedModel); ok {
+			if modelType, ok := config.GetModelType(resolvedModel); ok {
+				return modelType
+			}
+		}
+	}
+	return "default"
+}
+
+func normalizeUploadModelType(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "default", "expert", "vision":
+		return strings.ToLower(strings.TrimSpace(raw))
+	default:
+		return ""
+	}
 }
 
 func buildOpenAIFileObject(result *dsclient.UploadFileResult) map[string]any {

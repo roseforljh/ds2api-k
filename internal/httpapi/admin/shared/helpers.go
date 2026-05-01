@@ -78,8 +78,6 @@ func ComputeSyncHash(store ConfigStore) string {
 	}
 	snap := store.Snapshot().Clone()
 	snap.ClearAccountTokens()
-	snap.VercelSyncHash = ""
-	snap.VercelSyncTime = 0
 	b, _ := json.Marshal(snap)
 	sum := md5.Sum(b)
 	return fmt.Sprintf("%x", sum)
@@ -90,8 +88,6 @@ func SyncHashForJSON(s string) string {
 	if err := json.Unmarshal([]byte(s), &cfg); err != nil {
 		return ""
 	}
-	cfg.VercelSyncHash = ""
-	cfg.VercelSyncTime = 0
 	cfg.ClearAccountTokens()
 	b, err := json.Marshal(cfg)
 	if err != nil {

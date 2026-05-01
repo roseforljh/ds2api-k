@@ -82,6 +82,7 @@ func TestUploadFileUsesUploadTargetPowAndMultipartHeaders(t *testing.T) {
 	var seenTargetPath string
 	var seenContentType string
 	var seenFileSize string
+	var seenModelType string
 	var seenBody string
 	call := 0
 	client := &Client{
@@ -96,6 +97,7 @@ func TestUploadFileUsesUploadTargetPowAndMultipartHeaders(t *testing.T) {
 				seenPow = req.Header.Get("x-ds-pow-response")
 				seenContentType = req.Header.Get("Content-Type")
 				seenFileSize = req.Header.Get("x-file-size")
+				seenModelType = req.Header.Get("x-model-type")
 				seenBody = string(bodyBytes)
 				return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(uploadResponse)), Request: req}, nil
 			default:
@@ -112,6 +114,7 @@ func TestUploadFileUsesUploadTargetPowAndMultipartHeaders(t *testing.T) {
 		Filename:    "demo.txt",
 		ContentType: "text/plain",
 		Purpose:     "assistants",
+		ModelType:   "vision",
 		Data:        []byte("hello"),
 	}, 1)
 	if err != nil {
@@ -139,6 +142,9 @@ func TestUploadFileUsesUploadTargetPowAndMultipartHeaders(t *testing.T) {
 	}
 	if seenFileSize != "5" {
 		t.Fatalf("expected x-file-size=5, got %q", seenFileSize)
+	}
+	if seenModelType != "vision" {
+		t.Fatalf("expected x-model-type=vision, got %q", seenModelType)
 	}
 	if !strings.HasPrefix(seenContentType, "multipart/form-data; boundary=") {
 		t.Fatalf("expected multipart content type, got %q", seenContentType)

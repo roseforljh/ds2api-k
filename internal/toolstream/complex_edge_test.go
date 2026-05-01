@@ -596,23 +596,19 @@ func TestSieve_ToleratesDSMLSpaceSeparatorTypo(t *testing.T) {
 	}
 }
 
-func TestSieve_DSMLSpaceLookalikeTagNameStaysText(t *testing.T) {
+func TestSieve_DSMLSpaceLookalikeTagNameHiddenForRetry(t *testing.T) {
 	var state State
 	input := "<|DSML tool_calls_extra><|DSML invoke name=\"Read\"><|DSML parameter name=\"file_path\">/tmp/input.txt</|DSML parameter></|DSML invoke></|DSML tool_calls_extra>"
 	events := ProcessChunk(&state, input, []string{"Read"})
 	events = append(events, Flush(&state, []string{"Read"})...)
 
-	var text strings.Builder
-	callCount := 0
 	for _, e := range events {
-		text.WriteString(e.Content)
-		callCount += len(e.ToolCalls)
+		if e.Content != "" || len(e.ToolCalls) > 0 {
+			t.Fatalf("相似标签名应隐藏并触发重试, got %#v", events)
+		}
 	}
-	if callCount != 0 {
-		t.Fatalf("相似标签名不应触发工具调用，got %d", callCount)
-	}
-	if text.String() != input {
-		t.Fatalf("相似标签名应作为正文透传, got %q", text.String())
+	if !strings.Contains(state.MalformedToolFeedback, "tool_calls_extra") {
+		t.Fatalf("应保留畸形工具反馈, got %q", state.MalformedToolFeedback)
 	}
 }
 
@@ -661,22 +657,18 @@ func TestSieve_DSMLCollapsedTagNamesWithPrefixText(t *testing.T) {
 	}
 }
 
-func TestSieve_DSMLCollapsedLookalikeTagNameStaysText(t *testing.T) {
+func TestSieve_DSMLCollapsedLookalikeTagNameHiddenForRetry(t *testing.T) {
 	var state State
 	input := "<DSMLtool_calls_extra><DSMLinvoke name=\"update_todo_list\"><DSMLparameter name=\"todos\">x</DSMLparameter></DSMLinvoke></DSMLtool_calls_extra>"
 	events := ProcessChunk(&state, input, []string{"update_todo_list"})
 	events = append(events, Flush(&state, []string{"update_todo_list"})...)
 
-	var text strings.Builder
-	callCount := 0
 	for _, e := range events {
-		text.WriteString(e.Content)
-		callCount += len(e.ToolCalls)
+		if e.Content != "" || len(e.ToolCalls) > 0 {
+			t.Fatalf("相似 collapsed 标签名应隐藏并触发重试, got %#v", events)
+		}
 	}
-	if callCount != 0 {
-		t.Fatalf("相似 collapsed 标签名不应触发工具调用，got %d", callCount)
-	}
-	if text.String() != input {
-		t.Fatalf("相似 collapsed 标签名应作为正文透传, got %q", text.String())
+	if !strings.Contains(state.MalformedToolFeedback, "tool_calls_extra") {
+		t.Fatalf("应保留畸形工具反馈, got %q", state.MalformedToolFeedback)
 	}
 }

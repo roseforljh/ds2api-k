@@ -274,6 +274,24 @@ func TestParseToolCallsMarksDSMDLTypoForHiddenRetry(t *testing.T) {
 	}
 }
 
+func TestParseToolCallsMarksDSMLCallsAliasForHiddenRetry(t *testing.T) {
+	text := `<dsml_calls>
+<dsml_invoke name="Read">
+<dsml_parameter name="file_path"><![CDATA[C:\Users\me\repo\README.md]]></dsml_parameter>
+</dsml_invoke>
+</dsml_calls>`
+	res := ParseToolCallsDetailed(text, []string{"Read"})
+	if !res.SawToolCallSyntax {
+		t.Fatalf("expected dsml_calls alias to be recognized as tool-like syntax")
+	}
+	if !res.RejectedInvalid {
+		t.Fatalf("expected dsml_calls alias to be marked invalid for hidden retry, got %#v", res)
+	}
+	if len(res.Calls) != 0 {
+		t.Fatalf("expected dsml_calls alias not to be corrected/executed, got %#v", res.Calls)
+	}
+}
+
 func TestParseToolCallsSkipsProseMentionOfMixedFullwidthDSMLWrapper(t *testing.T) {
 	text := strings.Join([]string{
 		"Summary: support mixed <|DSML｜tool_calls> wrappers.",
@@ -673,8 +691,8 @@ func TestParseToolCallsRejectsBareInvokeWithoutToolCallsWrapper(t *testing.T) {
 	if len(res.Calls) != 0 {
 		t.Fatalf("expected bare invoke to be rejected, got %#v", res.Calls)
 	}
-	if res.SawToolCallSyntax {
-		t.Fatalf("expected bare invoke to no longer count as supported syntax, got %#v", res)
+	if !res.SawToolCallSyntax || !res.RejectedInvalid {
+		t.Fatalf("expected bare invoke to be treated as malformed tool syntax for retry, got %#v", res)
 	}
 }
 

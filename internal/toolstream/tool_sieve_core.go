@@ -52,7 +52,7 @@ func ProcessChunk(state *State, chunk string, toolNames []string) []Event {
 				break
 			}
 			captured := state.capture.String()
-			malformed := toolcall.LooksLikeMalformedRequiredToolCall(captured) && len(calls) == 0
+			malformed := (toolcall.LooksLikeMalformedRequiredToolCall(captured) || toolcall.LooksLikeUnsafeStructuredToolIntent(captured, toolNames)) && len(calls) == 0
 			if malformed {
 				state.MalformedToolFeedback = captured
 				prefix = ""
@@ -95,7 +95,7 @@ func ProcessChunk(state *State, chunk string, toolNames []string) []Event {
 		if pending == "" {
 			break
 		}
-		start := findToolSegmentStart(state, pending)
+		start := findToolSegmentStart(state, pending, toolNames)
 		if start >= 0 {
 			prefix := pending[:start]
 			if shouldAttachPrefixToLocalizedMalformedCapture(prefix, pending[start:]) {
@@ -143,7 +143,7 @@ func Flush(state *State, toolNames []string) []Event {
 		consumedPrefix, consumedCalls, consumedSuffix, ready := consumeToolCapture(state, toolNames)
 		if ready {
 			captured := state.capture.String()
-			if len(consumedCalls) == 0 && toolcall.LooksLikeMalformedRequiredToolCall(captured) {
+			if len(consumedCalls) == 0 && (toolcall.LooksLikeMalformedRequiredToolCall(captured) || toolcall.LooksLikeUnsafeStructuredToolIntent(captured, toolNames)) {
 				state.MalformedToolFeedback = captured
 				consumedPrefix = ""
 				consumedSuffix = ""
@@ -234,7 +234,7 @@ func Flush(state *State, toolNames []string) []Event {
 	}
 	if state.pending.Len() > 0 {
 		content := state.pending.String()
-		if toolcall.LooksLikeMalformedRequiredToolCall(content) {
+		if toolcall.LooksLikeMalformedRequiredToolCall(content) || toolcall.LooksLikeUnsafeStructuredToolIntent(content, toolNames) {
 			state.MalformedToolFeedback = content
 		} else {
 			// If pending never resolved into a real tool call, release it as text.
@@ -294,9 +294,49 @@ func shouldAttachPrefixToLocalizedMalformedCapture(prefix string, segment string
 		strings.Contains(lowerSegment, "skill_calls")
 }
 
-func findToolSegmentStart(state *State, s string) int {
+func findToolSegmentStart(state *State, s string, toolNames []string) int {
 	if s == "" {
 		return -1
+	}
+	for searchFrom := 0; searchFrom < len(s); {
+		idx := strings.Index(s[searchFrom:], "<")
+		if idx < 0 {
+			break
+		}
+		idx += searchFrom
+		tagEnd := strings.Index(s[idx:], ">")
+		if tagEnd >= 0 {
+			tagText := strings.ToLower(s[idx : idx+tagEnd+1])
+			recognized := false
+			if tag, ok := toolcall.FindToolMarkupTagOutsideIgnored(s, idx); ok && tag.Start == idx {
+				recognized = true
+			}
+			if !strings.HasPrefix(tagText, "</") && !recognized && strings.Contains(tagText, "dsml") && strings.Contains(tagText, "call") && !insideCodeFenceWithState(state, s[:idx]) && toolcall.LooksLikeUnsafeStructuredToolIntent(s[idx:], toolNames) {
+				return idx
+			}
+		}
+		searchFrom = idx + 1
+	}
+	for searchFrom := 0; searchFrom < len(s); {
+		tag, ok := toolcall.FindToolMarkupTagOutsideIgnored(s, searchFrom)
+		if !ok {
+			break
+		}
+		if !tag.Closing && !insideCodeFenceWithState(state, s[:tag.Start]) {
+			return tag.Start
+		}
+		searchFrom = tag.End + 1
+	}
+	for searchFrom := 0; searchFrom < len(s); {
+		idx := strings.Index(s[searchFrom:], "<")
+		if idx < 0 {
+			break
+		}
+		idx += searchFrom
+		if !insideCodeFenceWithState(state, s[:idx]) && toolcall.LooksLikeUnsafeStructuredToolIntent(s[idx:], toolNames) {
+			return idx
+		}
+		searchFrom = idx + 1
 	}
 	lower := strings.ToLower(s)
 	offset := 0

@@ -34,8 +34,9 @@ RULES:
 14) Never mix ASCII and fullwidth separators inside a single tool-call tag.
 15) Forbidden in tool-call tags: <|DSML|, <！DSML！, localized mismatches like <|DSML｜.
 16) Forbidden malformed tag variants: DSML double-underscore tags, duplicated leading angle brackets, DSMDL typo tags, ASCII-pipe DSML tags, and bare tool_calls tags.
-17) Never output markdown fences around tool calls.
-18) If you call a tool, output exactly one complete <｜DSML｜tool_calls> block and no explanation text before or after it.
+17) Do not translate, rename, simplify, snake_case, or invent tag names. Literal tag names are exactly <｜DSML｜tool_calls>, <｜DSML｜invoke>, and <｜DSML｜parameter>.
+18) Never output markdown fences around tool calls.
+19) If you call a tool, output exactly one complete <｜DSML｜tool_calls> block and no explanation text before or after it.
 
 PARAMETER SHAPES:
 - string => <｜DSML｜parameter name="x"><![CDATA[value]]></｜DSML｜parameter>

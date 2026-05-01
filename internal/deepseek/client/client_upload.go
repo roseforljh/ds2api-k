@@ -23,6 +23,7 @@ type UploadFileRequest struct {
 	Filename    string
 	ContentType string
 	Purpose     string
+	ModelType   string
 	Data        []byte
 }
 
@@ -54,6 +55,7 @@ func (c *Client) UploadFile(ctx context.Context, a *auth.RequestAuth, req Upload
 		contentType = "application/octet-stream"
 	}
 	purpose := strings.TrimSpace(req.Purpose)
+	modelType := strings.ToLower(strings.TrimSpace(req.ModelType))
 	body, contentTypeHeader, err := buildUploadMultipartBody(filename, contentType, req.Data)
 	if err != nil {
 		return nil, err
@@ -63,6 +65,9 @@ func (c *Client) UploadFile(ctx context.Context, a *auth.RequestAuth, req Upload
 		"content_type": contentType,
 		"purpose":      purpose,
 		"bytes":        len(req.Data),
+	}
+	if modelType != "" {
+		capturePayload["model_type"] = modelType
 	}
 	captureSession := c.capture.Start("deepseek_upload_file", dsprotocol.DeepSeekUploadFileURL, a.AccountID, capturePayload)
 	attempts := 0
@@ -81,6 +86,9 @@ func (c *Client) UploadFile(ctx context.Context, a *auth.RequestAuth, req Upload
 		}
 		headers := c.authHeaders(a.DeepSeekToken)
 		headers["Content-Type"] = contentTypeHeader
+		if modelType != "" {
+			headers["x-model-type"] = modelType
+		}
 		headers["x-ds-pow-response"] = powHeader
 		headers["x-file-size"] = strconv.Itoa(len(req.Data))
 		headers["x-thinking-enabled"] = "1"

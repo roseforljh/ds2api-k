@@ -3,7 +3,6 @@ package auth
 import (
 	"encoding/json"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -58,12 +57,4 @@ func (h *Handler) verify(w http.ResponseWriter, r *http.Request) {
 		remaining = 0
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"valid": true, "expires_at": int64(exp), "remaining_seconds": remaining})
-}
-
-func (h *Handler) getVercelConfig(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"has_token":  strings.TrimSpace(os.Getenv("VERCEL_TOKEN")) != "",
-		"project_id": strings.TrimSpace(os.Getenv("VERCEL_PROJECT_ID")),
-		"team_id":    nilIfEmpty(strings.TrimSpace(os.Getenv("VERCEL_TEAM_ID"))),
-	})
 }

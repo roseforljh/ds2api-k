@@ -8,8 +8,6 @@ import {
     putSettings,
 } from './settingsApi'
 
-const MAX_AUTO_FETCH_FAILURES = 3
-
 const DEFAULT_FORM = {
     admin: { jwt_expire_hours: 24 },
     runtime: { account_max_inflight: 2, account_max_queue: 10, global_max_inflight: 10, token_refresh_interval_hours: 6 },
@@ -97,7 +95,7 @@ function toServerPayload(form) {
     }
 }
 
-export function useSettingsForm({ apiFetch, t, onMessage, onRefresh, onForceLogout, isVercel = false }) {
+export function useSettingsForm({ apiFetch, t, onMessage, onRefresh, onForceLogout }) {
     const [loading, setLoading] = useState(false)
     const [saving, setSaving] = useState(false)
     const [changingPassword, setChangingPassword] = useState(false)
@@ -112,22 +110,18 @@ export function useSettingsForm({ apiFetch, t, onMessage, onRefresh, onForceLogo
     const [settingsMeta, setSettingsMeta] = useState({
         default_password_warning: false,
         env_backed: false,
-        needs_vercel_sync: false,
     })
     const [form, setForm] = useState(DEFAULT_FORM)
 
     const trackLoadFailure = useCallback(() => {
         setConsecutiveFailures((prev) => {
             const next = prev + 1
-            if (isVercel && next >= MAX_AUTO_FETCH_FAILURES) {
-                setAutoFetchPaused(true)
-            }
             return next
         })
-    }, [isVercel])
+    }, [])
 
     const loadSettings = useCallback(async ({ manual = false } = {}) => {
-        if (isVercel && autoFetchPaused && !manual) {
+        if (autoFetchPaused && !manual) {
             return
         }
         setLoading(true)
@@ -146,7 +140,6 @@ export function useSettingsForm({ apiFetch, t, onMessage, onRefresh, onForceLogo
             setSettingsMeta({
                 default_password_warning: Boolean(data.admin?.default_password_warning),
                 env_backed: Boolean(data.env_backed),
-                needs_vercel_sync: Boolean(data.needs_vercel_sync),
             })
             setForm(fromServerForm(data))
         } catch (e) {
@@ -159,7 +152,7 @@ export function useSettingsForm({ apiFetch, t, onMessage, onRefresh, onForceLogo
         } finally {
             setLoading(false)
         }
-    }, [apiFetch, autoFetchPaused, isVercel, onMessage, t, trackLoadFailure])
+    }, [apiFetch, autoFetchPaused, onMessage, t, trackLoadFailure])
 
     useEffect(() => {
         loadSettings()
@@ -320,8 +313,8 @@ export function useSettingsForm({ apiFetch, t, onMessage, onRefresh, onForceLogo
     }, [apiFetch, importMode, importText, loadSettings, onMessage, onRefresh, t])
 
     const syncHintVisible = useMemo(
-        () => settingsMeta.env_backed || settingsMeta.needs_vercel_sync,
-        [settingsMeta.env_backed, settingsMeta.needs_vercel_sync],
+        () => settingsMeta.env_backed,
+        [settingsMeta.env_backed],
     )
 
     return {

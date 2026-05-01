@@ -22,8 +22,6 @@ type Config struct {
 	HistorySplit      HistorySplitConfig      `json:"history_split"`
 	CurrentInputFile  CurrentInputFileConfig  `json:"current_input_file,omitempty"`
 	ThinkingInjection ThinkingInjectionConfig `json:"thinking_injection,omitempty"`
-	VercelSyncHash    string                  `json:"_vercel_sync_hash,omitempty"`
-	VercelSyncTime    int64                   `json:"_vercel_sync_time,omitempty"`
 	AdditionalFields  map[string]any          `json:"-"`
 }
 

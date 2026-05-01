@@ -53,35 +53,12 @@ func (h *Handler) proxyViaOpenAI(w http.ResponseWriter, r *http.Request, stream 
 	}
 	translatedReq = applyGeminiThinkingPolicyToOpenAIRequest(translatedReq, req)
 
-	isVercelPrepare := strings.TrimSpace(r.URL.Query().Get("__stream_prepare")) == "1"
-	isVercelRelease := strings.TrimSpace(r.URL.Query().Get("__stream_release")) == "1"
-
-	if isVercelRelease {
-		proxyReq := r.Clone(r.Context())
-		proxyReq.URL.Path = "/v1/chat/completions"
-		proxyReq.Body = io.NopCloser(bytes.NewReader(raw))
-		proxyReq.ContentLength = int64(len(raw))
-		rec := httptest.NewRecorder()
-		h.OpenAI.ChatCompletions(rec, proxyReq)
-		res := rec.Result()
-		defer func() { _ = res.Body.Close() }()
-		body, _ := io.ReadAll(res.Body)
-		for k, vv := range res.Header {
-			for _, v := range vv {
-				w.Header().Add(k, v)
-			}
-		}
-		w.WriteHeader(res.StatusCode)
-		_, _ = w.Write(body)
-		return true
-	}
-
 	proxyReq := r.Clone(r.Context())
 	proxyReq.URL.Path = "/v1/chat/completions"
 	proxyReq.Body = io.NopCloser(bytes.NewReader(translatedReq))
 	proxyReq.ContentLength = int64(len(translatedReq))
 
-	if stream && !isVercelPrepare {
+	if stream {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache, no-transform")
 		w.Header().Set("Connection", "keep-alive")
@@ -103,16 +80,6 @@ func (h *Handler) proxyViaOpenAI(w http.ResponseWriter, r *http.Request, stream 
 			}
 		}
 		writeGeminiErrorFromOpenAI(w, res.StatusCode, body)
-		return true
-	}
-	if isVercelPrepare {
-		for k, vv := range res.Header {
-			for _, v := range vv {
-				w.Header().Add(k, v)
-			}
-		}
-		w.WriteHeader(res.StatusCode)
-		_, _ = w.Write(body)
 		return true
 	}
 	converted := translatorcliproxy.FromOpenAINonStream(sdktranslator.FormatGemini, routeModel, raw, translatedReq, body)

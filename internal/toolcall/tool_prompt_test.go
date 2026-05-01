@@ -139,6 +139,7 @@ func TestBuildToolCallInstructions_ForbidsFullwidthDSMLPunctuation(t *testing.T)
 		"Never mix ASCII and fullwidth separators inside a single tool-call tag",
 		"Forbidden in tool-call tags: <|DSML|, <！DSML！, localized mismatches like <|DSML｜",
 		"Forbidden malformed tag variants: DSML double-underscore tags, duplicated leading angle brackets, DSMDL typo tags, ASCII-pipe DSML tags, and bare tool_calls tags.",
+		"Do not translate, rename, simplify, snake_case, or invent tag names.",
 		"Never output markdown fences around tool calls.",
 		"If you call a tool, output exactly one complete <｜DSML｜tool_calls> block and no explanation text before or after it.",
 		"Wrong 4 — mixed/invalid DSML punctuation",

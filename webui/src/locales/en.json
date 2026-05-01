@@ -25,10 +25,6 @@
             "label": "Batch Import",
             "desc": "Bulk import account configuration"
         },
-        "vercel": {
-            "label": "Vercel Sync",
-            "desc": "Sync configuration to Vercel"
-        },
         "settings": {
             "label": "Settings",
             "desc": "Edit runtime and security settings online"
@@ -352,7 +348,7 @@
         "copySuccess": "Base64 configuration copied to clipboard.",
         "quickTemplates": "Quick Templates",
         "dataExport": "Data Export",
-        "dataExportDesc": "Copy the Base64-encoded configuration for Vercel environment variables.",
+        "dataExportDesc": "Copy the Base64-encoded configuration for backup or environment variables.",
         "copyBase64": "Copy Base64 config",
         "copied": "Copied",
         "variableName": "Variable name",
@@ -422,9 +418,9 @@
         "exportJson": "Export JSON",
         "invalidJsonField": "{field} is not a valid JSON object.",
         "defaultPasswordWarning": "You are using the default admin password \"admin\". Please change it.",
-        "vercelSyncHint": "Configuration changed. For Vercel deployments, sync manually in Vercel Sync and redeploy.",
         "autoFetchPaused": "Auto loading paused after {count} failures: {error}",
-        "retryLoad": "Retry now"
+        "retryLoad": "Retry now",
+        "envBackedHint": "Current config is environment-backed; saving will not write back to environment variables."
     },
     "login": {
         "welcome": "Welcome back",
@@ -437,41 +433,5 @@
         "adminPortal": "DS2API admin portal",
         "signInFailed": "Sign-in failed.",
         "networkError": "Network error: {error}"
-    },
-    "vercel": {
-        "tokenRequired": "Vercel access token is required.",
-        "projectRequired": "Project ID is required.",
-        "syncFailed": "Sync failed.",
-        "networkError": "Network error.",
-        "title": "Vercel Deployment",
-        "description": "Sync the current keys and accounts directly to Vercel environment variables.",
-        "tokenLabel": "Vercel Access Token",
-        "getToken": "Get token",
-        "tokenPlaceholderPreconfig": "Using preconfigured token",
-        "tokenPlaceholder": "Enter Vercel access token",
-        "projectIdLabel": "Project ID",
-        "projectIdHint": "Find it in Project Settings → General.",
-        "teamIdLabel": "Team ID",
-        "optional": "optional",
-        "syncing": "Syncing...",
-        "syncRedeploy": "Sync & redeploy",
-        "redeployHint": "This triggers a Vercel redeploy and usually takes 30–60 seconds.",
-        "syncSucceeded": "Sync succeeded",
-        "syncFailedLabel": "Sync failed",
-        "openDeployment": "Open deployment",
-        "statusSynced": "Synced",
-        "statusNotSynced": "Not synced",
-        "statusNeverSynced": "Never synced",
-        "lastSyncTime": "Last sync: {time}",
-        "draftDiffers": "Frontend draft differs from env config. Click Sync & redeploy.",
-        "pollPaused": "Status polling paused after {count} failures.",
-        "manualRefresh": "Refresh manually",
-        "howItWorks": "How it works",
-        "steps": {
-            "one": "The current configuration (keys and accounts) is exported as JSON.",
-            "two": "The JSON is Base64-encoded for safe formatting.",
-            "three": "Update the env var in Vercel:",
-            "four": "Trigger a redeploy to apply the updated environment variables."
-        }
     }
 }

@@ -160,12 +160,13 @@ func chatFinishReason(respBody map[string]any) string {
 }
 
 func shouldRetryChatNonStream(result chatNonStreamResult, attempts int, startedAt, now time.Time) bool {
+	hasMalformedToolFeedback := strings.TrimSpace(result.malformedToolFeedback) != ""
 	return emptyOutputRetryEnabled() &&
 		emptyOutputRetryWithinWindow(startedAt, now) &&
 		attempts < emptyOutputRetryMaxAttempts() &&
-		!result.contentFilter &&
+		(!result.contentFilter || hasMalformedToolFeedback) &&
 		result.detectedCalls == 0 &&
-		(strings.TrimSpace(result.text) == "" || strings.TrimSpace(result.malformedToolFeedback) != "")
+		(strings.TrimSpace(result.text) == "" || hasMalformedToolFeedback)
 }
 
 func shouldRetryMalformedToolCall(parsed toolcall.ToolCallParseResult, text string) bool {
@@ -396,7 +397,7 @@ func (h *Handler) consumeChatStreamAttempt(r *http.Request, resp *http.Response,
 	if contextCancelled {
 		return remoteTerminalStopped, true, false
 	}
-	terminalWritten := streamRuntime.finalize(finalReason, allowDeferEmpty && finalReason != "content_filter")
+	terminalWritten := streamRuntime.finalize(finalReason, allowDeferEmpty)
 	if terminalWritten {
 		recordChatStreamHistory(streamRuntime, historySession)
 		if streamRuntime.finalErrorMessage != "" {

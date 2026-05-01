@@ -221,7 +221,8 @@ func (s *chatStreamRuntime) finalize(finishReason string, deferEmptyOutput bool)
 	}
 	if len(detected.Calls) == 0 && !s.toolCallsEmitted && strings.TrimSpace(finalText) == "" {
 		status, message, code := upstreamEmptyOutputDetail(finishReason == "content_filter", finalText, finalThinking)
-		if deferEmptyOutput {
+		canDefer := deferEmptyOutput && (finishReason != "content_filter" || strings.TrimSpace(s.malformedToolFeedback) != "")
+		if canDefer {
 			s.finalErrorStatus = status
 			s.finalErrorMessage = message
 			s.finalErrorCode = code

@@ -28,7 +28,6 @@
 5. 监听 `0.0.0.0:${PORT}`，默认端口是 `5001`。
 6. 收到中断信号后最多等待 10 秒优雅退出。
 
-Vercel 入口是 `api/index.go`，它最终也会进入 `app.NewHandler()` 和 `server.NewApp()` 这套 Go 路由。
 
 ## 3. 服务装配链路
 
@@ -65,7 +64,6 @@ Vercel 入口是 `api/index.go`，它最终也会进入 `app.NewHandler()` 和 `
 
 1. 先看 `DS2API_CONFIG_JSON`。
 2. 再看配置文件路径，默认是 `config.json`。
-3. Vercel 场景允许没有可写配置文件，使用内存配置。
 
 `Store` 不是单纯保存配置，它还维护了索引：
 

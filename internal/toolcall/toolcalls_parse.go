@@ -60,10 +60,15 @@ func parseToolCallsDetailedXMLOnly(text string, availableToolNames []string) Too
 	if trimmed == "" {
 		return result
 	}
+	if ContainsDSMLCallsAliasOutsideIgnored(trimmed) {
+		result.SawToolCallSyntax = true
+		result.RejectedInvalid = true
+		return result
+	}
 
 	normalized, ok := normalizeDSMLToolCallMarkup(trimmed)
 	if !ok {
-		if LooksLikeMalformedRequiredToolCall(trimmed) {
+		if LooksLikeMalformedRequiredToolCall(trimmed) || LooksLikeUnsafeStructuredToolIntent(trimmed, availableToolNames) {
 			result.SawToolCallSyntax = true
 			result.RejectedInvalid = true
 		}
@@ -81,7 +86,7 @@ func parseToolCallsDetailedXMLOnly(text string, availableToolNames []string) Too
 		}
 	}
 	if len(parsed) == 0 {
-		if LooksLikeMalformedRequiredToolCall(trimmed) {
+		if LooksLikeMalformedRequiredToolCall(trimmed) || LooksLikeUnsafeStructuredToolIntent(trimmed, availableToolNames) {
 			result.SawToolCallSyntax = true
 			result.RejectedInvalid = true
 		}
@@ -265,6 +270,77 @@ func LooksLikeMalformedRequiredToolCall(text string) bool {
 		}
 	}
 	return false
+}
+
+func LooksLikeUnsafeStructuredToolIntent(text string, availableToolNames []string) bool {
+	trimmed := strings.TrimSpace(stripFencedCodeBlocks(text))
+	if trimmed == "" {
+		return false
+	}
+	lower := strings.ToLower(trimmed)
+	if !strings.Contains(lower, "<") || !strings.Contains(lower, ">") {
+		return false
+	}
+	hasStructuredShape := strings.Contains(lower, "</") ||
+		strings.Contains(lower, "name=") ||
+		strings.Contains(lower, "<![cdata[") ||
+		strings.Contains(lower, "=")
+	if !hasStructuredShape {
+		return false
+	}
+	if strings.Contains(lower, "dsml") {
+		if strings.Contains(lower, "invoke") || strings.Contains(lower, "parameter") {
+			return true
+		}
+		if strings.Contains(lower, "call") && containsAvailableToolName(lower, availableToolNames) {
+			return true
+		}
+	}
+	for _, toolName := range availableToolNames {
+		toolName = strings.ToLower(strings.TrimSpace(toolName))
+		if toolName == "" {
+			continue
+		}
+		if strings.Contains(lower, toolName) && looksLikeStructuredParameterPayload(lower) {
+			return true
+		}
+	}
+	for toolName, params := range map[string][]string{
+		"read":            {"file_path"},
+		"bash":            {"command"},
+		"execute":         {"command"},
+		"execute_command": {"command"},
+		"exec_command":    {"cmd"},
+	} {
+		if !strings.Contains(lower, toolName) {
+			continue
+		}
+		for _, param := range params {
+			if strings.Contains(lower, param) && looksLikeStructuredParameterPayload(lower) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func containsAvailableToolName(lower string, availableToolNames []string) bool {
+	for _, toolName := range availableToolNames {
+		toolName = strings.ToLower(strings.TrimSpace(toolName))
+		if toolName != "" && strings.Contains(lower, toolName) {
+			return true
+		}
+	}
+	return false
+}
+
+func looksLikeStructuredParameterPayload(lower string) bool {
+	return strings.Contains(lower, "parameter") ||
+		strings.Contains(lower, "param") ||
+		strings.Contains(lower, "arg") ||
+		strings.Contains(lower, "args") ||
+		strings.Contains(lower, "arguments") ||
+		strings.Contains(lower, "cdata")
 }
 
 func looksLikeMalformedSkillCallProtocol(text string) bool {

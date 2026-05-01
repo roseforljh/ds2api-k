@@ -176,8 +176,6 @@ func TestConfigJSONRoundtrip(t *testing.T) {
 			WideInputStrictOutput: &trueVal,
 			StripReferenceMarkers: &falseVal,
 		},
-		VercelSyncHash: "hash123",
-		VercelSyncTime: 1234567890,
 		AdditionalFields: map[string]any{
 			"custom_field": "custom_value",
 		},
@@ -219,9 +217,6 @@ func TestConfigJSONRoundtrip(t *testing.T) {
 	}
 	if decoded.Compat.StripReferenceMarkers == nil || *decoded.Compat.StripReferenceMarkers {
 		t.Fatalf("unexpected compat strip_reference_markers: %#v", decoded.Compat.StripReferenceMarkers)
-	}
-	if decoded.VercelSyncHash != "hash123" {
-		t.Fatalf("unexpected vercel sync hash: %q", decoded.VercelSyncHash)
 	}
 	if decoded.AdditionalFields["custom_field"] != "custom_value" {
 		t.Fatalf("unexpected additional fields: %#v", decoded.AdditionalFields)
@@ -700,18 +695,6 @@ func TestStoreModelAliasesDefault(t *testing.T) {
 	}
 	if aliases["claude-sonnet-4-6"] != "deepseek-v4-flash" {
 		t.Fatalf("expected built-in alias, got %q", aliases["claude-sonnet-4-6"])
-	}
-}
-
-func TestStoreSetVercelSync(t *testing.T) {
-	t.Setenv("DS2API_CONFIG_JSON", `{"keys":[],"accounts":[]}`)
-	store := LoadStore()
-	if err := store.SetVercelSync("hash123", 1234567890); err != nil {
-		t.Fatalf("setVercelSync error: %v", err)
-	}
-	snap := store.Snapshot()
-	if snap.VercelSyncHash != "hash123" || snap.VercelSyncTime != 1234567890 {
-		t.Fatalf("unexpected vercel sync: hash=%q time=%d", snap.VercelSyncHash, snap.VercelSyncTime)
 	}
 }
 

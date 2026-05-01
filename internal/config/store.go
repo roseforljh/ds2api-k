@@ -55,7 +55,7 @@ func loadConfig() (Config, bool, error) {
 	if rawCfg != "" {
 		cfg, err := parseConfigString(rawCfg)
 		if err != nil {
-			if !IsVercel() && envWritebackEnabled() {
+			if envWritebackEnabled() {
 				if fileCfg, fileErr := loadConfigFromFile(ConfigPath()); fileErr == nil {
 					return fileCfg, false, nil
 				}
@@ -64,7 +64,7 @@ func loadConfig() (Config, bool, error) {
 		}
 		cfg.ClearAccountTokens()
 		cfg.DropInvalidAccounts()
-		if IsVercel() || !envWritebackEnabled() {
+		if !envWritebackEnabled() {
 			return cfg, true, err
 		}
 		content, fileErr := os.ReadFile(ConfigPath())
@@ -97,14 +97,7 @@ func loadConfig() (Config, bool, error) {
 				return legacyCfg, false, nil
 			}
 		}
-		if IsVercel() {
-			return Config{}, true, nil
-		}
 		return Config{}, false, err
-	}
-	if IsVercel() {
-		// Vercel filesystem is ephemeral/read-only for runtime writes; avoid save errors.
-		return cfg, true, nil
 	}
 	return cfg, false, nil
 }
@@ -120,7 +113,7 @@ func loadConfigFromFile(path string) (Config, error) {
 	}
 	cfg.NormalizeCredentials()
 	cfg.DropInvalidAccounts()
-	if strings.Contains(string(content), `"test_status"`) && !IsVercel() {
+	if strings.Contains(string(content), `"test_status"`) {
 		if b, err := json.MarshalIndent(cfg, "", "  "); err == nil {
 			_ = os.WriteFile(path, b, 0o644)
 		}
@@ -188,103 +181,109 @@ func (s *Store) AccountTestStatus(identifier string) (string, bool) {
 
 func (s *Store) UpdateAccountToken(identifier, token string) error {
 	identifier = strings.TrimSpace(identifier)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	idx, ok := s.findAccountIndexLocked(identifier)
-	if !ok {
-		return errors.New("account not found")
+	data, err := func() ([]byte, error) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		idx, ok := s.findAccountIndexLocked(identifier)
+		if !ok {
+			return nil, errors.New("account not found")
+		}
+		oldID := s.cfg.Accounts[idx].Identifier()
+		s.cfg.Accounts[idx].Token = token
+		newID := s.cfg.Accounts[idx].Identifier()
+		// Keep historical aliases usable for long-lived queues while also adding
+		// the latest identifier after token refresh.
+		if identifier != "" {
+			s.accMap[identifier] = idx
+		}
+		if oldID != "" {
+			s.accMap[oldID] = idx
+		}
+		if newID != "" {
+			s.accMap[newID] = idx
+		}
+		return s.saveLocked()
+	}()
+	if err != nil {
+		return err
 	}
-	oldID := s.cfg.Accounts[idx].Identifier()
-	s.cfg.Accounts[idx].Token = token
-	newID := s.cfg.Accounts[idx].Identifier()
-	// Keep historical aliases usable for long-lived queues while also adding
-	// the latest identifier after token refresh.
-	if identifier != "" {
-		s.accMap[identifier] = idx
-	}
-	if oldID != "" {
-		s.accMap[oldID] = idx
-	}
-	if newID != "" {
-		s.accMap[newID] = idx
-	}
-	return s.saveLocked()
+	return s.commitSave(data)
 }
 
 func (s *Store) Replace(cfg Config) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	cfg.NormalizeCredentials()
-	s.cfg = cfg.Clone()
-	s.rebuildIndexes()
-	return s.saveLocked()
+	data, err := func() ([]byte, error) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		cfg.NormalizeCredentials()
+		s.cfg = cfg.Clone()
+		s.rebuildIndexes()
+		return s.saveLocked()
+	}()
+	if err != nil {
+		return err
+	}
+	return s.commitSave(data)
 }
 
 func (s *Store) Update(mutator func(*Config) error) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	base := s.cfg.Clone()
-	cfg := base.Clone()
-	if err := mutator(&cfg); err != nil {
+	data, err := func() ([]byte, error) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		base := s.cfg.Clone()
+		cfg := base.Clone()
+		if err := mutator(&cfg); err != nil {
+			return nil, err
+		}
+		cfg.ReconcileCredentials(base)
+		cfg.NormalizeCredentials()
+		s.cfg = cfg
+		s.rebuildIndexes()
+		return s.saveLocked()
+	}()
+	if err != nil {
 		return err
 	}
-	cfg.ReconcileCredentials(base)
-	cfg.NormalizeCredentials()
-	s.cfg = cfg
-	s.rebuildIndexes()
-	return s.saveLocked()
+	return s.commitSave(data)
 }
 
 func (s *Store) Save() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.fromEnv && (IsVercel() || !envWritebackEnabled()) {
-		Logger.Info("[save_config] source from env, skip write")
-		return nil
-	}
-	persistCfg := s.cfg.Clone()
-	persistCfg.ClearAccountTokens()
-	b, err := json.MarshalIndent(persistCfg, "", "  ")
+	data, err := func() ([]byte, error) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.saveLocked()
+	}()
 	if err != nil {
 		return err
 	}
-	if err := writeConfigBytes(s.path, b); err != nil {
-		return err
-	}
-	s.fromEnv = false
-	return nil
+	return s.commitSave(data)
 }
 
-func (s *Store) saveLocked() error {
-	if s.fromEnv && (IsVercel() || !envWritebackEnabled()) {
+func (s *Store) saveLocked() ([]byte, error) {
+	if s.fromEnv && !envWritebackEnabled() {
 		Logger.Info("[save_config] source from env, skip write")
-		return nil
+		return nil, nil
 	}
 	persistCfg := s.cfg.Clone()
 	persistCfg.ClearAccountTokens()
 	b, err := json.MarshalIndent(persistCfg, "", "  ")
 	if err != nil {
-		return err
-	}
-	if err := writeConfigBytes(s.path, b); err != nil {
-		return err
+		return nil, err
 	}
 	s.fromEnv = false
-	return nil
+	return b, nil
+}
+
+func (s *Store) commitSave(data []byte) error {
+	if data == nil {
+		return nil
+	}
+	return writeConfigBytes(s.path, data)
 }
 
 func (s *Store) IsEnvBacked() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.fromEnv
-}
-
-func (s *Store) SetVercelSync(hash string, ts int64) error {
-	return s.Update(func(c *Config) error {
-		c.VercelSyncHash = hash
-		c.VercelSyncTime = ts
-		return nil
-	})
 }
 
 func (s *Store) ExportJSONAndBase64() (string, string, error) {

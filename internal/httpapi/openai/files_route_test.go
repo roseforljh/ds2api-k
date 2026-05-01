@@ -77,13 +77,20 @@ func (m *filesRouteDSStub) DeleteAllSessionsForToken(_ context.Context, _ string
 	return nil
 }
 
-func newMultipartUploadRequest(t *testing.T, purpose string, filename string, data []byte) *http.Request {
+func newMultipartUploadRequest(t *testing.T, purpose string, filename string, data []byte, fields ...map[string]string) *http.Request {
 	t.Helper()
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	if purpose != "" {
 		if err := writer.WriteField("purpose", purpose); err != nil {
 			t.Fatalf("write purpose failed: %v", err)
+		}
+	}
+	for _, group := range fields {
+		for k, v := range group {
+			if err := writer.WriteField(k, v); err != nil {
+				t.Fatalf("write field %s failed: %v", k, err)
+			}
 		}
 	}
 	part, err := writer.CreateFormFile("file", filename)
@@ -124,6 +131,9 @@ func TestFilesRouteUploadSuccess(t *testing.T) {
 	if string(ds.lastReq.Data) != "hello world" {
 		t.Fatalf("unexpected uploaded data: %q", string(ds.lastReq.Data))
 	}
+	if ds.lastReq.ModelType != "default" {
+		t.Fatalf("expected default model type, got %q", ds.lastReq.ModelType)
+	}
 	var out map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
 		t.Fatalf("decode response failed: %v body=%s", err, rec.Body.String())
@@ -136,6 +146,24 @@ func TestFilesRouteUploadSuccess(t *testing.T) {
 	}
 	if out["filename"] != "notes.txt" {
 		t.Fatalf("expected filename notes.txt, got %#v", out["filename"])
+	}
+}
+
+func TestFilesRouteUploadResolvesModelType(t *testing.T) {
+	ds := &filesRouteDSStub{}
+	h := &openAITestSurface{Store: mockOpenAIConfig{wideInput: true}, Auth: streamStatusAuthStub{}, DS: ds}
+	r := chi.NewRouter()
+	registerOpenAITestRoutes(r, h)
+
+	req := newMultipartUploadRequest(t, "assistants", "image.png", []byte("img"), map[string]string{"model": "deepseek-v4-vision"})
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if ds.lastReq.ModelType != "vision" {
+		t.Fatalf("expected vision model type, got %q", ds.lastReq.ModelType)
 	}
 }
 

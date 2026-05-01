@@ -20,19 +20,6 @@ import (
 var remoteSessionRetentionDelay = 10 * time.Minute
 
 func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
-	if isVercelStreamReleaseRequest(r) {
-		h.handleVercelStreamRelease(w, r)
-		return
-	}
-	if isVercelStreamPowRequest(r) {
-		h.handleVercelStreamPow(w, r)
-		return
-	}
-	if isVercelStreamPrepareRequest(r) {
-		h.handleVercelStreamPrepare(w, r)
-		return
-	}
-
 	a, err := h.Auth.Determine(r)
 	if err != nil {
 		status := http.StatusUnauthorized

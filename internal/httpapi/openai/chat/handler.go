@@ -26,16 +26,8 @@ type Handler struct {
 	DS          shared.DeepSeekCaller
 	ChatHistory *chathistory.Store
 
-	leaseMu      sync.Mutex
-	streamLeases map[string]streamLease
-
 	remoteSessionsOnce sync.Once
 	remoteSessions     *remoteSessionRegistry
-}
-
-type streamLease struct {
-	Auth      *auth.RequestAuth
-	ExpiresAt time.Time
 }
 
 func (h *Handler) compatStripReferenceMarkers() bool {

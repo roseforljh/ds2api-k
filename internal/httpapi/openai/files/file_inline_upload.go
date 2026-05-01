@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"ds2api/internal/auth"
+	"ds2api/internal/config"
 	dsclient "ds2api/internal/deepseek/client"
 	"ds2api/internal/httpapi/openai/shared"
 	"ds2api/internal/promptcompat"
@@ -39,11 +40,13 @@ func (e *inlineFileUploadError) Error() string {
 }
 
 type inlineUploadState struct {
-	ctx          context.Context
-	handler      *Handler
-	auth         *auth.RequestAuth
-	uploadedByID map[string]string
-	uploadCount  int
+	ctx             context.Context
+	handler         *Handler
+	auth            *auth.RequestAuth
+	modelType       string
+	uploadedByID    map[string]string
+	uploadCount     int
+	inlineFileBytes int
 }
 
 type inlineDecodedFile struct {
@@ -57,10 +60,19 @@ func (h *Handler) PreprocessInlineFileInputs(ctx context.Context, a *auth.Reques
 	if h == nil || h.DS == nil || len(req) == 0 {
 		return nil
 	}
+	modelType := "default"
+	if requestedModel, ok := req["model"].(string); ok {
+		if resolvedModel, ok := config.ResolveModel(h.Store, requestedModel); ok {
+			if resolvedType, ok := config.GetModelType(resolvedModel); ok {
+				modelType = resolvedType
+			}
+		}
+	}
 	state := &inlineUploadState{
 		ctx:          ctx,
 		handler:      h,
 		auth:         a,
+		modelType:    modelType,
 		uploadedByID: map[string]string{},
 	}
 	for _, key := range []string{"messages", "input", "attachments"} {
@@ -74,6 +86,9 @@ func (h *Handler) PreprocessInlineFileInputs(ctx context.Context, a *auth.Reques
 	}
 	if refIDs := promptcompat.CollectOpenAIRefFileIDs(req); len(refIDs) > 0 {
 		req["ref_file_ids"] = stringsToAnySlice(refIDs)
+	}
+	if state.inlineFileBytes > 0 {
+		req["_inline_file_bytes"] = state.inlineFileBytes
 	}
 	return nil
 }
@@ -143,6 +158,7 @@ func (s *inlineUploadState) tryUploadBlock(block map[string]any) (map[string]any
 		return nil, true, &inlineFileUploadError{status: http.StatusInternalServerError, message: "Failed to upload inline file.", err: err}
 	}
 	s.uploadCount++
+	s.inlineFileBytes += len(decoded.Data)
 	replacement := map[string]any{
 		"type":    decoded.ReplacementType,
 		"file_id": fileID,
@@ -169,6 +185,7 @@ func (s *inlineUploadState) uploadInlineFile(file inlineDecodedFile) (string, er
 	result, err := s.handler.DS.UploadFile(s.ctx, s.auth, dsclient.UploadFileRequest{
 		Filename:    file.Filename,
 		ContentType: contentType,
+		ModelType:   s.modelType,
 		Data:        file.Data,
 	}, 3)
 	if err != nil {

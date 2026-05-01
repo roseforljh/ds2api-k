@@ -60,7 +60,7 @@ func parseToolCallsDetailedXMLOnly(text string, availableToolNames []string) Too
 	if trimmed == "" {
 		return result
 	}
-	if ContainsDSMLCallsAliasOutsideIgnored(trimmed) {
+	if ContainsDSMLCallsAliasOutsideIgnored(trimmed) || ContainsCJKDSMLAliasOutsideIgnored(trimmed) {
 		result.SawToolCallSyntax = true
 		result.RejectedInvalid = true
 		return result

@@ -16,6 +16,7 @@ type ToolMarkupTag struct {
 	Canonical   bool
 	Official    bool
 	CallsAlias  bool
+	CJKAlias    bool
 }
 
 func ContainsToolMarkupSyntaxOutsideIgnored(text string) (hasDSML, hasCanonical bool) {
@@ -147,8 +148,14 @@ func scanToolMarkupTagAt(text string, start int) (ToolMarkupTag, bool) {
 		dsmlLike = true
 		i = next
 	}
+	cjkAlias := false
 	if next, markerClosing, ok := consumeBracketToolMarkupAlias(text, i); ok {
 		dsmlLike = true
+		closing = closing || markerClosing
+		i = next
+	} else if next, markerClosing, ok := consumeChineseBracketToolMarkupAlias(text, i); ok {
+		dsmlLike = true
+		cjkAlias = true
 		closing = closing || markerClosing
 		i = next
 	} else if next, markerClosing, ok := consumeHashToolMarkupAlias(text, i); ok {
@@ -203,6 +210,7 @@ func scanToolMarkupTagAt(text string, start int) (ToolMarkupTag, bool) {
 		Canonical:   !dsmlLike,
 		Official:    isOfficialFullwidthDSMLToolTag(text, tagStart, closing),
 		CallsAlias:  callsAlias,
+		CJKAlias:    cjkAlias,
 	}, true
 }
 
@@ -260,6 +268,20 @@ func ContainsDSMLCallsAliasOutsideIgnored(text string) bool {
 	return false
 }
 
+func ContainsCJKDSMLAliasOutsideIgnored(text string) bool {
+	for searchFrom := 0; searchFrom < len(text); {
+		tag, ok := FindToolMarkupTagOutsideIgnored(text, searchFrom)
+		if !ok {
+			return false
+		}
+		if tag.CJKAlias {
+			return true
+		}
+		searchFrom = tag.End + 1
+	}
+	return false
+}
+
 func consumeToolMarkupPipe(text string, idx int) (int, bool) {
 	if idx >= len(text) {
 		return idx, false
@@ -298,6 +320,27 @@ func consumeBracketToolMarkupAlias(text string, idx int) (next int, closing bool
 		return idx, false, false
 	}
 	return bodyEnd + len("⌝"), closing, true
+}
+
+func consumeChineseBracketToolMarkupAlias(text string, idx int) (next int, closing bool, ok bool) {
+	if idx >= len(text) || !strings.HasPrefix(text[idx:], "【") {
+		return idx, false, false
+	}
+	endRel := strings.Index(text[idx+len("【"):], "】")
+	if endRel < 0 {
+		return idx, false, false
+	}
+	bodyStart := idx + len("【")
+	bodyEnd := bodyStart + endRel
+	marker := strings.TrimSpace(strings.ToLower(text[bodyStart:bodyEnd]))
+	if strings.HasPrefix(marker, "/") {
+		closing = true
+		marker = strings.TrimSpace(strings.TrimPrefix(marker, "/"))
+	}
+	if marker != "dsml" && marker != "dsm" {
+		return idx, false, false
+	}
+	return bodyEnd + len("】"), closing, true
 }
 
 func consumeHashToolMarkupAlias(text string, idx int) (next int, closing bool, ok bool) {
@@ -359,7 +402,7 @@ func IsPartialToolMarkupTagPrefix(text string) bool {
 		"｜begin▁of▁sentence", "｜begin▁of▁invoke", "｜begin▁of▁parameter",
 		"skill", "|dsml|skill_calls", "｜dsml｜skill_calls",
 		"tool_calls", "invoke", "parameter",
-		"#dsml#", "#dsm#", "⌜dsml⌝", "⌜dsm⌝",
+		"#dsml#", "#dsm#", "⌜dsml⌝", "⌜dsm⌝", "【dsml】", "【dsm】",
 	} {
 		if strings.HasPrefix(prefix, body) {
 			return true
@@ -387,6 +430,10 @@ func normalizePartialToolMarkupBody(body string) string {
 			i++
 		case strings.HasPrefix(body[i:], "｜"):
 			i += len("｜")
+		case strings.HasPrefix(body[i:], "【"):
+			i += len("【")
+		case strings.HasPrefix(body[i:], "】"):
+			i += len("】")
 		default:
 			b.WriteByte(body[i])
 			i++

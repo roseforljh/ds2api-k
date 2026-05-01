@@ -411,6 +411,33 @@ func TestProcessToolSieveDropsDSMLCallsAliasWithoutLeak(t *testing.T) {
 	}
 }
 
+func TestProcessToolSieveDropsChineseBracketDSMLWithoutLeak(t *testing.T) {
+	var state State
+	chunks := []string{
+		"● ",
+		"<【DS",
+		"ML】tool_calls>\n",
+		`<【DSML】invoke name="Agent">` + "\n",
+		`<【DSML】parameter name="description"></【DSML】parameter>` + "\n",
+		`<【DSML】parameter name="prompt"><![CDATA[Read files]]></【DSML】parameter>` + "\n",
+		"</【DSML】invoke>\n",
+		"</【DSML】tool_calls>",
+	}
+	var events []Event
+	for _, chunk := range chunks {
+		events = append(events, ProcessChunk(&state, chunk, []string{"Agent"})...)
+	}
+	events = append(events, Flush(&state, []string{"Agent"})...)
+	for _, evt := range events {
+		if evt.Content != "" || len(evt.ToolCalls) > 0 {
+			t.Fatalf("expected Chinese-bracket DSML to be hidden from client and not emitted, got %#v", events)
+		}
+	}
+	if !strings.Contains(state.MalformedToolFeedback, "<【DSML】tool_calls>") {
+		t.Fatalf("expected Chinese-bracket DSML malformed feedback to be retained, got %q", state.MalformedToolFeedback)
+	}
+}
+
 func TestProcessToolSieveDropsUnknownStructuredToolIntentWithoutLeak(t *testing.T) {
 	var state State
 	chunk := `<action name="Read"><arg name="file_path"><![CDATA[C:\Users\me\repo\README.md]]></arg></action>`

@@ -95,6 +95,9 @@ func ProcessChunk(state *State, chunk string, toolNames []string) []Event {
 		if pending == "" {
 			break
 		}
+		if len(toolNames) > 0 && shouldHoldPrefixForPartialToolDetection(pending) && chunk != "" {
+			break
+		}
 		start := findToolSegmentStart(state, pending, toolNames)
 		if start >= 0 {
 			prefix := pending[:start]
@@ -265,12 +268,20 @@ func splitSafeContentForToolDetection(state *State, s string) (safe, hold string
 		if insideCodeFenceWithState(state, s[:xmlIdx]) {
 			return s, ""
 		}
+		if shouldHoldPrefixForPartialToolDetection(s[:xmlIdx]) {
+			return "", s
+		}
 		if xmlIdx > 0 {
 			return s[:xmlIdx], s[xmlIdx:]
 		}
 		return "", s
 	}
 	return s, ""
+}
+
+func shouldHoldPrefixForPartialToolDetection(prefix string) bool {
+	trimmed := strings.TrimSpace(prefix)
+	return trimmed == "●" || trimmed == "•" || trimmed == "-" || strings.EqualFold(trimmed, "Skill")
 }
 
 func shouldAttachPrefixToLocalizedMalformedCapture(prefix string, segment string) bool {
@@ -286,6 +297,9 @@ func shouldAttachPrefixToLocalizedMalformedCapture(prefix string, segment string
 	}
 	lowerSegment := strings.ToLower(segment)
 	return strings.Contains(lowerSegment, "<｜tool_calls＞") ||
+		strings.Contains(lowerSegment, "<【dsml】tool_calls") ||
+		strings.Contains(lowerSegment, "<【dsml】invoke") ||
+		strings.Contains(lowerSegment, "<【dsml】parameter") ||
 		strings.Contains(lowerSegment, "<！invoke") ||
 		strings.Contains(lowerSegment, "<！parameter") ||
 		strings.Contains(lowerSegment, "begin▁of▁sentence") ||

@@ -250,6 +250,17 @@ func (s *chatStreamRuntime) onParsed(parsed sse.LineResult) streamengine.ParsedD
 	if parsed.ResponseMessageID > 0 {
 		s.responseMessageID = parsed.ResponseMessageID
 	}
+	if s.bufferToolContent {
+		for _, p := range parsed.Parts {
+			if p.Type != "thinking" && toolstream.LooksSuspiciousToolLikeText(p.Text) && !detectSuspiciousTextAlreadyStructuredAsToolCall(p.Text, s.toolNames) {
+				decision := streamengine.ParsedDecision{ContentSeen: true}
+				if trimmed := strings.TrimSpace(p.Text); trimmed != "" {
+					s.toolSieve.MalformedToolFeedback = trimmed
+				}
+				return decision
+			}
+		}
+	}
 	if parsed.ContentFilter {
 		if strings.TrimSpace(s.text.String()) == "" {
 			return streamengine.ParsedDecision{Stop: true, StopReason: streamengine.StopReason("content_filter")}
@@ -299,8 +310,8 @@ func (s *chatStreamRuntime) onParsed(parsed sse.LineResult) streamengine.ParsedD
 			if trimmed == "" {
 				continue
 			}
-			s.text.WriteString(trimmed)
 			if !s.bufferToolContent {
+				s.text.WriteString(trimmed)
 				if !s.firstChunkSent {
 					delta["role"] = "assistant"
 					s.firstChunkSent = true
@@ -354,6 +365,7 @@ func (s *chatStreamRuntime) onParsed(parsed sse.LineResult) streamengine.ParsedD
 						if cleaned == "" {
 							continue
 						}
+						s.text.WriteString(cleaned)
 						contentDelta := map[string]any{
 							"content": cleaned,
 						}
@@ -375,4 +387,13 @@ func (s *chatStreamRuntime) onParsed(parsed sse.LineResult) streamengine.ParsedD
 		s.sendChunk(openaifmt.BuildChatStreamChunk(s.completionID, s.created, s.model, newChoices, nil))
 	}
 	return streamengine.ParsedDecision{ContentSeen: contentSeen}
+}
+
+func detectSuspiciousTextAlreadyStructuredAsToolCall(text string, toolNames []string) bool {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return false
+	}
+	detected := detectAssistantToolCalls(trimmed, "", "", toolNames)
+	return len(detected.Calls) > 0
 }

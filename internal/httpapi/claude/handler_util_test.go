@@ -93,10 +93,10 @@ func TestNormalizeClaudeMessagesToolUseToAssistantToolCalls(t *testing.T) {
 		t.Fatalf("expected call id preserved, got %#v", call)
 	}
 	content, _ := m["content"].(string)
-	if !containsStr(content, "<|DSML|tool_calls>") || !containsStr(content, `<|DSML|invoke name="search_web">`) {
+	if !containsStr(content, "<｜DSML｜tool_calls>") || !containsStr(content, `<｜DSML｜invoke name="search_web">`) {
 		t.Fatalf("expected assistant content to include DSML tool call history, got %q", content)
 	}
-	if !containsStr(content, `<|DSML|parameter name="query"><![CDATA[latest]]></|DSML|parameter>`) {
+	if !containsStr(content, `<｜DSML｜parameter name="query"><![CDATA[latest]]></｜DSML｜parameter>`) {
 		t.Fatalf("expected assistant content to include serialized parameters, got %q", content)
 	}
 }

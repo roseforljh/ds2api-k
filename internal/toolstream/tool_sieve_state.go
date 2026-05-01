@@ -58,6 +58,26 @@ func hasMeaningfulText(text string) bool {
 	return strings.TrimSpace(text) != ""
 }
 
+func LooksSuspiciousToolLikeText(text string) bool {
+	trimmed := strings.TrimSpace(strings.ToLower(text))
+	if trimmed == "" {
+		return false
+	}
+	if strings.Contains(trimmed, "<invoke") && strings.Contains(trimmed, "<parameter") {
+		return true
+	}
+	if strings.Contains(trimmed, "<｜dsml｜invoke") && strings.Contains(trimmed, "<｜dsml｜parameter") {
+		return true
+	}
+	if strings.Contains(trimmed, "<tool_calls") && strings.Contains(trimmed, "<invoke") {
+		return true
+	}
+	if strings.Contains(trimmed, "<｜dsml｜tool_calls") && strings.Contains(trimmed, "<｜dsml｜invoke") {
+		return true
+	}
+	return false
+}
+
 func insideCodeFenceWithState(state *State, text string) bool {
 	if state == nil {
 		return insideCodeFence(text)

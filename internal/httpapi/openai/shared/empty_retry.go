@@ -24,7 +24,7 @@ func EmptyOutputRetryWithinWindow(startedAt, now time.Time) bool {
 }
 
 func EmptyOutputRetryMaxAttempts() int {
-	return 1 << 30
+	return 2
 }
 
 func ClonePayloadWithEmptyOutputRetryPrompt(payload map[string]any) map[string]any {

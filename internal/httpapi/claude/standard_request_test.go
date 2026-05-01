@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"ds2api/internal/config"
+	"ds2api/internal/promptcompat"
 )
 
 func TestNormalizeClaudeRequest(t *testing.T) {
@@ -91,5 +92,35 @@ func TestNormalizeClaudeRequestInjectsToolsIntoTopLevelSystem(t *testing.T) {
 	}
 	if !containsStr(norm.Standard.FinalPrompt, "You have access to these tools") {
 		t.Fatalf("expected tool prompt injected, got=%q", norm.Standard.FinalPrompt)
+	}
+}
+
+func TestNormalizeClaudeRequestParsesToolChoice(t *testing.T) {
+	t.Setenv("DS2API_CONFIG_JSON", `{}`)
+	store := config.LoadStore()
+	req := map[string]any{
+		"model": "claude-sonnet-4-5",
+		"messages": []any{
+			map[string]any{"role": "user", "content": "hello"},
+		},
+		"tools": []any{
+			map[string]any{"name": "search", "description": "Search"},
+			map[string]any{"name": "Read", "description": "Read"},
+		},
+		"tool_choice": map[string]any{
+			"type": "tool",
+			"name": "Read",
+		},
+	}
+
+	norm, err := normalizeClaudeRequest(store, req)
+	if err != nil {
+		t.Fatalf("normalize failed: %v", err)
+	}
+	if norm.Standard.ToolChoice.Mode != promptcompat.ToolChoiceForced {
+		t.Fatalf("expected forced tool choice, got %#v", norm.Standard.ToolChoice)
+	}
+	if norm.Standard.ToolChoice.ForcedName != "Read" {
+		t.Fatalf("expected forced tool Read, got %#v", norm.Standard.ToolChoice)
 	}
 }

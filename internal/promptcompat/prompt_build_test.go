@@ -47,10 +47,10 @@ func TestBuildOpenAIFinalPrompt_HandlerPathIncludesToolRoundtripSemantics(t *tes
 	if !strings.Contains(finalPrompt, `"condition":"sunny"`) {
 		t.Fatalf("handler finalPrompt should preserve tool output content: %q", finalPrompt)
 	}
-	if !strings.Contains(finalPrompt, "<|DSML|tool_calls>") {
+	if !strings.Contains(finalPrompt, "<｜DSML｜tool_calls>") {
 		t.Fatalf("handler finalPrompt should preserve assistant tool history: %q", finalPrompt)
 	}
-	if !strings.Contains(finalPrompt, `<|DSML|invoke name="get_weather">`) {
+	if !strings.Contains(finalPrompt, `<｜DSML｜invoke name="get_weather">`) {
 		t.Fatalf("handler finalPrompt should include tool name history: %q", finalPrompt)
 	}
 }
@@ -74,7 +74,7 @@ func TestBuildOpenAIFinalPrompt_VercelPreparePathKeepsFinalAnswerInstruction(t *
 	}
 
 	finalPrompt, _ := buildOpenAIFinalPrompt(messages, tools, "", false)
-	if !strings.Contains(finalPrompt, "Remember: The ONLY valid way to use tools is the <|DSML|tool_calls>...</|DSML|tool_calls> block at the end of your response.") {
+	if !strings.Contains(finalPrompt, "Remember: The ONLY valid way to use tools is the <｜DSML｜tool_calls>...</｜DSML｜tool_calls> block at the end of your response.") {
 		t.Fatalf("vercel prepare finalPrompt missing final tool-call anchor instruction: %q", finalPrompt)
 	}
 	if !strings.Contains(finalPrompt, "TOOL CALL FORMAT") {
@@ -141,8 +141,8 @@ func TestBuildOpenAIFinalPromptInjectsFallbackToolFormatWhenToolSchemaInvalid(t 
 		"=== TOOL INSTRUCTIONS, MUST FOLLOW ===",
 		"Tool schemas were provided, but no valid tool schema could be extracted.",
 		"TOOL CALL FORMAT",
-		"Tool-call tags must use ASCII punctuation only",
-		"Never use fullwidth or localized punctuation",
+		"Tool-call tags must use the official DeepSeek fullwidth separator style",
+		"Never mix ASCII and fullwidth separators inside a single tool-call tag",
 	} {
 		if !strings.Contains(finalPrompt, want) {
 			t.Fatalf("finalPrompt missing fallback tool instruction %q: %q", want, finalPrompt)
@@ -164,7 +164,7 @@ func TestBuildOpenAIFinalPromptAlwaysInjectsToolFormatGuard(t *testing.T) {
 		"=== TOOL INSTRUCTIONS, MUST FOLLOW ===",
 		"No tool schemas were provided",
 		"TOOL CALL FORMAT",
-		"Never use fullwidth or localized punctuation",
+		"Never mix ASCII and fullwidth separators inside a single tool-call tag",
 	} {
 		if !strings.Contains(finalPromptPlain, want) {
 			t.Fatalf("expected always-on tool format guard %q, got %q", want, finalPromptPlain)

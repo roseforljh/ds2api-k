@@ -38,18 +38,21 @@ func TestNormalizeOpenAIMessagesForPrompt_AssistantToolCallsAndToolResult(t *tes
 		t.Fatalf("expected 4 normalized messages with assistant tool history preserved, got %d", len(normalized))
 	}
 	assistantContent, _ := normalized[2]["content"].(string)
-	if !strings.Contains(assistantContent, "<|DSML|tool_calls>") {
+	if !strings.Contains(assistantContent, "<｜DSML｜tool_calls>") {
 		t.Fatalf("assistant tool history should be preserved in DSML form, got %q", assistantContent)
 	}
-	if !strings.Contains(assistantContent, `<|DSML|invoke name="get_weather">`) {
+	if !strings.Contains(assistantContent, `<｜DSML｜invoke name="get_weather">`) {
 		t.Fatalf("expected tool name in preserved history, got %q", assistantContent)
+	}
+	if !strings.Contains(assistantContent, `<｜DSML｜parameter name="city">`) {
+		t.Fatalf("expected official DSML parameter history, got %q", assistantContent)
 	}
 	if !strings.Contains(normalized[3]["content"].(string), `"temp":18`) {
 		t.Fatalf("tool result should be transparently forwarded, got %#v", normalized[3]["content"])
 	}
 
 	prompt := util.MessagesPrepare(normalized)
-	if !strings.Contains(prompt, "<|DSML|tool_calls>") {
+	if !strings.Contains(prompt, "<｜DSML｜tool_calls>") {
 		t.Fatalf("expected preserved assistant tool history in prompt: %q", prompt)
 	}
 }
@@ -292,7 +295,7 @@ func TestBuildOpenAICurrentInputContextTranscriptScrubsRawToolCallMarkup(t *test
 			t.Fatalf("expected raw tool-call markup %q to be scrubbed, got %q", leaked, transcript)
 		}
 	}
-	if !strings.Contains(transcript, "[historical tool-call-like markup omitted; do not imitate]") {
+	if !strings.Contains(transcript, "[historical internal tool markup omitted]") {
 		t.Fatalf("expected anti-imitation placeholder, got %q", transcript)
 	}
 }
@@ -417,7 +420,7 @@ func TestBuildOpenAICurrentInputContextTranscriptPreservesPlainParameterProse(t 
 			t.Fatalf("expected plain prose %q to be preserved, got %q", expected, transcript)
 		}
 	}
-	if strings.Contains(transcript, "[historical tool-call-like markup omitted; do not imitate]") {
+	if strings.Contains(transcript, "[historical internal tool markup omitted]") {
 		t.Fatalf("expected no tool markup omission placeholder for plain prose, got %q", transcript)
 	}
 }
@@ -452,10 +455,10 @@ func TestNormalizeOpenAIMessagesForPrompt_AssistantMultipleToolCallsRemainSepara
 		t.Fatalf("expected assistant tool_call-only message preserved, got %#v", normalized)
 	}
 	content, _ := normalized[0]["content"].(string)
-	if strings.Count(content, "<|DSML|invoke name=") != 2 {
+	if strings.Count(content, "<｜DSML｜invoke name=") != 2 {
 		t.Fatalf("expected two preserved tool call blocks, got %q", content)
 	}
-	if !strings.Contains(content, `<|DSML|invoke name="search_web">`) || !strings.Contains(content, `<|DSML|invoke name="eval_javascript">`) {
+	if !strings.Contains(content, `<｜DSML｜invoke name="search_web">`) || !strings.Contains(content, `<｜DSML｜invoke name="eval_javascript">`) {
 		t.Fatalf("expected both tool names in preserved history, got %q", content)
 	}
 }
@@ -533,7 +536,7 @@ func TestNormalizeOpenAIMessagesForPrompt_AssistantNilContentDoesNotInjectNullLi
 	if strings.Contains(content, "null") {
 		t.Fatalf("expected no null literal injection, got %q", content)
 	}
-	if !strings.Contains(content, "<|DSML|tool_calls>") {
+	if !strings.Contains(content, "<｜DSML｜tool_calls>") {
 		t.Fatalf("expected assistant tool history in normalized content, got %q", content)
 	}
 }

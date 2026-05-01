@@ -32,7 +32,8 @@ func normalizeGeminiRequest(store ConfigReader, routeModel string, req map[strin
 	}
 
 	toolsRaw := convertGeminiTools(req["tools"])
-	finalPrompt, toolNames := promptcompat.BuildOpenAIPromptForAdapter(messagesRaw, toolsRaw, "", thinkingEnabled)
+	toolPolicy := parseGeminiToolConfig(req["toolConfig"], toolsRaw)
+	finalPrompt, toolNames := promptcompat.BuildOpenAIPrompt(messagesRaw, toolsRaw, "", toolPolicy, thinkingEnabled)
 	passThrough := collectGeminiPassThrough(req)
 
 	return promptcompat.StandardRequest{
@@ -41,11 +42,62 @@ func normalizeGeminiRequest(store ConfigReader, routeModel string, req map[strin
 		ResolvedModel:  resolvedModel,
 		ResponseModel:  requestedModel,
 		Messages:       messagesRaw,
+		ToolsRaw:       toolsRaw,
 		FinalPrompt:    finalPrompt,
 		ToolNames:      toolNames,
+		ToolChoice:     toolPolicy,
 		Stream:         stream,
 		Thinking:       thinkingEnabled,
 		Search:         searchEnabled,
 		PassThrough:    passThrough,
 	}, nil
+}
+
+func parseGeminiToolConfig(raw any, tools []any) promptcompat.ToolChoicePolicy {
+	policy := promptcompat.DefaultToolChoicePolicy()
+	if len(tools) > 0 {
+		policy.Allowed = geminiToolNamesToSet(tools)
+	}
+	cfg, _ := raw.(map[string]any)
+	if len(cfg) == 0 {
+		return policy
+	}
+	fnCfg, _ := cfg["functionCallingConfig"].(map[string]any)
+	if len(fnCfg) == 0 {
+		return policy
+	}
+	mode := strings.ToLower(strings.TrimSpace(asString(fnCfg["mode"])))
+	switch mode {
+	case "none":
+		policy.Mode = promptcompat.ToolChoiceNone
+		policy.Allowed = nil
+	case "any":
+		policy.Mode = promptcompat.ToolChoiceRequired
+	case "auto", "":
+		policy.Mode = promptcompat.ToolChoiceAuto
+	}
+	return policy
+}
+
+func geminiToolNamesToSet(tools []any) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, item := range tools {
+		tool, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		fn, _ := tool["function"].(map[string]any)
+		if len(fn) == 0 {
+			fn = tool
+		}
+		name := strings.TrimSpace(asString(fn["name"]))
+		if name == "" {
+			continue
+		}
+		out[name] = struct{}{}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

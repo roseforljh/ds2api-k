@@ -69,3 +69,93 @@ func TestMessagesPrepareWithThinkingPreservesPromptShape(t *testing.T) {
 		t.Fatalf("expected assistant suffix, got %q", gotThinking)
 	}
 }
+
+func TestMessagesPrepareInjectsOfficialDSMLToolsIntoSystemPrompt(t *testing.T) {
+	messages := []map[string]any{
+		{
+			"role":    "system",
+			"content": "You are helper",
+			"tools": []any{
+				map[string]any{
+					"type": "function",
+					"function": map[string]any{
+						"name":        "get_current_datetime",
+						"description": "Get current datetime",
+						"parameters": map[string]any{
+							"type":                 "object",
+							"properties":           map[string]any{},
+							"additionalProperties": false,
+						},
+					},
+				},
+			},
+		},
+		{"role": "user", "content": "现在几点"},
+	}
+	got := MessagesPrepareWithThinking(messages, true)
+	if !strings.Contains(got, `You can invoke tools by writing a "<｜DSML｜tool_calls>" block`) {
+		t.Fatalf("expected official DSML tool instructions, got %q", got)
+	}
+	if !strings.Contains(got, `<｜DSML｜parameter name="$PARAMETER_NAME" string="true|false">$PARAMETER_VALUE`) {
+		t.Fatalf("expected official DSML parameter schema, got %q", got)
+	}
+	if !strings.Contains(got, `"name":"get_current_datetime"`) {
+		t.Fatalf("expected tool schema injected into prompt, got %q", got)
+	}
+}
+
+func TestMessagesPrepareMergesToolRoleIntoUserToolResultBlock(t *testing.T) {
+	messages := []map[string]any{
+		{
+			"role": "assistant",
+			"tool_calls": []any{
+				map[string]any{
+					"type": "function",
+					"id":   "call_1",
+					"function": map[string]any{
+						"name":      "get_current_datetime",
+						"arguments": `{}`,
+					},
+				},
+			},
+		},
+		{"role": "tool", "tool_call_id": "call_1", "content": `{"now":"2026-05-01T00:00:00Z"}`},
+	}
+	got := MessagesPrepareWithThinking(messages, true)
+	if strings.Contains(got, "<｜Tool｜>") {
+		t.Fatalf("expected no legacy tool role markers, got %q", got)
+	}
+	if !strings.Contains(got, `<tool_result>{"now":"2026-05-01T00:00:00Z"}</tool_result>`) {
+		t.Fatalf("expected merged tool_result block, got %q", got)
+	}
+}
+
+func TestMessagesPrepareEncodesAssistantToolCallArgumentsAsOfficialDSMLParameters(t *testing.T) {
+	messages := []map[string]any{
+		{
+			"role": "assistant",
+			"tool_calls": []any{
+				map[string]any{
+					"type": "function",
+					"id":   "call_1",
+					"function": map[string]any{
+						"name":      "Read",
+						"arguments": `{"file_path":"README.md","limit":55,"recursive":false}`,
+					},
+				},
+			},
+		},
+	}
+	got := MessagesPrepareWithThinking(messages, true)
+	for _, want := range []string{
+		`<｜DSML｜tool_calls>`,
+		`<｜DSML｜invoke name="Read">`,
+		`<｜DSML｜parameter name="file_path" string="true">README.md</｜DSML｜parameter>`,
+		`<｜DSML｜parameter name="limit" string="false">55</｜DSML｜parameter>`,
+		`<｜DSML｜parameter name="recursive" string="false">false</｜DSML｜parameter>`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected official DSML parameter encoding %q, got %q", want, got)
+		}
+	}
+}

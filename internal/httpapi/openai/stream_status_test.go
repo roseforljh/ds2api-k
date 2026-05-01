@@ -534,6 +534,183 @@ func TestResponsesStreamRetriesThinkingOnlyOutput(t *testing.T) {
 	}
 }
 
+func TestChatCompletionsNonStreamPreservesOfficialDSMLToolCallRoundTrip(t *testing.T) {
+	ds := &streamStatusDSSeqStub{resps: []*http.Response{
+		makeOpenAISSEHTTPResponse(
+			`data: {"response_message_id":52,"p":"response/tool_call","v":"<｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"search\">\n<｜DSML｜parameter name=\"q\" string=\"true\">golang</｜DSML｜parameter>\n</｜DSML｜invoke>\n</｜DSML｜tool_calls>"}`,
+			"data: [DONE]",
+		),
+	}}
+	h := &openAITestSurface{
+		Store: mockOpenAIConfig{wideInput: true},
+		Auth:  streamStatusAuthStub{},
+		DS:    ds,
+	}
+	reqBody := `{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"你必须调用工具 search 查询 golang，并仅返回工具调用。"}],"tools":[{"type":"function","function":{"name":"search","description":"search documents","parameters":{"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}}}],"stream":false}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
+	req.Header.Set("Authorization", "Bearer direct-token")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	newOpenAITestRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(ds.payloads) != 1 {
+		t.Fatalf("expected single upstream call, got %d", len(ds.payloads))
+	}
+	promptValue, _ := ds.payloads[0]["prompt"].(string)
+	if !strings.Contains(promptValue, "<｜DSML｜tool_calls>") {
+		t.Fatalf("expected injected final prompt to contain official DSML wrapper, got %q", promptValue)
+	}
+	if !strings.Contains(promptValue, "TOOL CALL FORMAT") {
+		t.Fatalf("expected injected final prompt to contain tool instructions, got %q", promptValue)
+	}
+
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode response failed: %v body=%s", err, rec.Body.String())
+	}
+	choices, _ := out["choices"].([]any)
+	if len(choices) != 1 {
+		t.Fatalf("expected one choice, got %#v", out)
+	}
+	choice, _ := choices[0].(map[string]any)
+	if choice["finish_reason"] != "tool_calls" {
+		t.Fatalf("expected finish_reason=tool_calls, got %#v", choice["finish_reason"])
+	}
+	message, _ := choice["message"].(map[string]any)
+	toolCalls, _ := message["tool_calls"].([]any)
+	if len(toolCalls) != 1 {
+		t.Fatalf("expected one parsed tool_call, got %#v", message)
+	}
+	call, _ := toolCalls[0].(map[string]any)
+	function, _ := call["function"].(map[string]any)
+	if function["name"] != "search" {
+		t.Fatalf("expected tool name search, got %#v", function)
+	}
+	if !strings.Contains(asString(function["arguments"]), `"q":"golang"`) {
+		t.Fatalf("expected parsed arguments to contain q=golang, got %#v", function["arguments"])
+	}
+}
+
+func TestChatCompletionsStreamPreservesOfficialDSMLToolCallRoundTripWithoutLeak(t *testing.T) {
+	ds := &streamStatusDSSeqStub{resps: []*http.Response{
+		makeOpenAISSEHTTPResponse(
+			`data: {"response_message_id":53,"p":"response/tool_call","v":"<｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"search\">\n<｜DSML｜parameter name=\"q\" string=\"true\">golang</｜DSML｜parameter>\n</｜DSML｜invoke>\n</｜DSML｜tool_calls>"}`,
+			"data: [DONE]",
+		),
+	}}
+	h := &openAITestSurface{
+		Store: mockOpenAIConfig{wideInput: true},
+		Auth:  streamStatusAuthStub{},
+		DS:    ds,
+	}
+	reqBody := `{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"你必须调用工具 search 查询 golang，并仅返回工具调用。"}],"tools":[{"type":"function","function":{"name":"search","description":"search documents","parameters":{"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}}}],"stream":true}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
+	req.Header.Set("Authorization", "Bearer direct-token")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	newOpenAITestRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(ds.payloads) != 1 {
+		t.Fatalf("expected single upstream call, got %d", len(ds.payloads))
+	}
+	promptValue, _ := ds.payloads[0]["prompt"].(string)
+	if !strings.Contains(promptValue, "<｜DSML｜tool_calls>") {
+		t.Fatalf("expected injected final prompt to contain official DSML wrapper, got %q", promptValue)
+	}
+
+	body := rec.Body.String()
+	for _, leaked := range []string{"<｜DSML｜tool_calls>", "<｜DSML｜invoke", "</｜DSML｜tool_calls>"} {
+		if strings.Contains(body, leaked) {
+			t.Fatalf("expected streamed response not to leak raw DSML markup %q, body=%s", leaked, body)
+		}
+	}
+	frames, done := parseSSEDataFrames(t, body)
+	if !done {
+		t.Fatalf("expected [DONE], body=%s", body)
+	}
+	if len(frames) == 0 {
+		t.Fatalf("expected at least one SSE frame, body=%s", body)
+	}
+	first := frames[0]
+	choices, _ := first["choices"].([]any)
+	if len(choices) != 1 {
+		t.Fatalf("expected one choice in first frame, got %#v", first)
+	}
+	choice, _ := choices[0].(map[string]any)
+	delta, _ := choice["delta"].(map[string]any)
+	toolCalls, _ := delta["tool_calls"].([]any)
+	if len(toolCalls) != 1 {
+		t.Fatalf("expected streamed tool_calls delta, got %#v body=%s", delta, body)
+	}
+	call, _ := toolCalls[0].(map[string]any)
+	function, _ := call["function"].(map[string]any)
+	if function["name"] != "search" {
+		t.Fatalf("expected tool name search, got %#v", function)
+	}
+	if !strings.Contains(asString(function["arguments"]), `"q":"golang"`) {
+		t.Fatalf("expected streamed arguments to contain q=golang, got %#v", function["arguments"])
+	}
+	last := frames[len(frames)-1]
+	lastChoices, _ := last["choices"].([]any)
+	lastChoice, _ := lastChoices[0].(map[string]any)
+	if lastChoice["finish_reason"] != "tool_calls" {
+		t.Fatalf("expected final finish_reason=tool_calls, got %#v body=%s", lastChoice["finish_reason"], body)
+	}
+}
+
+func TestChatCompletionsStreamMalformedBareInvokeDoesNotLeakAndFailsSafely(t *testing.T) {
+	ds := &streamStatusDSSeqStub{resps: []*http.Response{
+		makeOpenAISSEHTTPResponse(
+			`data: {"response_message_id":54,"p":"response/content","v":"继续拉通剩余协议文件，把 Gemini 转换全部读完。\n<invoke name=\"Read\">\n<parameter name=\"file_path\"></parameter>\n</invoke>"}`,
+			"data: [DONE]",
+		),
+		makeOpenAISSEHTTPResponse(
+			`data: {"response_message_id":55,"p":"response/content","v":"<invoke name=\"Read\">\n<parameter name=\"file_path\"></parameter>\n</invoke>"}`,
+			"data: [DONE]",
+		),
+	}}
+	h := &openAITestSurface{
+		Store: mockOpenAIConfig{wideInput: true},
+		Auth:  streamStatusAuthStub{},
+		DS:    ds,
+	}
+	reqBody := `{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"继续"}],"tools":[{"type":"function","function":{"name":"Read","description":"read file","parameters":{"type":"object","properties":{"file_path":{"type":"string"}},"required":["file_path"]}}}],"stream":true}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
+	req.Header.Set("Authorization", "Bearer direct-token")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	newOpenAITestRouter(h).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, leaked := range []string{"<invoke name=\"Read\">", "<parameter name=\"file_path\">", "继续拉通剩余协议文件"} {
+		if strings.Contains(body, leaked) {
+			t.Fatalf("expected malformed invoke path not to leak raw content %q, body=%s", leaked, body)
+		}
+	}
+	if !strings.Contains(body, `"error"`) {
+		t.Fatalf("expected structured error chunk, body=%s", body)
+	}
+	if !strings.Contains(body, `data: [DONE]`) {
+		t.Fatalf("expected stream done marker, body=%s", body)
+	}
+	if len(ds.payloads) < 2 {
+		t.Fatalf("expected at least one retry for malformed invoke, got %d", len(ds.payloads))
+	}
+	retryPrompt := asString(ds.payloads[1]["prompt"])
+	if !strings.Contains(retryPrompt, "malformed") && !strings.Contains(retryPrompt, "Invalid previous reply") {
+		t.Fatalf("expected malformed-tool retry prompt, got %q", retryPrompt)
+	}
+}
+
 func TestResponsesStreamDoesNotRetryAfterClientCancellation(t *testing.T) {
 	ds := &streamStatusDSCancelRetryStub{}
 	h := &openAITestSurface{

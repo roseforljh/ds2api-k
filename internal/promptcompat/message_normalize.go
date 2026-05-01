@@ -20,13 +20,24 @@ func NormalizeOpenAIMessagesForPrompt(raw []any, traceID string) []map[string]an
 		switch role {
 		case "assistant":
 			content := buildAssistantContentForPrompt(msg)
-			if content == "" {
+			reasoning := strings.TrimSpace(normalizeOpenAIReasoningContentForPrompt(msg["reasoning_content"]))
+			if content == "" && reasoning == "" && msg["tool_calls"] == nil {
 				continue
 			}
-			out = append(out, map[string]any{
+			if content == "" && reasoning == "" && strings.TrimSpace(prompt.FormatToolCallsForPrompt(msg["tool_calls"])) == "" {
+				continue
+			}
+			assistant := map[string]any{
 				"role":    "assistant",
 				"content": content,
-			})
+			}
+			if reasoning != "" {
+				assistant["reasoning_content"] = reasoning
+			}
+			if msg["tool_calls"] != nil {
+				assistant["tool_calls"] = msg["tool_calls"]
+			}
+			out = append(out, assistant)
 		case "tool", "function":
 			content := buildToolContentForPrompt(msg)
 			if content == "" {

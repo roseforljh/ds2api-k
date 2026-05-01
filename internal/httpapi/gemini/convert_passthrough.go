@@ -24,6 +24,12 @@ func collectGeminiPassThrough(req map[string]any) map[string]any {
 	if v, ok := cfg["stopSequences"]; ok {
 		out["stop"] = v
 	}
+	if v, ok := cfg["topK"]; ok {
+		out["top_k"] = v
+	}
+	if v, ok := cfg["seed"]; ok {
+		out["seed"] = v
+	}
 	if len(out) == 0 {
 		return nil
 	}

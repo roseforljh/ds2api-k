@@ -291,6 +291,23 @@ func TestParseToolCallsSupportsDSMLShellWithCanonicalExampleInCDATA(t *testing.T
 	}
 }
 
+func TestParseToolCallsSupportsOfficialFullwidthDSMLStringFlags(t *testing.T) {
+	text := `<｜DSML｜tool_calls><｜DSML｜invoke name="Read"><｜DSML｜parameter name="file_path" string="true">README.md</｜DSML｜parameter><｜DSML｜parameter name="limit" string="false">55</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`
+	calls := ParseToolCalls(text, []string{"Read"})
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 official fullwidth DSML call, got %#v", calls)
+	}
+	if calls[0].Name != "Read" {
+		t.Fatalf("expected Read tool name, got %#v", calls[0])
+	}
+	if got, _ := calls[0].Input["file_path"].(string); got != "README.md" {
+		t.Fatalf("expected string file_path, got %#v", calls[0].Input["file_path"])
+	}
+	if got, _ := calls[0].Input["limit"].(float64); got != 55 {
+		t.Fatalf("expected numeric limit 55, got %#v", calls[0].Input["limit"])
+	}
+}
+
 func TestParseToolCallsPreservesSimpleCDATAInlineMarkupAsText(t *testing.T) {
 	text := `<tool_calls><invoke name="Write"><parameter name="description"><![CDATA[<b>urgent</b>]]></parameter></invoke></tool_calls>`
 	calls := ParseToolCalls(text, []string{"Write"})

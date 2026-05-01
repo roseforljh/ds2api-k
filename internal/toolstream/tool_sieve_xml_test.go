@@ -73,6 +73,37 @@ func TestProcessToolSieveInterceptsDSMLToolCallWithoutLeak(t *testing.T) {
 	}
 }
 
+func TestProcessToolSieveInterceptsOfficialFullwidthDSMLToolCallWithoutLeak(t *testing.T) {
+	var state State
+	chunks := []string{
+		"<｜DSML｜tool",
+		"_calls>\n",
+		`  <｜DSML｜invoke name="Read">` + "\n",
+		`    <｜DSML｜parameter name="file_path" string="true">README.md</｜DSML｜parameter>` + "\n",
+		`    <｜DSML｜parameter name="limit" string="false">55</｜DSML｜parameter>` + "\n",
+		"  </｜DSML｜invoke>\n",
+		"</｜DSML｜tool_calls>",
+	}
+	var events []Event
+	for _, c := range chunks {
+		events = append(events, ProcessChunk(&state, c, []string{"Read"})...)
+	}
+	events = append(events, Flush(&state, []string{"Read"})...)
+
+	var textContent strings.Builder
+	var calls []toolcall.ParsedToolCall
+	for _, evt := range events {
+		textContent.WriteString(evt.Content)
+		calls = append(calls, evt.ToolCalls...)
+	}
+	if strings.Contains(textContent.String(), "DSML") || strings.Contains(textContent.String(), "README.md") {
+		t.Fatalf("official fullwidth DSML tool call leaked to text: %q", textContent.String())
+	}
+	if len(calls) != 1 || calls[0].Name != "Read" {
+		t.Fatalf("expected one official fullwidth DSML Read call, got events=%#v calls=%#v", events, calls)
+	}
+}
+
 func TestProcessToolSieveInterceptsDSMLDSEPToolCallWithoutLeak(t *testing.T) {
 	state := State{}
 	chunks := []string{

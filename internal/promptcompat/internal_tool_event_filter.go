@@ -61,7 +61,7 @@ func sanitizePromptVisibleInternalToolEvents(role, content string) string {
 		}
 		if isRawToolCallMarkupLine(line) {
 			if !omittedToolMarkup {
-				out = append(out, "[historical tool-call-like markup omitted; do not imitate]")
+				out = append(out, "[historical internal tool markup omitted]")
 				omittedToolMarkup = true
 			}
 			if isRawToolCallBlockOpenLine(line) && !isRawToolCallBlockCloseLine(line) {

@@ -25,7 +25,7 @@ func ConvertClaudeToDeepSeek(claudeReq map[string]any, aliasProvider config.Mode
 	convertedMessages = append(convertedMessages, messages...)
 
 	out := map[string]any{"model": dsModel, "messages": convertedMessages}
-	for _, k := range []string{"temperature", "top_p", "stream"} {
+	for _, k := range []string{"temperature", "top_p", "stream", "max_tokens"} {
 		if v, ok := claudeReq[k]; ok {
 			out[k] = v
 		}

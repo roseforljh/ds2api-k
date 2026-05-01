@@ -30,6 +30,8 @@ func normalizeClaudeRequest(store ConfigReader, req map[string]any) (claudeNorma
 	toolsRequested, _ := req["tools"].([]any)
 	payload["messages"] = injectClaudeToolPrompt(payload, normalizedMessages, toolsRequested)
 
+	toolPolicy := parseClaudeToolChoice(req["tool_choice"], toolsRequested)
+
 	dsPayload := convertClaudeToDeepSeek(payload, store)
 	dsModel, _ := dsPayload["model"].(string)
 	_, searchEnabled, ok := config.GetModelConfig(dsModel)
@@ -56,12 +58,80 @@ func normalizeClaudeRequest(store ConfigReader, req map[string]any) (claudeNorma
 			ToolsRaw:       toolsRequested,
 			FinalPrompt:    finalPrompt,
 			ToolNames:      toolNames,
+			ToolChoice:     toolPolicy,
 			Stream:         util.ToBool(req["stream"]),
 			Thinking:       thinkingEnabled,
 			Search:         searchEnabled,
 		},
 		NormalizedMessages: normalizedMessages,
 	}, nil
+}
+
+func parseClaudeToolChoice(raw any, tools []any) promptcompat.ToolChoicePolicy {
+	policy := promptcompat.DefaultToolChoicePolicy()
+	if len(tools) > 0 {
+		policy.Allowed = claudeToolNamesToSet(extractClaudeToolNames(tools))
+	}
+	if raw == nil {
+		return policy
+	}
+	switch v := raw.(type) {
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "any":
+			policy.Mode = promptcompat.ToolChoiceRequired
+		case "auto", "":
+			policy.Mode = promptcompat.ToolChoiceAuto
+		default:
+			name := strings.TrimSpace(v)
+			if name != "" && len(tools) > 0 {
+				policy.Mode = promptcompat.ToolChoiceForced
+				policy.ForcedName = name
+				policy.Allowed = map[string]struct{}{name: {}}
+			}
+		}
+	case map[string]any:
+		typ := strings.ToLower(strings.TrimSpace(asClaudeString(v["type"])))
+		switch typ {
+		case "any":
+			policy.Mode = promptcompat.ToolChoiceRequired
+		case "tool":
+			name := strings.TrimSpace(asClaudeString(v["name"]))
+			if name == "" {
+				policy.Mode = promptcompat.ToolChoiceRequired
+			} else {
+				policy.Mode = promptcompat.ToolChoiceForced
+				policy.ForcedName = name
+				policy.Allowed = map[string]struct{}{name: {}}
+			}
+		default:
+			policy.Mode = promptcompat.ToolChoiceAuto
+		}
+	}
+	return policy
+}
+
+func asClaudeString(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
+func claudeToolNamesToSet(names []string) map[string]struct{} {
+	if len(names) == 0 {
+		return nil
+	}
+	out := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		out[name] = struct{}{}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func injectClaudeToolPrompt(payload map[string]any, normalizedMessages []any, tools []any) []any {

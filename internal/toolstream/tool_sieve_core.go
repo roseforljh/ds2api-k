@@ -42,6 +42,10 @@ func ProcessChunk(state *State, chunk string, toolNames []string) []Event {
 				prefix = ""
 				suffix = ""
 			}
+			if strings.TrimSpace(state.MalformedToolFeedback) != "" {
+				prefix = ""
+				suffix = ""
+			}
 			state.capture.Reset()
 			state.capturing = false
 			state.resetIncrementalToolState()
@@ -121,6 +125,10 @@ func Flush(state *State, toolNames []string) []Event {
 				consumedPrefix = ""
 				consumedSuffix = ""
 			}
+			if strings.TrimSpace(state.MalformedToolFeedback) != "" {
+				consumedPrefix = ""
+				consumedSuffix = ""
+			}
 			if consumedPrefix != "" {
 				state.noteText(consumedPrefix)
 				events = append(events, Event{Content: consumedPrefix})
@@ -152,12 +160,7 @@ func Flush(state *State, toolNames []string) []Event {
 					state.capture.Reset()
 					state.capturing = false
 					state.resetIncrementalToolState()
-					if state.pending.Len() > 0 {
-						content := state.pending.String()
-						state.noteText(content)
-						events = append(events, Event{Content: content})
-						state.pending.Reset()
-					}
+					state.pending.Reset()
 					return events
 				}
 				recovered := toolcall.SanitizeLooseCDATA(content)
@@ -229,6 +232,9 @@ func shouldAttachPrefixToLocalizedMalformedCapture(prefix string, segment string
 	trimmedPrefix := strings.TrimSpace(prefix)
 	if trimmedPrefix == "" {
 		return false
+	}
+	if strings.Contains(strings.ToLower(segment), "<invoke") || strings.Contains(strings.ToLower(segment), "<parameter") {
+		return true
 	}
 	if trimmedPrefix != "●" && trimmedPrefix != "•" && trimmedPrefix != "-" && !strings.EqualFold(trimmedPrefix, "Skill") {
 		return false
